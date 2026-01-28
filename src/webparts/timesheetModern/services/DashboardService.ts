@@ -6,6 +6,7 @@ import { AttendanceService } from './AttendanceService';
 import { TimesheetService } from './TimesheetService';
 import { ApprovalService } from './ApprovalService';
 import { UserService } from './UserService';
+import { LeaveService } from './LeaveService';
 
 export interface IDashboardStats {
   daysPresent: number;
@@ -21,12 +22,14 @@ export class DashboardService {
   private timesheetService: TimesheetService;
   private approvalService: ApprovalService;
   private userService: UserService;
+  private leaveService: LeaveService;
 
   constructor(spHttpClient: SPHttpClient, siteUrl: string) {
     this.attendanceService = new AttendanceService(spHttpClient, siteUrl);
     this.timesheetService = new TimesheetService(spHttpClient, siteUrl);
     this.approvalService = new ApprovalService(spHttpClient, siteUrl);
     this.userService = new UserService(spHttpClient, siteUrl);
+    this.leaveService = new LeaveService(spHttpClient, siteUrl);
   }
 
   /**
@@ -36,7 +39,8 @@ export class DashboardService {
     try {
       const user = await this.userService.getCurrentUser();
       const permissions = await this.userService.getUserPermissions();
-      const employeeId = user.Id.toString()||'';
+      const employeeId = user.Id.toString() || '';
+      
       // Get current date ranges
       const today = new Date();
       const currentYear = today.getFullYear();
@@ -53,10 +57,12 @@ export class DashboardService {
       // Fetch all stats in parallel
       const [
         attendanceStats,
+        leaveDaysLeft,
         pendingApprovals,
         regularizations
       ] = await Promise.all([
         this.attendanceService.getAttendanceStatistics(employeeId, monthStart, monthEnd),
+        this.leaveService.getTotalLeaveDaysLeft(employeeId), // FIXED: Use LeaveService
         permissions.isManager ? this.approvalService.getPendingApprovals() : Promise.resolve([]),
         this.approvalService.getEmployeeRegularizations(employeeId)
       ]);
@@ -87,7 +93,7 @@ export class DashboardService {
       return {
         daysPresent: attendanceStats.daysPresent,
         hoursThisWeek: Math.round(hoursThisWeek * 10) / 10,
-        leaveDaysLeft: 12, // TODO: Implement leave balance from HRMS or LeaveBalance list
+        leaveDaysLeft: leaveDaysLeft, // FIXED: Use actual leave balance
         pendingApprovals: pendingApprovals.length,
         pendingTimesheetEntries: pendingTimesheetEntries,
         pendingRegularizations: pendingRegularizations
