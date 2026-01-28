@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "timesheet-modern-client-side-solution",
+    "id": "8ad55610-ca4d-4213-860b-4de947d52af0",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.22.1"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "timesheet-modern description"
+      },
+      "longDescription": {
+        "default": "timesheet-modern description"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "timesheet-modern Feature",
+        "description": "The feature that activates elements of the timesheet-modern solution.",
+        "id": "d7bbf43b-e275-49fa-a8d7-946912c44190",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/timesheet-modern.sppkg"
+  }
+}

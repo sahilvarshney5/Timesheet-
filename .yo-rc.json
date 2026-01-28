@@ -1,0 +1,19 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "useGulp": false,
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.14.0",
+    "sdksVersions": {},
+    "version": "1.22.1",
+    "libraryName": "timesheet-modern",
+    "libraryId": "8ad55610-ca4d-4213-860b-4de947d52af0",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionName": "timesheet-modern",
+    "solutionShortDescription": "timesheet-modern description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "componentType": "webpart"
+  }
+}
