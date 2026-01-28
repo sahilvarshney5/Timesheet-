@@ -15,7 +15,11 @@ export interface IAppShellState {
 }
 
 const AppShell: React.FC<ITimesheetModernProps> = (props) => {
-  const { currentUserDisplayName } = props;
+  const { 
+    currentUserDisplayName, 
+    httpClient, 
+    siteUrl 
+  } = props;
 
   const [state, setState] = React.useState<IAppShellState>({
     activeView: 'dashboard',
@@ -27,6 +31,9 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
       ...prev,
       activeView: viewName
     }));
+    
+    // Scroll to top when changing views
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const toggleSidebar = React.useCallback((): void => {
@@ -45,19 +52,27 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
 
   // Render the appropriate view component based on activeView
   const renderView = (): JSX.Element => {
+    // Common props for all views
+    const viewProps = {
+      onViewChange: handleViewChange,
+      spHttpClient: httpClient,
+      siteUrl: siteUrl,
+      currentUserDisplayName: currentUserDisplayName
+    };
+
     switch (state.activeView) {
       case 'dashboard':
-        return <DashboardView onViewChange={handleViewChange} />;
+        return <DashboardView {...viewProps} />;
       case 'attendance':
-        return <AttendanceView onViewChange={handleViewChange} />;
+        return <AttendanceView {...viewProps} />;
       case 'timesheet':
-        return <TimesheetView onViewChange={handleViewChange} />;
+        return <TimesheetView {...viewProps} />;
       case 'regularize':
-        return <RegularizationView onViewChange={handleViewChange} />;
+        return <RegularizationView {...viewProps} />;
       case 'approval':
-        return <ApprovalView onViewChange={handleViewChange} />;
+        return <ApprovalView {...viewProps} />;
       default:
-        return <DashboardView onViewChange={handleViewChange} />;
+        return <DashboardView {...viewProps} />;
     }
   };
 
