@@ -32,7 +32,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [employeeId, setEmployeeId] = React.useState<Number>(0);
+  const [employeeId, setEmployeeId] = React.useState<string>('');
 
   // Load data on mount
   React.useEffect(() => {
@@ -46,7 +46,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
       // Get current user info
       const user = await userService.getCurrentUser();
-      const empId = user.Id;
+      const empId = user.Id.toString() || '';
       setEmployeeId(empId);
 
       // Load regularization history from SharePoint

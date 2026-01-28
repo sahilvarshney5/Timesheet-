@@ -15,7 +15,7 @@ export interface IAttendanceRegularization extends IBaseModel {
      Source-system / SP internal names
      =============================== */
 
-  EmployeeID?: number; // SP internal alias
+  EmployeeID?: string; // SP internal alias
   RequestType?: string; // Timesheet / Regularization
   StartDate?: string;
   EndDate?: string;

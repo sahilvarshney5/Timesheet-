@@ -36,7 +36,7 @@ export class DashboardService {
     try {
       const user = await this.userService.getCurrentUser();
       const permissions = await this.userService.getUserPermissions();
-      const employeeId = user.Id;
+      const employeeId = user.Id.toString()||'';
       // Get current date ranges
       const today = new Date();
       const currentYear = today.getFullYear();

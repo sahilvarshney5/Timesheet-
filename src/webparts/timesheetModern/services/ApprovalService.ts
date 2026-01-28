@@ -184,7 +184,7 @@ export class ApprovalService {
    * Get regularization requests for a specific employee
    * @param employeeId Employee ID
    */
-  public async getEmployeeRegularizations(employeeId: Number): Promise<IRegularizationRequest[]> {
+  public async getEmployeeRegularizations(employeeId: string): Promise<IRegularizationRequest[]> {
     try {
       // TODO: Implement REST call to AttendanceRegularization list
       const listName = getListInternalName('attendanceRegularization');
