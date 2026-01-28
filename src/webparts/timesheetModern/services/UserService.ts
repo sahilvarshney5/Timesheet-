@@ -1,26 +1,20 @@
 // services/UserService.ts
-// Service for user-related SharePoint operations
-// Handles current user info and permission checking
+// Service for user-related operations
+// Handles current user info and user lookups
 
-import { SPHttpClient } from '@microsoft/sp-http';
+import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
-import { SharePointConfig } from '../config/SharePointConfig';
 import { IUserInfo } from '../models';
-
-export interface IUserPermissions {
-  isAdmin: boolean;
-  isManager: boolean;
-  isMember: boolean;
-  employeeId?: string;
-}
 
 export class UserService {
   private httpService: HttpClientService;
-  private currentUserInfo: IUserInfo | null = null;
-  private userPermissions: IUserPermissions | null = null;
+  private spHttpClient: SPHttpClient;
+  private siteUrl: string;
 
   constructor(spHttpClient: SPHttpClient, siteUrl: string) {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
+    this.spHttpClient = spHttpClient;
+    this.siteUrl = siteUrl;
   }
 
   /**
@@ -28,20 +22,25 @@ export class UserService {
    */
   public async getCurrentUser(): Promise<IUserInfo> {
     try {
-      if (this.currentUserInfo) {
-        return this.currentUserInfo;
-      }
-
-      const userData = await this.httpService.getCurrentUser();
+      const endpoint = `${this.siteUrl}/_api/web/currentuser`;
       
-      this.currentUserInfo = {
-        Id: userData.Id,
-        DisplayName: userData.Title,
-        Email: userData.Email,
-        EmployeeCode: userData.EmployeeCode || this.extractEmployeeCode(userData.Email)
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get current user: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      return {
+        Id: data.Id,
+        DisplayName: data.Title,
+        Email: data.Email,
+        EmployeeCode: data.EmployeeCode || undefined
       };
-
-      return this.currentUserInfo;
       
     } catch (error) {
       console.error('[UserService] Error getting current user:', error);
@@ -50,89 +49,173 @@ export class UserService {
   }
 
   /**
-   * Get user permissions (Admin, Manager, or Member)
+   * Get user by ID
+   * @param userId User ID
    */
-  public async getUserPermissions(): Promise<IUserPermissions> {
+  public async getUserById(userId: number): Promise<IUserInfo | null> {
     try {
-      if (this.userPermissions) {
-        return this.userPermissions;
-      }
-
-      const user = await this.getCurrentUser();
+      const endpoint = `${this.siteUrl}/_api/web/getuserbyid(${userId})`;
       
-      // Check SharePoint groups
-      const isAdmin = await this.isUserInGroup(user.Email, 'Timesheet-Admins');
-      const isManager = await this.isUserInGroup(user.Email, 'Timesheet-Managers');
-      const isMember = await this.isUserInGroup(user.Email, 'Timesheet-Employees');
-
-      this.userPermissions = {
-        isAdmin,
-        isManager,
-        isMember,
-        employeeId: user.EmployeeCode
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+      );
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error(`Failed to get user ${userId}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      return {
+        Id: data.Id,
+        DisplayName: data.Title,
+        Email: data.Email,
+        EmployeeCode: data.EmployeeCode || undefined
       };
-
-      return this.userPermissions;
       
     } catch (error) {
-      console.error('[UserService] Error getting user permissions:', error);
-      // Default to member if error
-      return {
-        isAdmin: false,
-        isManager: false,
-        isMember: true,
-        employeeId: undefined
-      };
+      console.error(`[UserService] Error getting user ${userId}:`, error);
+      throw error;
     }
   }
 
   /**
-   * Check if user is in a specific SharePoint group
-   * @param userEmail User email
-   * @param groupName SharePoint group name
+   * Get user by email
+   * @param email User email
    */
-  private async isUserInGroup(userEmail: string, groupName: string): Promise<boolean> {
+  public async getUserByEmail(email: string): Promise<IUserInfo | null> {
     try {
-      const endpoint = `${this.httpService['siteUrl']}/_api/web/sitegroups/getbyname('${groupName}')/users?$filter=Email eq '${userEmail}'`;
+      const endpoint = `${this.siteUrl}/_api/web/siteusers?$filter=Email eq '${encodeURIComponent(email)}'`;
       
-      const response = await this.httpService['spHttpClient'].get(
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        this.httpService['spHttpClient'].configurations.v1
+        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
       );
       
       if (!response.ok) {
-        console.warn(`[UserService] Failed to check group ${groupName} for user ${userEmail}`);
-        return false;
+        throw new Error(`Failed to get user by email ${email}: ${response.statusText}`);
       }
       
       const data = await response.json();
+      
+      if (!data.value || data.value.length === 0) {
+        return null;
+      }
+      
+      const user = data.value[0];
+      
+      return {
+        Id: user.Id,
+        DisplayName: user.Title,
+        Email: user.Email,
+        EmployeeCode: user.EmployeeCode || undefined
+      };
+      
+    } catch (error) {
+      console.error(`[UserService] Error getting user by email ${email}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user's manager (if available from User Profile Service)
+   * @param loginName User login name
+   */
+  public async getUserManager(loginName: string): Promise<IUserInfo | null> {
+    try {
+      // Note: This requires User Profile Service to be configured
+      const endpoint = `${this.siteUrl}/_api/SP.UserProfiles.PeopleManager/GetPropertiesFor(accountName=@v)?@v='${encodeURIComponent(loginName)}'`;
+      
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+      );
+      
+      if (!response.ok) {
+        console.warn(`[UserService] Could not get manager for ${loginName}: ${response.statusText}`);
+        return null;
+      }
+      
+      const data = await response.json();
+      
+      // Extract manager from extended properties
+      const managerProperty = data.UserProfileProperties?.find(
+        (prop: any) => prop.Key === 'Manager'
+      );
+      
+      if (!managerProperty || !managerProperty.Value) {
+        return null;
+      }
+      
+      // Get manager details
+      return await this.getUserByEmail(managerProperty.Value);
+      
+    } catch (error) {
+      console.error(`[UserService] Error getting manager for ${loginName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if current user is in a specific SharePoint group
+   * @param groupName SharePoint group name
+   */
+  public async isUserInGroup(groupName: string): Promise<boolean> {
+    try {
+      const endpoint = `${this.siteUrl}/_api/web/currentuser/groups?$filter=Title eq '${encodeURIComponent(groupName)}'`;
+      
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to check group membership: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
       return data.value && data.value.length > 0;
       
     } catch (error) {
-      console.error(`[UserService] Error checking group ${groupName}:`, error);
+      console.error(`[UserService] Error checking group membership for ${groupName}:`, error);
       return false;
     }
   }
 
   /**
-   * Extract employee code from email
-   * @param email User email
+   * Get all users in a SharePoint group
+   * @param groupName SharePoint group name
    */
-  private extractEmployeeCode(email: string): string {
-    // Try to extract from email prefix
-    // Example: emp001@company.com -> EMP001
-    const prefix = email.split('@')[0];
-    return prefix.toUpperCase();
-  }
-
-  /**
-   * Get user display role
-   */
-  public async getUserRole(): Promise<'Admin' | 'Manager' | 'Member'> {
-    const permissions = await this.getUserPermissions();
-    
-    if (permissions.isAdmin) return 'Admin';
-    if (permissions.isManager) return 'Manager';
-    return 'Member';
+  public async getUsersInGroup(groupName: string): Promise<IUserInfo[]> {
+    try {
+      const endpoint = `${this.siteUrl}/_api/web/sitegroups/getbyname('${encodeURIComponent(groupName)}')/users`;
+      
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get users in group ${groupName}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      return data.value.map((user: any) => ({
+        Id: user.Id,
+        DisplayName: user.Title,
+        Email: user.Email,
+        EmployeeCode: user.EmployeeCode || undefined
+      }));
+      
+    } catch (error) {
+      console.error(`[UserService] Error getting users in group ${groupName}:`, error);
+      throw error;
+    }
   }
 }
