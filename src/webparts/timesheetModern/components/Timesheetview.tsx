@@ -1,8 +1,14 @@
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
+import { SPHttpClient } from '@microsoft/sp-http';
+import { TimesheetService } from '../services/TimesheetService';
+import { AttendanceService } from '../services/AttendanceService';
 
 export interface ITimesheetViewProps {
   onViewChange: (viewName: string) => void;
+  spHttpClient: SPHttpClient;
+  siteUrl: string;
+  currentUserDisplayName: string;
 }
 
 interface ITimesheetEntry {
@@ -15,44 +21,131 @@ interface ITimesheetEntry {
 }
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
-  const { onViewChange } = props;
+  const { onViewChange, spHttpClient, siteUrl } = props;
+
+  // Services
+  const timesheetService = React.useMemo(
+    () => new TimesheetService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
+
+  const attendanceService = React.useMemo(
+    () => new AttendanceService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
 
   // State management
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false);
-  const [entries, setEntries] = React.useState<ITimesheetEntry[]>([
-    {
-      id: 1,
-      date: '2025-01-20',
-      project: 'Project Alpha',
-      hours: 3.5,
-      taskType: 'Development',
-      description: 'Implemented user authentication module with React hooks'
-    },
-    {
-      id: 2,
-      date: '2025-01-20',
-      project: 'Project Beta',
-      hours: 2.0,
-      taskType: 'Meeting',
-      description: 'Weekly sprint planning and team sync'
-    }
-  ]);
+  const [entries, setEntries] = React.useState<ITimesheetEntry[]>([]);
   const [editingEntry, setEditingEntry] = React.useState<ITimesheetEntry | null>(null);
+  const [currentWeekOffset, setCurrentWeekOffset] = React.useState<number>(0);
+  const [isLoading, setIsLoading] = React.useState<boolean>(false);
   
   // Form state
   const [formData, setFormData] = React.useState({
-    date: '2025-01-20',
+    date: '',
     project: '',
     hours: 0,
     taskType: 'Development',
     description: ''
   });
 
+  // Load timesheet data when week changes
+  React.useEffect(() => {
+    loadTimesheetData();
+  }, [currentWeekOffset]);
+
+  const loadTimesheetData = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      // Get week dates
+      const weekDays = getCurrentWeekDays();
+      const startDate = weekDays[0];
+      const endDate = weekDays[weekDays.length - 1];
+      
+      // TODO: Load timesheet entries from SharePoint
+      // const lines = await timesheetService.getTimesheetLinesByDateRange(
+      //   employeeId,
+      //   startDate,
+      //   endDate
+      // );
+      
+      // For now, filter existing entries by week
+      const weekEntries = entries.filter(entry => 
+        weekDays.includes(entry.date)
+      );
+      
+      console.log(`[TimesheetView] Loaded ${weekEntries.length} entries for week ${startDate} to ${endDate}`);
+      
+    } catch (error) {
+      console.error('[TimesheetView] Error loading timesheet data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get current week days based on offset
+  const getCurrentWeekDays = (): string[] => {
+    const today = new Date();
+    const adjustedDate = new Date(today);
+    adjustedDate.setDate(today.getDate() + (currentWeekOffset * 7));
+    
+    // Get Monday of this week
+    const startOfWeek = new Date(adjustedDate);
+    const dayOfWeek = adjustedDate.getDay();
+    const diff = adjustedDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    startOfWeek.setDate(diff);
+    
+    // Get all 7 days (Monday to Sunday)
+    const days: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + i);
+      days.push(day.toISOString().split('T')[0]);
+    }
+    
+    return days;
+  };
+
+  // Get week range display text
+  const getWeekRangeText = (): string => {
+    const weekDays = getCurrentWeekDays();
+    const startDate = new Date(weekDays[0]);
+    const endDate = new Date(weekDays[6]);
+    
+    const options = { month: 'short', day: 'numeric' } as const;
+    const startStr = startDate.toLocaleDateString('en-US', options);
+    const endStr = endDate.toLocaleDateString('en-US', options);
+    
+    let weekText = `Week of ${startStr}-${endStr}, ${startDate.getFullYear()}`;
+    
+    if (currentWeekOffset < 0) {
+      weekText += ` (Previous Week)`;
+    } else if (currentWeekOffset > 0) {
+      weekText += ` (Future Week)`;
+    } else {
+      weekText += ` (Current Week)`;
+    }
+    
+    return weekText;
+  };
+
+  // Change week
+  const handleChangeWeek = (direction: number): void => {
+    setCurrentWeekOffset(prev => prev + direction);
+  };
+
   // Open modal for new entry
   const handleAddEntry = (date?: string): void => {
     setEditingEntry(null);
+    
+    // Use provided date or first day of current week
+    const weekDays = getCurrentWeekDays();
+    const defaultDate = date || weekDays[0];
+    
     setFormData({
-      date: date || '2025-01-20',
+      date: defaultDate,
       project: '',
       hours: 0,
       taskType: 'Development',
@@ -79,7 +172,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     setIsModalOpen(false);
     setEditingEntry(null);
     setFormData({
-      date: '2025-01-20',
+      date: '',
       project: '',
       hours: 0,
       taskType: 'Development',
@@ -96,58 +189,128 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   };
 
   // Submit form
-  const handleSubmit = (event: React.FormEvent): void => {
+  const handleSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     
-    if (editingEntry) {
-      // Update existing entry
-      setEntries(prev => prev.map(entry => 
-        entry.id === editingEntry.id 
-          ? { ...entry, ...formData }
-          : entry
-      ));
-      alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
-    } else {
-      // Add new entry
-      const newEntry: ITimesheetEntry = {
-        id: Date.now(),
-        ...formData
-      };
-      setEntries(prev => [...prev, newEntry]);
-      alert(`Timesheet entry added: ${formData.hours} hours for ${formData.project}`);
+    try {
+      if (editingEntry) {
+        // Update existing entry
+        setEntries(prev => prev.map(entry => 
+          entry.id === editingEntry.id 
+            ? { ...entry, ...formData }
+            : entry
+        ));
+        
+        // TODO: Update in SharePoint
+        // await timesheetService.updateTimesheetLine(editingEntry.id, formData);
+        
+        alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
+      } else {
+        // Add new entry
+        const newEntry: ITimesheetEntry = {
+          id: Date.now(),
+          ...formData
+        };
+        setEntries(prev => [...prev, newEntry]);
+        
+        // TODO: Create in SharePoint
+        // await timesheetService.createTimesheetLine(newEntry);
+        
+        alert(`Timesheet entry added: ${formData.hours} hours for ${formData.project}`);
+      }
+      
+      handleCloseModal();
+      
+    } catch (error) {
+      console.error('[TimesheetView] Error saving entry:', error);
+      alert('Error saving timesheet entry. Please try again.');
     }
-    
-    handleCloseModal();
   };
 
   // Delete entry
-  const handleDeleteEntry = (entryId: number): void => {
+  const handleDeleteEntry = async (entryId: number): Promise<void> => {
     if (confirm('Are you sure you want to delete this timesheet entry?')) {
-      const deletedEntry = entries.find(e => e.id === entryId);
-      setEntries(prev => prev.filter(e => e.id !== entryId));
-      if (deletedEntry) {
-        alert(`Timesheet entry deleted: ${deletedEntry.hours} hours for ${deletedEntry.project}`);
+      try {
+        const deletedEntry = entries.find(e => e.id === entryId);
+        setEntries(prev => prev.filter(e => e.id !== entryId));
+        
+        // TODO: Delete from SharePoint
+        // await timesheetService.deleteTimesheetLine(entryId);
+        
+        if (deletedEntry) {
+          alert(`Timesheet entry deleted: ${deletedEntry.hours} hours for ${deletedEntry.project}`);
+        }
+        
+      } catch (error) {
+        console.error('[TimesheetView] Error deleting entry:', error);
+        alert('Error deleting timesheet entry. Please try again.');
       }
     }
   };
 
   // Submit timesheet
-  const handleSubmitTimesheet = (): void => {
-    if (entries.length === 0) {
+  const handleSubmitTimesheet = async (): Promise<void> => {
+    const weekDays = getCurrentWeekDays();
+    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    
+    if (weekEntries.length === 0) {
       alert('Please add at least one timesheet entry before submitting.');
       return;
     }
     
-    const totalHours = entries.reduce((sum, entry) => sum + entry.hours, 0);
+    const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
     
-    if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${entries.length}\n\nYour timesheet will be sent for approval.`)) {
-      alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${entries.length}\n\nYour timesheet has been sent for approval.`);
+    if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet will be sent for approval.`)) {
+      try {
+        // TODO: Submit to SharePoint
+        // await timesheetService.submitTimesheet(timesheetId);
+        
+        alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet has been sent for approval.`);
+        
+      } catch (error) {
+        console.error('[TimesheetView] Error submitting timesheet:', error);
+        alert('Error submitting timesheet. Please try again.');
+      }
     }
   };
 
-  // Calculate totals
-  const totalHours = entries.reduce((sum, entry) => sum + entry.hours, 0);
-  const daysWithEntries = new Set(entries.map(e => e.date)).size;
+  // Calculate totals for current week
+  const calculateWeekTotals = () => {
+    const weekDays = getCurrentWeekDays();
+    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    
+    const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
+    const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
+    
+    return { totalHours, daysWithEntries, totalDays: weekDays.length };
+  };
+
+  // Get entries for a specific date
+  const getEntriesForDate = (date: string): ITimesheetEntry[] => {
+    return entries.filter(entry => entry.date === date);
+  };
+
+  // Calculate total hours for a date
+  const getTotalHoursForDate = (date: string): number => {
+    return getEntriesForDate(date).reduce((sum, entry) => sum + entry.hours, 0);
+  };
+
+  // Format date for display
+  const formatDateDisplay = (dateString: string): string => {
+    const date = new Date(dateString);
+    const options = { weekday: 'short', month: 'short', day: 'numeric' } as const;
+    return date.toLocaleDateString('en-US', options);
+  };
+
+  // Check if date is today
+  const isToday = (dateString: string): boolean => {
+    const today = new Date().toISOString().split('T')[0];
+    return dateString === today;
+  };
+
+  const { totalHours, daysWithEntries, totalDays } = calculateWeekTotals();
+  const weekDays = getCurrentWeekDays();
+  const weekRangeText = getWeekRangeText();
 
   return (
     <div className={styles.viewContainer}>
@@ -159,14 +322,24 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       <div className={styles.timesheetContainer}>
         {/* Week Navigation */}
         <div className={styles.weekNavigation}>
-          <button className={styles.weekNavBtn}>← Previous Week</button>
-          <div className={styles.weekDisplay}>Week of Jan 20-26, 2025</div>
-          <button className={styles.weekNavBtn}>Next Week →</button>
+          <button 
+            className={styles.weekNavBtn}
+            onClick={() => handleChangeWeek(-1)}
+          >
+            ← Previous Week
+          </button>
+          <div className={styles.weekDisplay}>{weekRangeText}</div>
+          <button 
+            className={styles.weekNavBtn}
+            onClick={() => handleChangeWeek(1)}
+          >
+            Next Week →
+          </button>
         </div>
         
         <div className={styles.timesheetHeader}>
           <div>
-            <h3>Week of Jan 20-26, 2025</h3>
+            <h3>{weekRangeText}</h3>
             <p>Log hours worked on each project daily (Max 9 hours per day)</p>
           </div>
           <div className={styles.timesheetActions}>
@@ -184,98 +357,81 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
         </div>
         
         {/* Timesheet Grid */}
-        <div className={styles.timesheetGrid}>
-          {/* Monday - Today with entries */}
-          <div className={`${styles.timesheetDay} ${styles.todayHighlight}`}>
-            <div className={styles.timesheetDayHeader}>
-              <div className={styles.dayInfo}>
-                <div className={styles.dayDate}>Mon, Jan 20 (Today) (Present)</div>
-                <span className={`${styles.dayStatusBadge} ${styles.pending}`}>Pending</span>
-              </div>
-              <div className={styles.dayTotal}>{totalHours.toFixed(1)}h / 7.0h</div>
-            </div>
-            
-            <div className={styles.timesheetEntries}>
-              {entries.filter(e => e.date === '2025-01-20').map(entry => (
-                <div key={entry.id} className={styles.timesheetEntry}>
-                  <div className={styles.entryHeader}>
-                    <div className={styles.projectName}>{entry.project}</div>
-                    <div className={styles.entryHours}>{entry.hours}h</div>
+        {isLoading ? (
+          <div style={{ textAlign: 'center', padding: '2rem' }}>
+            Loading timesheet data...
+          </div>
+        ) : (
+          <div className={styles.timesheetGrid}>
+            {weekDays.map((date, index) => {
+              const dateEntries = getEntriesForDate(date);
+              const dateTotalHours = getTotalHoursForDate(date);
+              const isTodayDate = isToday(date);
+              
+              return (
+                <div 
+                  key={date}
+                  className={`${styles.timesheetDay} ${isTodayDate ? styles.todayHighlight : ''}`}
+                >
+                  <div className={styles.timesheetDayHeader}>
+                    <div className={styles.dayInfo}>
+                      <div className={styles.dayDate}>
+                        {formatDateDisplay(date)} {isTodayDate && '(Today)'} (Present)
+                      </div>
+                      <span className={`${styles.dayStatusBadge} ${styles.pending}`}>
+                        Pending
+                      </span>
+                    </div>
+                    <div className={styles.dayTotal}>
+                      {dateTotalHours.toFixed(1)}h / 8.0h
+                    </div>
                   </div>
-                  <div className={styles.entryDescription}>
-                    {entry.description}
+                  
+                  <div className={styles.timesheetEntries}>
+                    {dateEntries.map(entry => (
+                      <div key={entry.id} className={styles.timesheetEntry}>
+                        <div className={styles.entryHeader}>
+                          <div className={styles.projectName}>{entry.project}</div>
+                          <div className={styles.entryHours}>{entry.hours}h</div>
+                        </div>
+                        <div className={styles.entryDescription}>
+                          {entry.description}
+                        </div>
+                        <div className={styles.entryActions}>
+                          <button 
+                            className={`${styles.entryActionBtn} ${styles.editBtn}`}
+                            onClick={() => handleEditEntry(entry)}
+                          >
+                            <span>✏️</span> Edit
+                          </button>
+                          <button 
+                            className={`${styles.entryActionBtn} ${styles.deleteBtn}`}
+                            onClick={() => handleDeleteEntry(entry.id)}
+                          >
+                            <span>🗑️</span> Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className={styles.entryActions}>
-                    <button 
-                      className={`${styles.entryActionBtn} ${styles.editBtn}`}
-                      onClick={() => handleEditEntry(entry)}
-                    >
-                      <span>✏️</span> Edit
-                    </button>
-                    <button 
-                      className={`${styles.entryActionBtn} ${styles.deleteBtn}`}
-                      onClick={() => handleDeleteEntry(entry.id)}
-                    >
-                      <span>🗑️</span> Delete
-                    </button>
-                  </div>
+                  
+                  <button 
+                    className={styles.addEntryBtn}
+                    onClick={() => handleAddEntry(date)}
+                  >
+                    + Add Entry for {formatDateDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
+                  </button>
                 </div>
-              ))}
-            </div>
-            
-            <button 
-              className={styles.addEntryBtn}
-              onClick={() => handleAddEntry('2025-01-20')}
-            >
-              + Add Entry for Mon, Jan 20 ({(7.0 - totalHours).toFixed(1)}h available)
-            </button>
+              );
+            })}
           </div>
-          
-          {/* Tuesday - No entries */}
-          <div className={styles.timesheetDay}>
-            <div className={styles.timesheetDayHeader}>
-              <div className={styles.dayInfo}>
-                <div className={styles.dayDate}>Tue, Jan 21 (Present)</div>
-                <span className={`${styles.dayStatusBadge} ${styles.pending}`}>Pending</span>
-              </div>
-              <div className={styles.dayTotal}>0.0h / 8.0h</div>
-            </div>
-            
-            <div className={styles.timesheetEntries}></div>
-            
-            <button 
-              className={styles.addEntryBtn}
-              onClick={() => handleAddEntry('2025-01-21')}
-            >
-              + Add Entry for Tue, Jan 21 (8.0h available)
-            </button>
-          </div>
-
-          {/* Wednesday - No entries */}
-          <div className={styles.timesheetDay}>
-            <div className={styles.timesheetDayHeader}>
-              <div className={styles.dayInfo}>
-                <div className={styles.dayDate}>Wed, Jan 22 (Present)</div>
-                <span className={`${styles.dayStatusBadge} ${styles.pending}`}>Pending</span>
-              </div>
-              <div className={styles.dayTotal}>0.0h / 8.0h</div>
-            </div>
-            
-            <div className={styles.timesheetEntries}></div>
-            
-            <button 
-              className={styles.addEntryBtn}
-              onClick={() => handleAddEntry('2025-01-22')}
-            >
-              + Add Entry for Wed, Jan 22 (8.0h available)
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Submit Timesheet Button */}
         <button 
           className={styles.submitTimesheetBtn}
           onClick={handleSubmitTimesheet}
+          disabled={isLoading}
         >
           <span>✓</span> Submit Timesheet
         </button>
@@ -287,7 +443,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
           <div className={styles.summaryLabel}>Total Hours</div>
         </div>
         <div className={styles.summaryItem}>
-          <div className={styles.summaryValue}>{daysWithEntries}/7</div>
+          <div className={styles.summaryValue}>{daysWithEntries}/{totalDays}</div>
           <div className={styles.summaryLabel}>Days Submitted</div>
         </div>
         <div className={styles.summaryItem}>

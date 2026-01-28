@@ -1,134 +1,175 @@
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
+import { SPHttpClient } from '@microsoft/sp-http';
+import { ApprovalService } from '../services/ApprovalService';
+import { UserService } from '../services/UserService';
+import { IRegularizationRequest } from '../models';
 
 export interface IRegularizationViewProps {
   onViewChange: (viewName: string) => void;
-}
-
-interface IRegularizationRequest {
-  id: number;
-  fromDate: string;
-  toDate: string;
-  type: 'day_based' | 'time_based';
-  category: string;
-  status: 'pending' | 'approved' | 'rejected';
-  submittedOn: string;
-  reason: string;
-  timeStart?: string;
-  timeEnd?: string;
+  spHttpClient: SPHttpClient;
+  siteUrl: string;
+  currentUserDisplayName: string;
 }
 
 const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
-  const { onViewChange } = props;
+  const { onViewChange, spHttpClient, siteUrl, currentUserDisplayName } = props;
   
+  // Services
+  const approvalService = React.useMemo(
+    () => new ApprovalService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
+
+  const userService = React.useMemo(
+    () => new UserService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
+
+  // State
   const [regularizationType, setRegularizationType] = React.useState<string>('day_based');
-  const [history, setHistory] = React.useState<IRegularizationRequest[]>([
-    {
-      id: 1,
-      fromDate: '2025-01-15',
-      toDate: '2025-01-15',
-      type: 'day_based',
-      category: 'late_coming',
-      status: 'pending',
-      submittedOn: '2025-01-14',
-      reason: 'Traffic delay due to road construction'
-    },
-    {
-      id: 2,
-      fromDate: '2025-01-10',
-      toDate: '2025-01-10',
-      type: 'day_based',
-      category: 'work_from_home',
-      status: 'approved',
-      submittedOn: '2025-01-09',
-      reason: 'Working from home due to personal reasons'
-    },
-    {
-      id: 3,
-      fromDate: '2025-01-05',
-      toDate: '2025-01-05',
-      type: 'day_based',
-      category: 'missed_punch',
-      status: 'rejected',
-      submittedOn: '2025-01-04',
-      reason: 'Forgot to punch out after working hours'
+  const [history, setHistory] = React.useState<IRegularizationRequest[]>([]);
+  const [isLoading, setIsLoading] = React.useState<boolean>(true);
+  const [isSaving, setIsSaving] = React.useState<boolean>(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [employeeId, setEmployeeId] = React.useState<string>('');
+
+  // Load data on mount
+  React.useEffect(() => {
+    loadRegularizationHistory();
+  }, []);
+
+  const loadRegularizationHistory = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Get current user info
+      const user = await userService.getCurrentUser();
+      const empId = user.EmployeeCode || user.Id.toString();
+      setEmployeeId(empId);
+
+      // Load regularization history from SharePoint
+      const requests = await approvalService.getEmployeeRegularizations(empId);
+      
+      setHistory(requests);
+      console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
+
+    } catch (err) {
+      console.error('[RegularizationView] Error loading regularization history:', err);
+      setError('Failed to load regularization history. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-  ]);
+  };
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRegularizationType(event.target.value);
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     
-    const form = event.currentTarget;
-    const formData = new FormData(form);
+    if (isSaving) return;
     
-    const fromDate = formData.get('fromDate') as string;
-    const toDate = formData.get('toDate') as string;
-    const category = formData.get('category') as string;
-    const reason = formData.get('reason') as string;
-    const timeStart = formData.get('timeStart') as string;
-    const timeEnd = formData.get('timeEnd') as string;
-    
-    // Validation
-    if (new Date(toDate) < new Date(fromDate)) {
-      alert('To Date cannot be earlier than From Date');
-      return;
+    try {
+      setIsSaving(true);
+      setError(null);
+
+      const form = event.currentTarget;
+      const formData = new FormData(form);
+      
+      const fromDate = formData.get('fromDate') as string;
+      const toDate = formData.get('toDate') as string;
+      const category = formData.get('category') as string;
+      const reason = formData.get('reason') as string;
+      const timeStart = formData.get('timeStart') as string;
+      const timeEnd = formData.get('timeEnd') as string;
+      
+      // Validation
+      if (new Date(toDate) < new Date(fromDate)) {
+        alert('To Date cannot be earlier than From Date');
+        setIsSaving(false);
+        return;
+      }
+      
+      if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
+        alert('Please fill in all time-based fields.');
+        setIsSaving(false);
+        return;
+      }
+      
+      if (regularizationType === 'time_based' && timeStart >= timeEnd) {
+        alert('End Time must be after Start Time.');
+        setIsSaving(false);
+        return;
+      }
+      
+      // Create request object for SharePoint
+      const newRequest = {
+        EmployeeID: employeeId,
+        RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
+        StartDate: fromDate,
+        EndDate: toDate,
+        ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
+        ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
+        Reason: `${category.replace(/_/g, ' ').toUpperCase()}: ${reason}`,
+        Status: 'Pending'
+      };
+      
+      // Submit to SharePoint
+      const createdRequest = await approvalService.submitRegularizationRequest(newRequest);
+      
+      // Add to local history
+      const displayRequest: IRegularizationRequest = {
+        id: createdRequest.Id,
+        employeeId: employeeId,
+        employeeName: currentUserDisplayName,
+        requestType: regularizationType as 'day_based' | 'time_based',
+        category: category as any,
+        fromDate: fromDate,
+        toDate: toDate,
+        startTime: regularizationType === 'time_based' ? timeStart : undefined,
+        endTime: regularizationType === 'time_based' ? timeEnd : undefined,
+        reason: reason,
+        status: 'pending',
+        submittedOn: new Date().toISOString().split('T')[0]
+      };
+      
+      setHistory(prev => [displayRequest, ...prev]);
+      
+      // Format category for display
+      const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      
+      let successMessage = `Regularization request submitted successfully!\n\n`;
+      successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
+      successMessage += `From: ${fromDate}\n`;
+      successMessage += `To: ${toDate}\n`;
+      successMessage += `Category: ${categoryText}\n`;
+      
+      if (regularizationType === 'time_based') {
+        successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
+      }
+      
+      successMessage += `Reason: ${reason}\n`;
+      successMessage += `Status: Pending Approval\n`;
+      successMessage += `Note: Your manager will review and approve this request.`;
+      
+      alert(successMessage);
+      
+      // Reset form
+      form.reset();
+      setRegularizationType('day_based');
+      
+      // Navigate to dashboard
+      onViewChange('dashboard');
+
+    } catch (err) {
+      console.error('[RegularizationView] Error submitting regularization:', err);
+      alert('Failed to submit regularization request. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
-    
-    if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
-      alert('Please fill in all time-based fields.');
-      return;
-    }
-    
-    if (regularizationType === 'time_based' && timeStart >= timeEnd) {
-      alert('End Time must be after Start Time.');
-      return;
-    }
-    
-    // Create new request
-    const newRequest: IRegularizationRequest = {
-      id: Date.now(),
-      fromDate: fromDate,
-      toDate: toDate,
-      type: regularizationType as 'day_based' | 'time_based',
-      category: category,
-      status: 'pending',
-      submittedOn: new Date().toISOString().split('T')[0],
-      reason: reason,
-      timeStart: regularizationType === 'time_based' ? timeStart : undefined,
-      timeEnd: regularizationType === 'time_based' ? timeEnd : undefined
-    };
-    
-    setHistory(prev => [newRequest, ...prev]);
-    
-    // Format category for display
-    const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    
-    let successMessage = `Regularization request submitted successfully!\n\n`;
-    successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
-    successMessage += `From: ${fromDate}\n`;
-    successMessage += `To: ${toDate}\n`;
-    successMessage += `Category: ${categoryText}\n`;
-    
-    if (regularizationType === 'time_based') {
-      successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
-    }
-    
-    successMessage += `Reason: ${reason}\n`;
-    successMessage += `Status: Pending Approval\n`;
-    successMessage += `Note: Your manager will review and approve this request.`;
-    
-    alert(successMessage);
-    
-    // Reset form
-    form.reset();
-    setRegularizationType('day_based');
-    
-    // Navigate to dashboard
-    onViewChange('dashboard');
   };
 
   const handleView = (request: IRegularizationRequest): void => {
@@ -138,7 +179,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     
     let message = `Regularization Request Details:\n\n`;
     message += `ID: ${request.id}\n`;
-    message += `Type: ${request.type === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
+    message += `Type: ${request.requestType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
     message += `Date Range: ${fromDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
     
     if (request.fromDate !== request.toDate) {
@@ -153,36 +194,68 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     message += `Status: ${request.status.charAt(0).toUpperCase() + request.status.slice(1)}\n`;
     message += `Submitted On: ${submittedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
     
-    if (request.type === 'time_based' && request.timeStart && request.timeEnd) {
-      message += `Time: ${request.timeStart} to ${request.timeEnd}\n`;
+    if (request.requestType === 'time_based' && request.startTime && request.endTime) {
+      message += `Time: ${request.startTime} to ${request.endTime}\n`;
     }
     
     message += `Reason: ${request.reason}\n`;
     
+    if (request.approvedBy) {
+      const approvedDate = new Date(request.approvedOn!);
+      message += `\nApproval Details:\n`;
+      message += `Approved By: ${request.approvedBy}\n`;
+      message += `Approved On: ${approvedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
+    }
+    
+    if (request.managerComment) {
+      message += `Manager Comment: ${request.managerComment}\n`;
+    }
+    
     alert(message);
   };
 
-  const handleRecall = (requestId: number): void => {
-    if (confirm('Are you sure you want to recall this pending regularization request?')) {
+  const handleRecall = async (requestId: number): Promise<void> => {
+    if (!confirm('Are you sure you want to recall this pending regularization request?')) {
+      return;
+    }
+
+    try {
+      // TODO: Implement recall/delete functionality in SharePoint
+      // For now, just remove from local state
       setHistory(prev => prev.filter(req => req.id !== requestId));
       alert('Regularization request recalled successfully.');
+      
+      // In production, you would call:
+      // await approvalService.deleteRegularizationRequest(requestId);
+
+    } catch (err) {
+      console.error('[RegularizationView] Error recalling request:', err);
+      alert('Failed to recall regularization request. Please try again.');
     }
   };
 
-  const handleCancel = (requestId: number): void => {
-    if (confirm('Are you sure you want to cancel this approved regularization request?')) {
+  const handleCancel = async (requestId: number): Promise<void> => {
+    if (!confirm('Are you sure you want to cancel this approved regularization request?')) {
+      return;
+    }
+
+    try {
+      // TODO: Implement cancel functionality
       setHistory(prev => prev.map(req => 
         req.id === requestId 
           ? { ...req, status: 'rejected' as const }
           : req
       ));
       alert('Regularization request cancelled successfully.');
+
+    } catch (err) {
+      console.error('[RegularizationView] Error cancelling request:', err);
+      alert('Failed to cancel regularization request. Please try again.');
     }
   };
 
   const handleRefresh = (): void => {
-    // In production, this would fetch from SharePoint
-    alert('History refreshed.');
+    loadRegularizationHistory();
   };
 
   const formatCategoryText = (category: string): string => {
@@ -199,6 +272,35 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     
     return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
+
+  if (isLoading) {
+    return (
+      <div className={styles.viewContainer}>
+        <div className={styles.dashboardHeader}>
+          <h1>Attendance Regularization</h1>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !history.length) {
+    return (
+      <div className={styles.viewContainer}>
+        <div className={styles.dashboardHeader}>
+          <h1>Attendance Regularization</h1>
+          <p style={{ color: 'var(--danger)' }}>{error}</p>
+          <button 
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            onClick={loadRegularizationHistory}
+            style={{ marginTop: '1rem' }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.viewContainer}>
@@ -218,6 +320,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 value="day_based" 
                 checked={regularizationType === 'day_based'}
                 onChange={handleTypeChange}
+                disabled={isSaving}
               />
               <span className={styles.radioLabel}>Day-based</span>
             </label>
@@ -228,6 +331,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 value="time_based"
                 checked={regularizationType === 'time_based'}
                 onChange={handleTypeChange}
+                disabled={isSaving}
               />
               <span className={styles.radioLabel}>Time-based</span>
             </label>
@@ -241,6 +345,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 name="fromDate"
                 className={styles.formInput} 
                 defaultValue={new Date().toISOString().split('T')[0]}
+                disabled={isSaving}
                 required  
               />
             </div>
@@ -251,12 +356,18 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 name="toDate"
                 className={styles.formInput} 
                 defaultValue={new Date().toISOString().split('T')[0]}
+                disabled={isSaving}
                 required  
               />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Category *</label>
-              <select name="category" className={styles.formSelect} required >
+              <select 
+                name="category" 
+                className={styles.formSelect}
+                disabled={isSaving}
+                required
+              >
                 <option value="">Choose category...</option>
                 <option value="late_coming">Late Coming</option>
                 <option value="early_going">Early Going</option>
@@ -276,6 +387,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                   type="time" 
                   name="timeStart"
                   className={styles.formInput}
+                  disabled={isSaving}
                   required={regularizationType === 'time_based'}
                 />
               </div>
@@ -285,6 +397,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                   type="time" 
                   name="timeEnd"
                   className={styles.formInput}
+                  disabled={isSaving}
                   required={regularizationType === 'time_based'}
                 />
               </div>
@@ -297,6 +410,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               name="reason"
               className={styles.formTextarea} 
               placeholder="Explain why you need attendance regularization..." 
+              disabled={isSaving}
               required 
             ></textarea>
           </div>
@@ -306,11 +420,16 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               type="button" 
               className={`${styles.btn} ${styles.btnOutline}`}
               onClick={() => onViewChange('dashboard')}
+              disabled={isSaving}
             >
               Cancel
             </button>
-            <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`}>
-              Submit Request
+            <button 
+              type="submit" 
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Submitting...' : 'Submit Request'}
             </button>
           </div>
         </form>
@@ -323,8 +442,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
           <button 
             className={`${styles.btn} ${styles.btnOutline}`}
             onClick={handleRefresh}
+            disabled={isLoading}
           >
-            Refresh
+            {isLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
         
@@ -371,7 +491,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                         </button>
                         <button 
                           className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                          onClick={() => handleRecall(request.id)}
+                          onClick={() => handleRecall(request.id!)}
                         >
                           Recall
                         </button>
@@ -387,7 +507,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                         </button>
                         <button 
                           className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                          onClick={() => handleCancel(request.id)}
+                          onClick={() => handleCancel(request.id!)}
                         >
                           Cancel
                         </button>
