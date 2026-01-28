@@ -6,6 +6,12 @@ import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
 import { IUserInfo } from '../models';
 
+export interface IUserPermissions {
+  isManager: boolean;
+  isAdmin: boolean;
+  isMember: boolean;
+}
+
 export class UserService {
   private httpService: HttpClientService;
   private spHttpClient: SPHttpClient;
@@ -26,7 +32,7 @@ export class UserService {
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+        SPHttpClient.configurations.v1
       );
       
       if (!response.ok) {
@@ -49,6 +55,56 @@ export class UserService {
   }
 
   /**
+   * Get user permissions (isManager, isAdmin, isMember)
+   */
+  public async getUserPermissions(): Promise<IUserPermissions> {
+    try {
+      // Check group membership for determining permissions
+      const [isManager, isAdmin] = await Promise.all([
+        this.isUserInGroup('Timesheet-Managers'),
+        this.isUserInGroup('Timesheet-Admins')
+      ]);
+
+      return {
+        isManager: isManager || isAdmin, // Admins are also considered managers
+        isAdmin: isAdmin,
+        isMember: !isAdmin && !isManager // Regular members
+      };
+      
+    } catch (error) {
+      console.error('[UserService] Error getting user permissions:', error);
+      
+      // Return default permissions on error
+      return {
+        isManager: false,
+        isAdmin: false,
+        isMember: true
+      };
+    }
+  }
+
+  /**
+   * Get user role as a simple string (Admin, Manager, or Member)
+   */
+  public async getUserRole(): Promise<'Admin' | 'Manager' | 'Member'> {
+    try {
+      const permissions = await this.getUserPermissions();
+      
+      if (permissions.isAdmin) {
+        return 'Admin';
+      } else if (permissions.isManager) {
+        return 'Manager';
+      } else {
+        return 'Member';
+      }
+      
+    } catch (error) {
+      console.error('[UserService] Error getting user role:', error);
+      return 'Member'; // Default to Member on error
+    }
+  }
+
+  /**
    * Get user by ID
    * @param userId User ID
    */
@@ -58,7 +114,7 @@ export class UserService {
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+        SPHttpClient.configurations.v1
       );
       
       if (!response.ok) {
@@ -93,7 +149,7 @@ export class UserService {
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+        SPHttpClient.configurations.v1
       );
       
       if (!response.ok) {
@@ -132,7 +188,7 @@ export class UserService {
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+        SPHttpClient.configurations.v1
       );
       
       if (!response.ok) {
@@ -170,7 +226,7 @@ export class UserService {
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+        SPHttpClient.configurations.v1
       );
       
       if (!response.ok) {
@@ -197,7 +253,7 @@ export class UserService {
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1 // FIXED: Access static property correctly
+        SPHttpClient.configurations.v1
       );
       
       if (!response.ok) {
