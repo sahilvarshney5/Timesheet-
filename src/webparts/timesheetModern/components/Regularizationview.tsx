@@ -3,7 +3,7 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
 import { UserService } from '../services/UserService';
-import { IRegularizationRequest } from '../models';
+import { IRegularizationRequest, IAttendanceRegularization } from '../models';
 
 export interface IRegularizationViewProps {
   onViewChange: (viewName: string) => void;
@@ -32,7 +32,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [employeeId, setEmployeeId] = React.useState<string>('');
+  const [employeeId, setEmployeeId] = React.useState<Number>(0);
 
   // Load data on mount
   React.useEffect(() => {
@@ -46,7 +46,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
       // Get current user info
       const user = await userService.getCurrentUser();
-      const empId = user.EmployeeCode || user.Id.toString();
+      const empId = user.Id;
       setEmployeeId(empId);
 
       // Load regularization history from SharePoint
@@ -105,8 +105,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         return;
       }
       
-      // Create request object for SharePoint
-      const newRequest = {
+      // FIXED: Create request object with proper type casting
+      const newRequest: Partial<IAttendanceRegularization> = {
         EmployeeID: employeeId,
         RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
         StartDate: fromDate,
@@ -114,7 +114,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
         ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
         Reason: `${category.replace(/_/g, ' ').toUpperCase()}: ${reason}`,
-        Status: 'Pending'
+        Status: 'Pending' as 'Pending' // Type assertion to fix the error
       };
       
       // Submit to SharePoint

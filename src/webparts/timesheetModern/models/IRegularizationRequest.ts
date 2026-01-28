@@ -1,6 +1,6 @@
 export interface IRegularizationRequest {
   id?: number;
-  employeeId: string;
+  employeeId: Number;
   employeeName: string;
   requestType: 'day_based' | 'time_based';
   category: 'late_coming' | 'early_going' | 'missed_punch' | 'work_from_home' | 'on_duty';

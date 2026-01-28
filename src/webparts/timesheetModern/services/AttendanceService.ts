@@ -20,7 +20,7 @@ export class AttendanceService {
    * @param startDate Start date (ISO format)
    * @param endDate End date (ISO format)
    */
-  public async getPunchData(employeeId: string, startDate: string, endDate: string): Promise<IPunchData[]> {
+  public async getPunchData(employeeId: number, startDate: string, endDate: string): Promise<IPunchData[]> {
     try {
       // TODO: Implement REST call to PunchData list
       const listName = getListInternalName('punchData');
@@ -71,7 +71,7 @@ export class AttendanceService {
    * @param year Year
    * @param month Month (1-12)
    */
-  public async getPunchDataForMonth(employeeId: string, year: number, month: number): Promise<IPunchData[]> {
+  public async getPunchDataForMonth(employeeId: number, year: number, month: number): Promise<IPunchData[]> {
     try {
       // Calculate first and last day of month
       const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
@@ -264,7 +264,7 @@ export class AttendanceService {
    * @param endDate End date (ISO format)
    */
   public async getAttendanceStatistics(
-    employeeId: string,
+    employeeId: Number,
     startDate: string,
     endDate: string
   ): Promise<{ daysPresent: number; daysAbsent: number; totalHours: number }> {

@@ -71,9 +71,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       //   endDate
       // );
       
-      // For now, filter existing entries by week
+      // FIXED: For now, filter existing entries by week using indexOf instead of includes
       const weekEntries = entries.filter(entry => 
-        weekDays.includes(entry.date)
+        weekDays.indexOf(entry.date) !== -1
       );
       
       console.log(`[TimesheetView] Loaded ${weekEntries.length} entries for week ${startDate} to ${endDate}`);
@@ -251,7 +251,10 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // Submit timesheet
   const handleSubmitTimesheet = async (): Promise<void> => {
     const weekDays = getCurrentWeekDays();
-    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    // FIXED: Use indexOf instead of includes
+    const weekEntries = entries.filter(entry => 
+      weekDays.indexOf(entry.date) !== -1
+    );
     
     if (weekEntries.length === 0) {
       alert('Please add at least one timesheet entry before submitting.');
@@ -277,7 +280,10 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // Calculate totals for current week
   const calculateWeekTotals = () => {
     const weekDays = getCurrentWeekDays();
-    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    // FIXED: Use indexOf instead of includes
+    const weekEntries = entries.filter(entry => 
+      weekDays.indexOf(entry.date) !== -1
+    );
     
     const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
     const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
