@@ -163,14 +163,13 @@ export class TimesheetService {
       console.log(`[TimesheetService] createTimesheetHeader for ${employeeId}, week ${weekStartDate}`);
     
       const header: ITimesheetHeader = {
-  Id: -1,
-  EmployeeId: Number(employeeId),
-  WeekStartDate: weekStartDate,
-  WeekEndDate: '', // TODO: calculate week end if missing
-  Status: 'Draft'
-};
-return header as ITimesheetHeader;
-
+        Id: -1,
+        EmployeeId: Number(employeeId),
+        WeekStartDate: weekStartDate,
+        WeekEndDate: '', // TODO: calculate week end if missing
+        Status: 'Draft'
+      };
+      return header as ITimesheetHeader;
       
     } catch (error) {
       console.error('[TimesheetService] Error creating timesheet header:', error);
@@ -327,7 +326,12 @@ return header as ITimesheetHeader;
       // TODO: Implement calculation from TimesheetLines
       const lines = await this.getTimesheetLines(timesheetId);
       
-      const totalHours = lines.reduce((sum, line) => sum + line.HoursBooked, 0);
+      // FIXED: Handle potentially undefined HoursBooked values
+      const totalHours = lines.reduce((sum, line) => {
+        // Use nullish coalescing to provide default value of 0 if HoursBooked is undefined
+        const hours = line.HoursBooked ?? 0;
+        return sum + hours;
+      }, 0);
       
       return totalHours;
       

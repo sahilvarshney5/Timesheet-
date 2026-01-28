@@ -189,7 +189,8 @@ export class AttendanceService {
         let leaveType: 'sick' | 'casual' | 'earned' | undefined = undefined;
         
         // Check if weekend
-        if (dayOfWeek === 0 || dayOfWeek === 6) {
+        const isWeekendDay = dayOfWeek === 0 || dayOfWeek === 6;
+        if (isWeekendDay) {
           status = 'weekend';
         }
         
@@ -200,12 +201,19 @@ export class AttendanceService {
           return date >= leaveStart && date <= leaveEnd;
         });
         
+        const isLeaveDay = !!dayLeave;
         if (dayLeave) {
           status = 'leave';
           // Map leave type
           if (dayLeave.LeaveType.includes('Sick')) leaveType = 'sick';
           else if (dayLeave.LeaveType.includes('Casual')) leaveType = 'casual';
           else if (dayLeave.LeaveType.includes('Earned')) leaveType = 'earned';
+        }
+        
+        // Check if holiday
+        const isHolidayDay = false; // TODO: Add holiday logic
+        if (isHolidayDay) {
+          status = 'holiday';
         }
         
         // Find punch data for this day
@@ -217,6 +225,7 @@ export class AttendanceService {
                        date.getMonth() === today.getMonth() && 
                        date.getFullYear() === today.getFullYear();
         
+        // FIXED: Include all required properties from ITimesheetDay interface
         calendarDays.push({
           date: dateString,
           dayNumber: day,
@@ -231,7 +240,12 @@ export class AttendanceService {
             percentage: 0,
             status: 'notFilled'
           },
-          isToday: isToday
+          isToday: isToday,
+          // ADDED: Required properties from ITimesheetDay interface
+          isWeekend: isWeekendDay,
+          isHoliday: isHolidayDay,
+          isLeave: isLeaveDay,
+          entries: [] // TODO: Load actual timesheet entries from TimesheetService
         });
       }
       
