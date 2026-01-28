@@ -62,13 +62,13 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
                 <td><span className={`${styles.statusBadge} ${styles.statusPending}`}>Pending</span></td>
                 <td>
                   <div className={styles.actionButtons}>
-                    <button className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`} disabled>
+                    <button className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`} >
                       ✓ Approve
                     </button>
-                    <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} disabled>
+                    <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} >
                       ✗ Reject
                     </button>
-                    <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>
+                    <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >
                       View
                     </button>
                   </div>
@@ -85,13 +85,13 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
                 <td><span className={`${styles.statusBadge} ${styles.statusPending}`}>Pending</span></td>
                 <td>
                   <div className={styles.actionButtons}>
-                    <button className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`} disabled>
+                    <button className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`} >
                       ✓ Approve
                     </button>
-                    <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} disabled>
+                    <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} >
                       ✗ Reject
                     </button>
-                    <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>
+                    <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >
                       View
                     </button>
                   </div>
@@ -129,7 +129,7 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
                 <td><span className={`${styles.statusBadge} ${styles.statusApproved}`}>Approved</span></td>
                 <td>Jan 8, 2025</td>
                 <td>
-                  <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>
+                  <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >
                     View
                   </button>
                 </td>
@@ -145,7 +145,7 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
                 <td><span className={`${styles.statusBadge} ${styles.statusRejected}`}>Rejected</span></td>
                 <td>Jan 3, 2025</td>
                 <td>
-                  <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>
+                  <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >
                     View
                   </button>
                 </td>

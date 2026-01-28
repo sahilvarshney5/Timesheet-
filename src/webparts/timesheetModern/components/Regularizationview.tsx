@@ -54,15 +54,15 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
           <div className={styles.formRow3}>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>From Date *</label>
-              <input type="date" className={styles.formInput} required disabled />
+              <input type="date" className={styles.formInput} required  />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>To Date *</label>
-              <input type="date" className={styles.formInput} required disabled />
+              <input type="date" className={styles.formInput} required  />
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Category *</label>
-              <select className={styles.formSelect} required disabled>
+              <select className={styles.formSelect} required >
                 <option value="">Choose category...</option>
                 <option value="late_coming">Late Coming</option>
                 <option value="early_going">Early Going</option>
@@ -78,11 +78,11 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
             <div className={styles.formRow}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Start Time *</label>
-                <input type="time" className={styles.formInput} disabled />
+                <input type="time" className={styles.formInput}  />
               </div>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>End Time *</label>
-                <input type="time" className={styles.formInput} disabled />
+                <input type="time" className={styles.formInput}  />
               </div>
             </div>
           </div>
@@ -93,7 +93,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               className={styles.formTextarea} 
               placeholder="Explain why you need attendance regularization..." 
               required 
-              disabled
+              
             ></textarea>
           </div>
           
@@ -105,7 +105,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
             >
               Cancel
             </button>
-            <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled>
+            <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} >
               Submit Request
             </button>
           </div>
@@ -116,7 +116,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       <div className={styles.regularizationHistory}>
         <div className={styles.historyHeader}>
           <h3>Regularization History</h3>
-          <button className={`${styles.btn} ${styles.btnOutline}`} disabled>Refresh</button>
+          <button className={`${styles.btn} ${styles.btnOutline}`} >Refresh</button>
         </div>
         
         <table className={styles.historyTable}>
@@ -136,8 +136,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               <td><span className={`${styles.statusBadge} ${styles.statusPending}`}>Pending</span></td>
               <td>Jan 14, 2025</td>
               <td>
-                <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>View</button>
-                <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} disabled>Recall</button>
+                <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >View</button>
+                <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} >Recall</button>
               </td>
             </tr>
             <tr>
@@ -146,8 +146,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               <td><span className={`${styles.statusBadge} ${styles.statusApproved}`}>Approved</span></td>
               <td>Jan 9, 2025</td>
               <td>
-                <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>View</button>
-                <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} disabled>Cancel</button>
+                <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >View</button>
+                <button className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`} >Cancel</button>
               </td>
             </tr>
             <tr>
@@ -156,7 +156,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               <td><span className={`${styles.statusBadge} ${styles.statusRejected}`}>Rejected</span></td>
               <td>Jan 4, 2025</td>
               <td>
-                <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} disabled>View</button>
+                <button className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`} >View</button>
               </td>
             </tr>
           </tbody>

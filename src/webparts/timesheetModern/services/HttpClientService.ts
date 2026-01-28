@@ -58,21 +58,21 @@ export class HttpClientService {
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items?${queryString}`;
       
       // TODO: Uncomment when ready to use
-      // const response: SPHttpClientResponse = await this.spHttpClient.get(
-      //   endpoint,
-      //   SPHttpClient.configurations.v1
-      // );
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1
+      );
       
-      // if (!response.ok) {
-      //   throw new Error(`Failed to fetch items from ${listName}: ${response.statusText}`);
-      // }
+      if (!response.ok) {
+        throw new Error(`Failed to fetch items from ${listName}: ${response.statusText}`);
+      }
       
-      // const data = await response.json();
-      // return data.value as T[];
+      const data = await response.json();
+      return data.value as T[];
       
       // PLACEHOLDER: Return empty array until REST is implemented
-      console.log(`[HttpClientService] GET ${endpoint}`);
-      return [] as T[];
+      // console.log(`[HttpClientService] GET ${endpoint}`);
+      // return [] as T[];
       
     } catch (error) {
       console.error(`[HttpClientService] Error fetching items from ${listName}:`, error);
@@ -119,25 +119,25 @@ export class HttpClientService {
       let endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items?${queryString}`;
       
       // TODO: Uncomment when ready to use
-      // do {
-      //   const response: SPHttpClientResponse = await this.spHttpClient.get(
-      //     endpoint,
-      //     SPHttpClient.configurations.v1
-      //   );
+      do {
+        const response: SPHttpClientResponse = await this.spHttpClient.get(
+          endpoint,
+          SPHttpClient.configurations.v1
+        );
         
-      //   if (!response.ok) {
-      //     throw new Error(`Failed to fetch items from ${listName}: ${response.statusText}`);
-      //   }
+        if (!response.ok) {
+          throw new Error(`Failed to fetch items from ${listName}: ${response.statusText}`);
+        }
         
-      //   const data = await response.json();
-      //   allItems.push(...(data.value as T[]));
+        const data = await response.json();
+        allItems.push(...(data.value as T[]));
         
-      //   // Check for next page
-      //   nextLink = data['@odata.nextLink'] || null;
-      //   if (nextLink) {
-      //     endpoint = nextLink;
-      //   }
-      // } while (nextLink);
+        // Check for next page
+        nextLink = data['@odata.nextLink'] || null;
+        if (nextLink) {
+          endpoint = nextLink;
+        }
+      } while (nextLink);
       
       // PLACEHOLDER: Return empty array until REST is implemented
       console.log(`[HttpClientService] GET (Paged) ${endpoint}`);
@@ -178,24 +178,24 @@ export class HttpClientService {
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items(${itemId})${queryString}`;
       
       // TODO: Uncomment when ready to use
-      // const response: SPHttpClientResponse = await this.spHttpClient.get(
-      //   endpoint,
-      //   SPHttpClient.configurations.v1
-      // );
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1
+      );
       
-      // if (!response.ok) {
-      //   if (response.status === 404) {
-      //     return null;
-      //   }
-      //   throw new Error(`Failed to fetch item ${itemId} from ${listName}: ${response.statusText}`);
-      // }
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        throw new Error(`Failed to fetch item ${itemId} from ${listName}: ${response.statusText}`);
+      }
       
-      // const data = await response.json();
-      // return data as T;
+      const data = await response.json();
+      return data as T;
       
       // PLACEHOLDER: Return null until REST is implemented
-      console.log(`[HttpClientService] GET ${endpoint}`);
-      return null;
+      // console.log(`[HttpClientService] GET ${endpoint}`);
+      // return null;
       
     } catch (error) {
       console.error(`[HttpClientService] Error fetching item ${itemId} from ${listName}:`, error);
@@ -214,28 +214,28 @@ export class HttpClientService {
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items`;
       
       // TODO: Uncomment when ready to use
-      // const response: SPHttpClientResponse = await this.spHttpClient.post(
-      //   endpoint,
-      //   SPHttpClient.configurations.v1,
-      //   {
-      //     headers: {
-      //       'Accept': 'application/json;odata=verbose',
-      //       'Content-Type': 'application/json;odata=verbose'
-      //     },
-      //     body: JSON.stringify(itemData)
-      //   }
-      // );
+      const response: SPHttpClientResponse = await this.spHttpClient.post(
+        endpoint,
+        SPHttpClient.configurations.v1,
+        {
+          headers: {
+            'Accept': 'application/json;odata=verbose',
+            'Content-Type': 'application/json;odata=verbose'
+          },
+          body: JSON.stringify(itemData)
+        }
+      );
       
-      // if (!response.ok) {
-      //   throw new Error(`Failed to create item in ${listName}: ${response.statusText}`);
-      // }
+      if (!response.ok) {
+        throw new Error(`Failed to create item in ${listName}: ${response.statusText}`);
+      }
       
-      // const data = await response.json();
-      // return data.d as T;
+      const data = await response.json();
+      return data.d as T;
       
       // PLACEHOLDER: Return mock data until REST is implemented
-      console.log(`[HttpClientService] POST ${endpoint}`, itemData);
-      return { Id: -1, ...itemData } as T;
+      // console.log(`[HttpClientService] POST ${endpoint}`, itemData);
+      // return { Id: -1, ...itemData } as T;
       
     } catch (error) {
       console.error(`[HttpClientService] Error creating item in ${listName}:`, error);
@@ -255,23 +255,23 @@ export class HttpClientService {
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items(${itemId})`;
       
       // TODO: Uncomment when ready to use
-      // const response: SPHttpClientResponse = await this.spHttpClient.post(
-      //   endpoint,
-      //   SPHttpClient.configurations.v1,
-      //   {
-      //     headers: {
-      //       'Accept': 'application/json;odata=verbose',
-      //       'Content-Type': 'application/json;odata=verbose',
-      //       'IF-MATCH': '*',
-      //       'X-HTTP-Method': 'MERGE'
-      //     },
-      //     body: JSON.stringify(itemData)
-      //   }
-      // );
+      const response: SPHttpClientResponse = await this.spHttpClient.post(
+        endpoint,
+        SPHttpClient.configurations.v1,
+        {
+          headers: {
+            'Accept': 'application/json;odata=verbose',
+            'Content-Type': 'application/json;odata=verbose',
+            'IF-MATCH': '*',
+            'X-HTTP-Method': 'MERGE'
+          },
+          body: JSON.stringify(itemData)
+        }
+      );
       
-      // if (!response.ok) {
-      //   throw new Error(`Failed to update item ${itemId} in ${listName}: ${response.statusText}`);
-      // }
+      if (!response.ok) {
+        throw new Error(`Failed to update item ${itemId} in ${listName}: ${response.statusText}`);
+      }
       
       // PLACEHOLDER: Return mock data until REST is implemented
       console.log(`[HttpClientService] MERGE ${endpoint}`, itemData);
@@ -294,21 +294,21 @@ export class HttpClientService {
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items(${itemId})`;
       
       // TODO: Uncomment when ready to use
-      // const response: SPHttpClientResponse = await this.spHttpClient.post(
-      //   endpoint,
-      //   SPHttpClient.configurations.v1,
-      //   {
-      //     headers: {
-      //       'Accept': 'application/json;odata=verbose',
-      //       'IF-MATCH': '*',
-      //       'X-HTTP-Method': 'DELETE'
-      //     }
-      //   }
-      // );
+      const response: SPHttpClientResponse = await this.spHttpClient.post(
+        endpoint,
+        SPHttpClient.configurations.v1,
+        {
+          headers: {
+            'Accept': 'application/json;odata=verbose',
+            'IF-MATCH': '*',
+            'X-HTTP-Method': 'DELETE'
+          }
+        }
+      );
       
-      // if (!response.ok) {
-      //   throw new Error(`Failed to delete item ${itemId} from ${listName}: ${response.statusText}`);
-      // }
+      if (!response.ok) {
+        throw new Error(`Failed to delete item ${itemId} from ${listName}: ${response.statusText}`);
+      }
       
       // PLACEHOLDER: Log until REST is implemented
       console.log(`[HttpClientService] DELETE ${endpoint}`);
@@ -328,26 +328,26 @@ export class HttpClientService {
       const endpoint = `${this.siteUrl}/_api/web/currentuser`;
       
       // TODO: Uncomment when ready to use
-      // const response: SPHttpClientResponse = await this.spHttpClient.get(
-      //   endpoint,
-      //   SPHttpClient.configurations.v1
-      // );
+      const response: SPHttpClientResponse = await this.spHttpClient.get(
+        endpoint,
+        SPHttpClient.configurations.v1
+      );
       
-      // if (!response.ok) {
-      //   throw new Error(`Failed to get current user: ${response.statusText}`);
-      // }
+      if (!response.ok) {
+        throw new Error(`Failed to get current user: ${response.statusText}`);
+      }
       
-      // const data = await response.json();
-      // return data;
+      const data = await response.json();
+      return data;
       
       // PLACEHOLDER: Return mock data until REST is implemented
-      console.log(`[HttpClientService] GET ${endpoint}`);
-      return {
-        Id: 1,
-        Title: 'Admin User',
-        Email: 'admin@example.com',
-        LoginName: 'i:0#.f|membership|admin@example.com'
-      };
+      // console.log(`[HttpClientService] GET ${endpoint}`);
+      // return {
+      //   Id: 1,
+      //   Title: 'Admin User',
+      //   Email: 'admin@example.com',
+      //   LoginName: 'i:0#.f|membership|admin@example.com'
+      // };
       
     } catch (error) {
       console.error('[HttpClientService] Error getting current user:', error);

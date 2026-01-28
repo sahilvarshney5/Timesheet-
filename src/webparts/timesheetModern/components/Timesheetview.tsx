@@ -20,9 +20,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       <div className={styles.timesheetContainer}>
         {/* Week Navigation */}
         <div className={styles.weekNavigation}>
-          <button className={styles.weekNavBtn} disabled>← Previous Week</button>
+          <button className={styles.weekNavBtn} >← Previous Week</button>
           <div className={styles.weekDisplay}>Week of Jan 20-26, 2025</div>
-          <button className={styles.weekNavBtn} disabled>Next Week →</button>
+          <button className={styles.weekNavBtn} >Next Week →</button>
         </div>
         
         <div className={styles.timesheetHeader}>
@@ -35,7 +35,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
               <span>Available Hours:</span>
               <span>9</span>/9
             </div>
-            <button className={`${styles.btn} ${styles.btnPurple}`} disabled>+ Add Entry</button>
+            <button className={`${styles.btn} ${styles.btnPurple}`} >+ Add Entry</button>
           </div>
         </div>
         
@@ -61,10 +61,10 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                   Implemented user authentication module with React hooks
                 </div>
                 <div className={styles.entryActions}>
-                  <button className={`${styles.entryActionBtn} ${styles.editBtn}`} disabled>
+                  <button className={`${styles.entryActionBtn} ${styles.editBtn}`} >
                     <span>✏️</span> Edit
                   </button>
-                  <button className={`${styles.entryActionBtn} ${styles.deleteBtn}`} disabled>
+                  <button className={`${styles.entryActionBtn} ${styles.deleteBtn}`} >
                     <span>🗑️</span> Delete
                   </button>
                 </div>
@@ -79,17 +79,17 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                   Weekly sprint planning and team sync
                 </div>
                 <div className={styles.entryActions}>
-                  <button className={`${styles.entryActionBtn} ${styles.editBtn}`} disabled>
+                  <button className={`${styles.entryActionBtn} ${styles.editBtn}`} >
                     <span>✏️</span> Edit
                   </button>
-                  <button className={`${styles.entryActionBtn} ${styles.deleteBtn}`} disabled>
+                  <button className={`${styles.entryActionBtn} ${styles.deleteBtn}`} >
                     <span>🗑️</span> Delete
                   </button>
                 </div>
               </div>
             </div>
             
-            <button className={styles.addEntryBtn} disabled>
+            <button className={styles.addEntryBtn} >
               + Add Entry for Mon, Jan 20 (2.0h available)
             </button>
           </div>
@@ -106,7 +106,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
             
             <div className={styles.timesheetEntries}></div>
             
-            <button className={styles.addEntryBtn} disabled>
+            <button className={styles.addEntryBtn} >
               + Add Entry for Tue, Jan 21 (8.0h available)
             </button>
           </div>
@@ -123,14 +123,14 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
             
             <div className={styles.timesheetEntries}></div>
             
-            <button className={styles.addEntryBtn} disabled>
+            <button className={styles.addEntryBtn} >
               + Add Entry for Wed, Jan 22 (8.0h available)
             </button>
           </div>
         </div>
 
         {/* Submit Timesheet Button */}
-        <button className={styles.submitTimesheetBtn} disabled>
+        <button className={styles.submitTimesheetBtn} >
           <span>✓</span> Submit Timesheet
         </button>
       </div>

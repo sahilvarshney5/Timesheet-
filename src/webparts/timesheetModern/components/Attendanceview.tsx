@@ -21,12 +21,12 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       <div className={styles.calendarContainer}>
         <div className={styles.calendarHeader}>
           <div className={styles.calendarNav}>
-            <button className={styles.navBtn} disabled>←</button>
+            <button className={styles.navBtn} >←</button>
             <div className={styles.calendarMonth}>January 2025</div>
-            <button className={styles.navBtn} disabled>→</button>
+            <button className={styles.navBtn} >→</button>
           </div>
           <div className={styles.calendarActions}>
-            <button className={`${styles.btn} ${styles.btnOutline}`} disabled>Download Report</button>
+            <button className={`${styles.btn} ${styles.btnOutline}`} >Download Report</button>
             <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => onViewChange('regularize')}>
               Request Regularization
             </button>
