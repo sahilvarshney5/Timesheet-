@@ -3,12 +3,15 @@ import styles from './TimesheetModern.module.scss';
 import { DashboardService, IDashboardStats } from '../services/DashboardService';
 import { UserService, IUserPermissions } from '../services/UserService';
 import { SPHttpClient } from '@microsoft/sp-http';
+import { IEmployeeMaster } from '../models';
 
 export interface IDashboardViewProps {
   onViewChange: (viewName: string) => void;
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
+  employeeMaster: IEmployeeMaster;  // NEW
+  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
 }
 
 const DashboardView: React.FC<IDashboardViewProps> = (props) => {
@@ -44,28 +47,30 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError(null);
+ const loadDashboardData = async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+    setError(null);
 
-      // Load user role and stats in parallel
-      const [role, dashboardStats] = await Promise.all([
-        userService.getUserRole(),
-        dashboardService.getDashboardStats()
-      ]);
+    // Use Employee ID from props
+    const empId = props.employeeMaster.EmployeeID;
+    const userRole = props.userRole;
 
-      setUserRole(role);
-      setStats(dashboardStats);
+    console.log(`[DashboardView] Loading dashboard for Employee ID: ${empId}, Role: ${userRole}`);
 
-    } catch (err) {
-      console.error('[DashboardView] Error loading dashboard data:', err);
-      setError('Failed to load dashboard data. Please refresh the page.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    // Load dashboard stats
+    const dashboardStats = await dashboardService.getDashboardStats();
 
+    setUserRole(userRole);
+    setStats(dashboardStats);
+
+  } catch (err) {
+    console.error('[DashboardView] Error loading dashboard data:', err);
+    setError('Failed to load dashboard data. Please refresh the page.');
+  } finally {
+    setIsLoading(false);
+  }
+};
   if (isLoading) {
     return (
       <div className={styles.viewContainer}>

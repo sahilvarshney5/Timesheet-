@@ -3,13 +3,15 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
 import { UserService } from '../services/UserService';
-import { ITimesheetDay } from '../models';
+import { IEmployeeMaster, ITimesheetDay } from '../models';
 
 export interface IAttendanceViewProps {
   onViewChange: (viewName: string) => void;
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
+  employeeMaster: IEmployeeMaster;  // NEW - Required
+  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
 }
 
 const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
@@ -39,33 +41,52 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     loadCalendarData();
   }, [currentMonth, currentYear]);
 
-  const loadCalendarData = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError(null);
+  const handleDownloadReport = async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+    
+    await attendanceService.downloadAttendanceReport(
+      props.employeeMaster.EmployeeID,
+      currentYear,
+      currentMonth + 1
+    );
+    
+    alert('Attendance report downloaded successfully!');
+    
+  } catch (err) {
+    console.error('[AttendanceView] Error downloading report:', err);
+    alert('Failed to download attendance report. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+ const loadCalendarData = async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+    setError(null);
 
-      // Get current user
-      const user = await userService.getCurrentUser();
-      const empId = user.Id.toString();
-      setEmployeeId(empId);
+    // Use Employee ID from props.employeeMaster
+    const empId = props.employeeMaster.EmployeeID;
+    
+    console.log(`[AttendanceView] Loading calendar for Employee ID: ${empId}`);
 
-      // Load calendar data from AttendanceService
-      const calendar = await attendanceService.buildCalendarForMonth(
-        empId,
-        currentYear,
-        currentMonth + 1 // Month is 0-indexed in state, 1-indexed in service
-      );
+    // Load calendar data from AttendanceService
+    const calendar = await attendanceService.buildCalendarForMonth(
+      empId,  // Use Employee ID (e.g., "R0398")
+      currentYear,
+      currentMonth + 1
+    );
 
-      setCalendarDays(calendar);
-      console.log(`[AttendanceView] Loaded ${calendar.length} calendar days for ${getMonthName(currentMonth)} ${currentYear}`);
+    setCalendarDays(calendar);
+    console.log(`[AttendanceView] Loaded ${calendar.length} calendar days for ${getMonthName(currentMonth)} ${currentYear}`);
 
-    } catch (err) {
-      console.error('[AttendanceView] Error loading calendar data:', err);
-      setError('Failed to load calendar data. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  } catch (err) {
+    console.error('[AttendanceView] Error loading calendar data:', err);
+    setError('Failed to load calendar data. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleMonthChange = (direction: number): void => {
     let newMonth = currentMonth + direction;
@@ -380,6 +401,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
           <div className={styles.calendarActions}>
             <button 
               className={`${styles.btn} ${styles.btnOutline}`}
+                onClick={handleDownloadReport}
               disabled={isLoading}
             >
               Download Report

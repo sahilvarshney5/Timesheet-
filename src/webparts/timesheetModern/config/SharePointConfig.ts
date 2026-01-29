@@ -1,6 +1,5 @@
-// SharePointConfig.ts
+// SharePointConfig.ts - UPDATED with EmployeeMaster
 // Centralized configuration for SharePoint lists and columns
-// TODO: Update internal names if they differ in your tenant
 
 export interface IListConfig {
   displayName: string;
@@ -14,6 +13,7 @@ export interface IColumnConfig {
 
 export interface ISharePointConfig {
   lists: {
+    employeeMaster: IListConfig;
     punchData: IListConfig;
     leaveData: IListConfig;
     timesheetHeader: IListConfig;
@@ -26,227 +26,269 @@ export interface ISharePointConfig {
       [columnDisplayName: string]: IColumnConfig;
     };
   };
+  groups: {
+    employees: string;
+    managers: string;
+    admins: string;
+  };
 }
 
 // Main configuration object
 export const SharePointConfig: ISharePointConfig = {
   lists: {
+    // NEW: Employee Master List
+    employeeMaster: {
+      displayName: 'Employee Master',
+      internalName: 'EmployeeMasterData' // TODO: Verify this matches your SharePoint list internal name
+    },
     punchData: {
       displayName: 'Punch Data',
-      internalName: 'PunchData' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'PunchData'
     },
     leaveData: {
       displayName: 'Leave Data',
-      internalName: 'LeaveData' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'LeaveData'
     },
     timesheetHeader: {
       displayName: 'Timesheet Header',
-      internalName: 'TimesheetHeader' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'TimesheetHeader'
     },
     timesheetLines: {
       displayName: 'Timesheet Lines',
-      internalName: 'TimesheetLines' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'TimesheetLines'
     },
     attendanceRegularization: {
       displayName: 'Attendance Regularization',
-      internalName: 'AttendanceRegularization' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'AttendanceRegularization'
     },
     projectTaskMaster: {
       displayName: 'Project Task Master',
-      internalName: 'ProjectTaskMaster' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'ProjectTaskMaster'
     }
   },
   columns: {
+    // EmployeeMaster columns
+    EmployeeMaster: {
+      EmployeeID: {
+        displayName: 'Employee ID',
+        internalName: 'Title' // TODO: Verify - this is the R0398 format ID
+      },
+      Employee: {
+        displayName: 'Employee',
+        internalName: 'Employee' // TODO: Verify - this is the Person or Group field
+      },
+      Email: {
+        displayName: 'Email',
+        internalName: 'Email'
+      },
+      Department: {
+        displayName: 'Department',
+        internalName: 'Department'
+      },
+      Manager: {
+        displayName: 'Manager',
+        internalName: 'Manager' // Person or Group field
+      },
+      Active: {
+        displayName: 'Active',
+        internalName: 'Active' // Yes/No field
+      }
+    },
     // PunchData columns
     PunchData: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID' // TODO: Verify internal name
+        internalName: 'EmployeeID'
       },
       AttendanceDate: {
         displayName: 'Attendance Date',
-        internalName: 'AttendanceDate' // TODO: Verify internal name
+        internalName: 'AttendanceDate'
       },
       FirstPunchIn: {
         displayName: 'First Punch In',
-        internalName: 'FirstPunchIn' // TODO: Verify internal name
+        internalName: 'FirstPunchIn'
       },
       LastPunchOut: {
         displayName: 'Last Punch Out',
-        internalName: 'LastPunchOut' // TODO: Verify internal name
+        internalName: 'LastPunchOut'
       },
       TotalHours: {
         displayName: 'Total Hours',
-        internalName: 'TotalHours' // TODO: Verify internal name
+        internalName: 'TotalHours'
       },
       Status: {
         displayName: 'Status',
-        internalName: 'Status' // TODO: Verify internal name
+        internalName: 'Status'
       },
       Source: {
         displayName: 'Source',
-        internalName: 'Source' // TODO: Verify internal name
+        internalName: 'Source'
       }
     },
     // LeaveData columns
     LeaveData: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID' // TODO: Verify internal name
+        internalName: 'EmployeeID'
       },
       LeaveType: {
         displayName: 'Leave Type',
-        internalName: 'LeaveType' // TODO: Verify internal name
+        internalName: 'LeaveType'
       },
       StartDate: {
         displayName: 'Start Date',
-        internalName: 'StartDate' // TODO: Verify internal name
+        internalName: 'StartDate'
       },
       EndDate: {
         displayName: 'End Date',
-        internalName: 'EndDate' // TODO: Verify internal name
+        internalName: 'EndDate'
       },
       LeaveDuration: {
         displayName: 'Leave Duration',
-        internalName: 'LeaveDuration' // TODO: Verify internal name
+        internalName: 'LeaveDuration'
       },
       Status: {
         displayName: 'Status',
-        internalName: 'Status' // TODO: Verify internal name
+        internalName: 'Status'
       },
       ColorCode: {
         displayName: 'Color Code',
-        internalName: 'ColorCode' // TODO: Verify internal name
+        internalName: 'ColorCode'
       }
     },
     // TimesheetHeader columns
     TimesheetHeader: {
       TimesheetID: {
         displayName: 'Timesheet ID',
-        internalName: 'ID' // Standard SharePoint ID column
+        internalName: 'ID'
       },
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID' // TODO: Verify internal name
+        internalName: 'EmployeeID'
       },
       WeekStartDate: {
         displayName: 'Week Start Date',
-        internalName: 'WeekStartDate' // TODO: Verify internal name
+        internalName: 'WeekStartDate'
       },
       Status: {
         displayName: 'Status',
-        internalName: 'Status' // TODO: Verify internal name
+        internalName: 'Status'
       },
       SubmissionDate: {
         displayName: 'Submission Date',
-        internalName: 'SubmissionDate' // TODO: Verify internal name
+        internalName: 'SubmissionDate'
       },
       LockedBy: {
         displayName: 'Locked By',
-        internalName: 'LockedBy' // TODO: Verify internal name
+        internalName: 'LockedBy'
       }
     },
     // TimesheetLines columns
     TimesheetLines: {
       TimesheetID: {
         displayName: 'Timesheet ID',
-        internalName: 'TimesheetID' // TODO: Verify internal name (Lookup column)
+        internalName: 'TimesheetID'
       },
       WorkDate: {
         displayName: 'Work Date',
-        internalName: 'WorkDate' // TODO: Verify internal name
+        internalName: 'WorkDate'
       },
       ProjectNo: {
         displayName: 'Project No',
-        internalName: 'ProjectNo' // TODO: Verify internal name
+        internalName: 'ProjectNo'
       },
       TaskNo: {
         displayName: 'Task No',
-        internalName: 'TaskNo' // TODO: Verify internal name
+        internalName: 'TaskNo'
       },
       BLA_No: {
         displayName: 'BLA No',
-        internalName: 'BLA_x005f_No' // TODO: Verify internal name (underscore encoding)
+        internalName: 'BLA_x005f_No'
       },
       HoursBooked: {
         displayName: 'Hours Booked',
-        internalName: 'HoursBooked' // TODO: Verify internal name
+        internalName: 'HoursBooked'
       },
       Description: {
         displayName: 'Description',
-        internalName: 'Description' // TODO: Verify internal name
+        internalName: 'Description'
       }
     },
     // AttendanceRegularization columns
     AttendanceRegularization: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID' // TODO: Verify internal name
+        internalName: 'EmployeeID'
       },
       RequestType: {
         displayName: 'Request Type',
-        internalName: 'RequestType' // TODO: Verify internal name
+        internalName: 'RequestType'
       },
       StartDate: {
         displayName: 'Start Date',
-        internalName: 'StartDate' // TODO: Verify internal name
+        internalName: 'StartDate'
       },
       EndDate: {
         displayName: 'End Date',
-        internalName: 'EndDate' // TODO: Verify internal name
+        internalName: 'EndDate'
       },
       ExpectedIn: {
         displayName: 'Expected In',
-        internalName: 'ExpectedIn' // TODO: Verify internal name
+        internalName: 'ExpectedIn'
       },
       ExpectedOut: {
         displayName: 'Expected Out',
-        internalName: 'ExpectedOut' // TODO: Verify internal name
+        internalName: 'ExpectedOut'
       },
       Reason: {
         displayName: 'Reason',
-        internalName: 'Reason' // TODO: Verify internal name
+        internalName: 'Reason'
       },
       Status: {
         displayName: 'Status',
-        internalName: 'Status' // TODO: Verify internal name
+        internalName: 'Status'
       },
       ManagerComment: {
         displayName: 'Manager Comment',
-        internalName: 'ManagerComment' // TODO: Verify internal name
+        internalName: 'ManagerComment'
       }
     },
     // ProjectTaskMaster columns
     ProjectTaskMaster: {
       ProjectNo: {
         displayName: 'Project No',
-        internalName: 'ProjectNo' // TODO: Verify internal name
+        internalName: 'ProjectNo'
       },
       ProjectName: {
         displayName: 'Project Name',
-        internalName: 'ProjectName' // TODO: Verify internal name
+        internalName: 'ProjectName'
       },
       TaskNo: {
         displayName: 'Task No',
-        internalName: 'TaskNo' // TODO: Verify internal name
+        internalName: 'TaskNo'
       },
       TaskName: {
         displayName: 'Task Name',
-        internalName: 'TaskName' // TODO: Verify internal name
+        internalName: 'TaskName'
       },
       ResourceID: {
         displayName: 'Resource ID',
-        internalName: 'ResourceID' // TODO: Verify internal name
+        internalName: 'ResourceID'
       },
       TaskStatus: {
         displayName: 'Task Status',
-        internalName: 'TaskStatus' // TODO: Verify internal name
+        internalName: 'TaskStatus'
       },
       BookingEnabled: {
         displayName: 'Booking Enabled',
-        internalName: 'BookingEnabled' // TODO: Verify internal name
+        internalName: 'BookingEnabled'
       }
     }
+  },
+  groups: {
+    employees: 'Timesheet_Employees',
+    managers: 'Timesheet_Managers',
+    admins: 'Timesheet_Admins'
   }
 };
 
@@ -267,30 +309,24 @@ export const getColumnInternalName = (listName: string, columnKey: string): stri
 
 // OData query helpers for threshold-safe queries
 export const ODataHelpers = {
-  // Maximum items per page (stay under 5000 threshold)
   DEFAULT_PAGE_SIZE: 1000,
   
-  // Standard select query builder
   buildSelectQuery: (columns: string[]): string => {
     return `$select=${columns.join(',')}`;
   },
   
-  // Standard filter query builder
   buildFilterQuery: (filters: string[]): string => {
     return filters.length > 0 ? `$filter=${filters.join(' and ')}` : '';
   },
   
-  // Standard orderby query builder
   buildOrderByQuery: (orderBy: string, ascending: boolean = true): string => {
     return `$orderby=${orderBy} ${ascending ? 'asc' : 'desc'}`;
   },
   
-  // Pagination query
   buildTopQuery: (top: number = 1000): string => {
     return `$top=${Math.min(top, 5000)}`;
   },
   
-  // Expand lookup columns
   buildExpandQuery: (expandColumns: string[]): string => {
     return expandColumns.length > 0 ? `$expand=${expandColumns.join(',')}` : '';
   }

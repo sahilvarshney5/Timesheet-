@@ -3,13 +3,15 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
 import { UserService } from '../services/UserService';
-import { IRegularizationRequest, IAttendanceRegularization } from '../models';
+import { IRegularizationRequest, IAttendanceRegularization, IEmployeeMaster } from '../models';
 
 export interface IRegularizationViewProps {
   onViewChange: (viewName: string) => void;
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
+   employeeMaster: IEmployeeMaster;  // NEW
+  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
 }
 
 const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
@@ -39,138 +41,140 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     loadRegularizationHistory();
   }, []);
 
-  const loadRegularizationHistory = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError(null);
+ const loadRegularizationHistory = async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+    setError(null);
 
-      // Get current user info
-      const user = await userService.getCurrentUser();
-      const empId = user.Id.toString() || '';
-      setEmployeeId(empId);
+    // Get Employee ID from props
+    const empId = props.employeeMaster.EmployeeID;
 
-      // Load regularization history from SharePoint
-      const requests = await approvalService.getEmployeeRegularizations(empId);
-      
-      setHistory(requests);
-      console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
+    console.log(`[RegularizationView] Loading history for Employee ID: ${empId}`);
 
-    } catch (err) {
-      console.error('[RegularizationView] Error loading regularization history:', err);
-      setError('Failed to load regularization history. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    // Load regularization history from SharePoint
+    const requests = await approvalService.getEmployeeRegularizations(empId);
+    
+    setHistory(requests);
+    console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
+
+  } catch (err) {
+    console.error('[RegularizationView] Error loading regularization history:', err);
+    setError('Failed to load regularization history. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRegularizationType(event.target.value);
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    
-    if (isSaving) return;
-    
-    try {
-      setIsSaving(true);
-      setError(null);
+ const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  event.preventDefault();
+  
+  if (isSaving) return;
+  
+  try {
+    setIsSaving(true);
+    setError(null);
 
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      
-      const fromDate = formData.get('fromDate') as string;
-      const toDate = formData.get('toDate') as string;
-      const category = formData.get('category') as string;
-      const reason = formData.get('reason') as string;
-      const timeStart = formData.get('timeStart') as string;
-      const timeEnd = formData.get('timeEnd') as string;
-      
-      // Validation
-      if (new Date(toDate) < new Date(fromDate)) {
-        alert('To Date cannot be earlier than From Date');
-        setIsSaving(false);
-        return;
-      }
-      
-      if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
-        alert('Please fill in all time-based fields.');
-        setIsSaving(false);
-        return;
-      }
-      
-      if (regularizationType === 'time_based' && timeStart >= timeEnd) {
-        alert('End Time must be after Start Time.');
-        setIsSaving(false);
-        return;
-      }
-      
-      // FIXED: Create request object with proper type casting
-      const newRequest: Partial<IAttendanceRegularization> = {
-        EmployeeID: employeeId,
-        RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
-        StartDate: fromDate,
-        EndDate: toDate,
-        ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
-        ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
-        Reason: `${category.replace(/_/g, ' ').toUpperCase()}: ${reason}`,
-        Status: 'Pending' as 'Pending' // Type assertion to fix the error
-      };
-      
-      // Submit to SharePoint
-      const createdRequest = await approvalService.submitRegularizationRequest(newRequest);
-      
-      // Add to local history
-      const displayRequest: IRegularizationRequest = {
-        id: createdRequest.Id,
-        employeeId: employeeId,
-        employeeName: currentUserDisplayName,
-        requestType: regularizationType as 'day_based' | 'time_based',
-        category: category as any,
-        fromDate: fromDate,
-        toDate: toDate,
-        startTime: regularizationType === 'time_based' ? timeStart : undefined,
-        endTime: regularizationType === 'time_based' ? timeEnd : undefined,
-        reason: reason,
-        status: 'pending',
-        submittedOn: new Date().toISOString().split('T')[0]
-      };
-      
-      setHistory(prev => [displayRequest, ...prev]);
-      
-      // Format category for display
-      const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      
-      let successMessage = `Regularization request submitted successfully!\n\n`;
-      successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
-      successMessage += `From: ${fromDate}\n`;
-      successMessage += `To: ${toDate}\n`;
-      successMessage += `Category: ${categoryText}\n`;
-      
-      if (regularizationType === 'time_based') {
-        successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
-      }
-      
-      successMessage += `Reason: ${reason}\n`;
-      successMessage += `Status: Pending Approval\n`;
-      successMessage += `Note: Your manager will review and approve this request.`;
-      
-      alert(successMessage);
-      
-      // Reset form
-      form.reset();
-      setRegularizationType('day_based');
-      
-      // Navigate to dashboard
-      onViewChange('dashboard');
-
-    } catch (err) {
-      console.error('[RegularizationView] Error submitting regularization:', err);
-      alert('Failed to submit regularization request. Please try again.');
-    } finally {
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    
+    const fromDate = formData.get('fromDate') as string;
+    const toDate = formData.get('toDate') as string;
+    const category = formData.get('category') as string;
+    const reason = formData.get('reason') as string;
+    const timeStart = formData.get('timeStart') as string;
+    const timeEnd = formData.get('timeEnd') as string;
+    
+    // Validation
+    if (new Date(toDate) < new Date(fromDate)) {
+      alert('To Date cannot be earlier than From Date');
       setIsSaving(false);
+      return;
     }
-  };
+    
+    if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
+      alert('Please fill in all time-based fields.');
+      setIsSaving(false);
+      return;
+    }
+    
+    if (regularizationType === 'time_based' && timeStart >= timeEnd) {
+      alert('End Time must be after Start Time.');
+      setIsSaving(false);
+      return;
+    }
+    
+    // Get Employee ID from props
+    const empId = props.employeeMaster.EmployeeID;
+    
+    // Create request object
+    const newRequest: Partial<IAttendanceRegularization> = {
+      EmployeeID: empId,  // Use Employee ID (R0398)
+      RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
+      StartDate: fromDate,
+      EndDate: toDate,
+      ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
+      ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
+      Reason: `${category.replace(/_/g, ' ').toUpperCase()}: ${reason}`,
+      Status: 'Pending' as 'Pending'
+    };
+    
+    // Submit to SharePoint
+    const createdRequest = await approvalService.submitRegularizationRequest(newRequest);
+    
+    // Add to local history
+    const displayRequest: IRegularizationRequest = {
+      id: createdRequest.Id,
+      employeeId: empId,
+      employeeName: props.employeeMaster.EmployeeDisplayName || props.currentUserDisplayName,
+      requestType: regularizationType as 'day_based' | 'time_based',
+      category: category as any,
+      fromDate: fromDate,
+      toDate: toDate,
+      startTime: regularizationType === 'time_based' ? timeStart : undefined,
+      endTime: regularizationType === 'time_based' ? timeEnd : undefined,
+      reason: reason,
+      status: 'pending',
+      submittedOn: new Date().toISOString().split('T')[0]
+    };
+    
+    setHistory(prev => [displayRequest, ...prev]);
+    
+    const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    
+    let successMessage = `Regularization request submitted successfully!\n\n`;
+    successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
+    successMessage += `From: ${fromDate}\n`;
+    successMessage += `To: ${toDate}\n`;
+    successMessage += `Category: ${categoryText}\n`;
+    
+    if (regularizationType === 'time_based') {
+      successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
+    }
+    
+    successMessage += `Reason: ${reason}\n`;
+    successMessage += `Status: Pending Approval\n`;
+    successMessage += `Note: Your manager will review and approve this request.`;
+    
+    alert(successMessage);
+    
+    // Reset form
+    form.reset();
+    setRegularizationType('day_based');
+    
+    // Navigate to dashboard
+    onViewChange('dashboard');
+
+  } catch (err) {
+    console.error('[RegularizationView] Error submitting regularization:', err);
+    alert('Failed to submit regularization request. Please try again.');
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const handleView = (request: IRegularizationRequest): void => {
     const fromDate = new Date(request.fromDate);

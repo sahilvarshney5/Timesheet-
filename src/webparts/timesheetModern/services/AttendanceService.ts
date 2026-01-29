@@ -287,4 +287,95 @@ export class AttendanceService {
       throw error;
     }
   }
+  /**
+ * Generate attendance report CSV for download
+ * @param employeeId Employee ID
+ * @param year Year
+ * @param month Month (1-12)
+ */
+public async downloadAttendanceReport(
+  employeeId: string,
+  year: number,
+  month: number
+): Promise<void> {
+  try {
+    // Get punch data and leave data for month
+    const [punchData, leaveData] = await Promise.all([
+      this.getPunchDataForMonth(employeeId, year, month),
+      this.getLeaveDataForMonth(employeeId, year, month)
+    ]);
+
+    // Build calendar for the month
+    const calendarDays = await this.buildCalendarForMonth(employeeId, year, month);
+
+    // Generate CSV content
+    const csvRows: string[] = [];
+    
+    // Header
+    csvRows.push('Date,Day,Status,First Punch In,Last Punch Out,Total Hours,Timesheet Hours,Leave Type');
+
+    // Data rows
+    calendarDays.forEach(day => {
+      const date = new Date(day.date);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      const dateStr = date.toLocaleDateString('en-US');
+      
+      const status = this.getStatusText(day.status || '');
+      const firstPunchIn = day.firstPunchIn ? this.formatTimeForCsv(day.firstPunchIn) : '';
+      const lastPunchOut = day.lastPunchOut ? this.formatTimeForCsv(day.lastPunchOut) : '';
+      const totalHours = day.totalHours ? day.totalHours.toFixed(2) : '0.00';
+      const timesheetHours = day.timesheetHours ? day.timesheetHours.toFixed(2) : '0.00';
+      const leaveType = day.leaveType || '';
+
+      csvRows.push(`${dateStr},${dayName},${status},${firstPunchIn},${lastPunchOut},${totalHours},${timesheetHours},${leaveType}`);
+    });
+
+    // Create CSV file and download
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Attendance_Report_${employeeId}_${year}_${month}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    console.log(`[AttendanceService] Downloaded attendance report for ${employeeId}, ${month}/${year}`);
+
+  } catch (error) {
+    console.error('[AttendanceService] Error downloading attendance report:', error);
+    throw error;
+  }
+}
+
+private getStatusText(status: string): string {
+  const statusMap: { [key: string]: string } = {
+    'present': 'Present',
+    'absent': 'Absent',
+    'holiday': 'Holiday',
+    'leave': 'On Leave',
+    'weekend': 'Weekend',
+    'empty': ''
+  };
+  return statusMap[status] || status;
+}
+
+private formatTimeForCsv(timeString: string): string {
+  if (!timeString) return '';
+  
+  try {
+    const date = new Date(timeString);
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: false 
+    });
+  } catch {
+    return timeString;
+  }
+}
 }

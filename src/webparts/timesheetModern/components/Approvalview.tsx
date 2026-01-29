@@ -3,13 +3,15 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
 import { UserService } from '../services/UserService';
-import { IApprovalQueueItem, IRegularizationRequest } from '../models';
+import { IApprovalQueueItem, IEmployeeMaster, IRegularizationRequest } from '../models';
 
 export interface IApprovalViewProps {
   onViewChange: (viewName: string) => void;
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
+    employeeMaster: IEmployeeMaster;  // NEW
+  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
 }
 
 const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
@@ -40,61 +42,61 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
     checkPermissionsAndLoadData();
   }, []);
 
-  const checkPermissionsAndLoadData = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError(null);
+ const checkPermissionsAndLoadData = async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+    setError(null);
 
-      // Check if user is manager
-      const permissions = await userService.getUserPermissions();
-      setIsManager(permissions.isManager || permissions.isAdmin);
+    // Check user role from props
+    const isManagerOrAdmin = props.userRole === 'Manager' || props.userRole === 'Admin';
+    setIsManager(isManagerOrAdmin);
 
-      if (!permissions.isManager && !permissions.isAdmin) {
-        setError('You do not have manager privileges to view the approval queue.');
-        return;
-      }
-
-      // Load both tabs in parallel
-      await Promise.all([
-        loadPendingRequests(),
-        loadApprovalHistory()
-      ]);
-
-    } catch (err) {
-      console.error('[ApprovalView] Error checking permissions and loading data:', err);
-      setError('Failed to load approval data. Please try again.');
-    } finally {
-      setIsLoading(false);
+    if (!isManagerOrAdmin) {
+      setError('You do not have manager privileges to view the approval queue.');
+      return;
     }
-  };
 
-  const loadPendingRequests = async (): Promise<void> => {
-    try {
-      const requests = await approvalService.getPendingApprovals();
-      
-      // Transform to regularization requests format
-      const regularizationRequests: IRegularizationRequest[] = requests.map(req => ({
-        id: req.requestId,
-        employeeId: req.employeeName, // Using name as ID for display
-        employeeName: req.employeeName,
-        requestType: req.requestType === 'Timesheet' ? 'day_based' : 'day_based',
-        category: 'late_coming' as any, // Default category
-        fromDate: req.dateRange,
-        toDate: req.dateRange,
-        reason: '',
-        status: 'pending',
-        submittedOn: new Date().toISOString().split('T')[0]
-      }));
-      
-      setPendingRequests(regularizationRequests);
-      console.log(`[ApprovalView] Loaded ${regularizationRequests.length} pending requests`);
+    // Load both tabs in parallel
+    await Promise.all([
+      loadPendingRequests(),
+      loadApprovalHistory()
+    ]);
 
-    } catch (err) {
-      console.error('[ApprovalView] Error loading pending requests:', err);
-      throw err;
-    }
-  };
+  } catch (err) {
+    console.error('[ApprovalView] Error checking permissions and loading data:', err);
+    setError('Failed to load approval data. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
+const loadPendingRequests = async (): Promise<void> => {
+  try {
+    // Get pending approvals (filtered by manager if needed)
+    const requests = await approvalService.getPendingApprovals();
+    
+    // Convert to IRegularizationRequest format
+    const regularizationRequests: IRegularizationRequest[] = requests.map(req => ({
+      id: req.requestId,
+      employeeId: req.employeeName,
+      employeeName: req.employeeName,
+      requestType: req.requestType === 'Timesheet' ? 'day_based' : 'day_based',
+      category: 'late_coming' as any,
+      fromDate: req.dateRange,
+      toDate: req.dateRange,
+      reason: '',
+      status: 'pending',
+      submittedOn: new Date().toISOString().split('T')[0]
+    }));
+    
+    setPendingRequests(regularizationRequests);
+    console.log(`[ApprovalView] Loaded ${regularizationRequests.length} pending requests`);
+
+  } catch (err) {
+    console.error('[ApprovalView] Error loading pending requests:', err);
+    throw err;
+  }
+};
   const loadApprovalHistory = async (): Promise<void> => {
     try {
       const history = await approvalService.getApprovalHistory();

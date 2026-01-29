@@ -15,6 +15,6 @@ export * from './IRegularizationRequest';
 export * from './IProjectTaskMaster';
 export * from './IUserInfo';
 export * from './IApiResponse';
-
+export * from './IEmployeeMaster';
 // Export UserService types
 export type { IUserPermissions } from '../services/UserService';
