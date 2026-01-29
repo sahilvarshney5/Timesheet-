@@ -52,38 +52,38 @@ export class ApprovalService {
       const orderBy = 'Created';
       
       // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<IAttendanceRegularization>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery,
-      //   orderBy,
-      //   1000,
-      //   expandFields
-      // );
+      const items = await this.httpService.getListItems<IAttendanceRegularization>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy,
+        1000,
+        expandFields
+      );
       
-      // // Transform to approval queue items
-      // const approvalItems: IApprovalQueueItem[] = items.map(item => ({
-      //   id: item.Id,
-      //   employeeId: item.EmployeeID,
-      //   employeeName: item.Author?.Title || 'Unknown',
-      //   requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-      //   category: this.mapCategoryFromReason(item.Reason), // TODO: Store category explicitly
-      //   fromDate: item.StartDate,
-      //   toDate: item.EndDate || item.StartDate,
-      //   startTime: item.ExpectedIn,
-      //   endTime: item.ExpectedOut,
-      //   reason: item.Reason,
-      //   status: 'pending',
-      //   submittedOn: item.Created || '',
-      //   canApprove: true,
-      //   canReject: true
-      // }));
+      // Transform to approval queue items
+      const approvalItems: IApprovalQueueItem[] = items.map(item => ({
+        id: item.Id,
+        employeeId: item.EmployeeID,
+        employeeName: item.Author?.Title || 'Unknown',
+        requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
+        category: this.mapCategoryFromReason(item.Reason), // TODO: Store category explicitly
+        fromDate: item.StartDate,
+        toDate: item.EndDate || item.StartDate,
+        startTime: item.ExpectedIn,
+        endTime: item.ExpectedOut,
+        reason: item.Reason,
+        status: 'pending',
+        submittedOn: item.Created || '',
+        canApprove: true,
+        canReject: true
+      }));
       
-      // return approvalItems;
+      return approvalItems;
       
       // PLACEHOLDER: Return empty array until implemented
-      console.log(`[ApprovalService] getPendingApprovals for manager ${managerId || 'all'}`);
-      return [];
+      // console.log(`[ApprovalService] getPendingApprovals for manager ${managerId || 'all'}`);
+      // return [];
       
     } catch (error) {
       console.error('[ApprovalService] Error getting pending approvals:', error);
@@ -139,40 +139,40 @@ export class ApprovalService {
       const expandFields = ['Author', 'Editor'];
       const orderBy = 'Modified'; // Order by last modified
       
-      // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<IAttendanceRegularization>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery,
-      //   orderBy,
-      //   1000,
-      //   expandFields
-      // );
+      TODO: Call httpService.getListItems
+      const items = await this.httpService.getListItems<IAttendanceRegularization>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy,
+        1000,
+        expandFields
+      );
       
-      // // Transform to regularization requests
-      // const requests: IRegularizationRequest[] = items.map(item => ({
-      //   id: item.Id,
-      //   employeeId: item.EmployeeID,
-      //   employeeName: item.Author?.Title || 'Unknown',
-      //   requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-      //   category: this.mapCategoryFromReason(item.Reason),
-      //   fromDate: item.StartDate,
-      //   toDate: item.EndDate || item.StartDate,
-      //   startTime: item.ExpectedIn,
-      //   endTime: item.ExpectedOut,
-      //   reason: item.Reason,
-      //   status: item.Status === 'Approved' ? 'approved' : 'rejected',
-      //   submittedOn: item.Created || '',
-      //   approvedBy: item.Editor?.Title,
-      //   approvedOn: item.Modified,
-      //   managerComment: item.ManagerComment
-      // }));
+      // Transform to regularization requests
+      const requests: IRegularizationRequest[] = items.map(item => ({
+        id: item.Id,
+        employeeId: item.EmployeeID,
+        employeeName: item.Author?.Title || 'Unknown',
+        requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
+        category: this.mapCategoryFromReason(item.Reason),
+        fromDate: item.StartDate,
+        toDate: item.EndDate || item.StartDate,
+        startTime: item.ExpectedIn,
+        endTime: item.ExpectedOut,
+        reason: item.Reason,
+        status: item.Status === 'Approved' ? 'approved' : 'rejected',
+        submittedOn: item.Created || '',
+        approvedBy: item.Editor?.Title,
+        approvedOn: item.Modified,
+        managerComment: item.ManagerComment
+      }));
       
-      // return requests;
+      return requests;
       
       // PLACEHOLDER: Return empty array until implemented
-      console.log(`[ApprovalService] getApprovalHistory for manager ${managerId || 'all'}`);
-      return [];
+      // console.log(`[ApprovalService] getApprovalHistory for manager ${managerId || 'all'}`);
+      // return [];
       
     } catch (error) {
       console.error('[ApprovalService] Error getting approval history:', error);
@@ -212,39 +212,39 @@ export class ApprovalService {
       const orderBy = 'Created';
       
       // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<IAttendanceRegularization>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery,
-      //   orderBy,
-      //   1000,
-      //   expandFields
-      // );
+      const items = await this.httpService.getListItems<IAttendanceRegularization>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy,
+        1000,
+        expandFields
+      );
       
-      // // Transform to regularization requests
-      // const requests: IRegularizationRequest[] = items.map(item => ({
-      //   id: item.Id,
-      //   employeeId: item.EmployeeID,
-      //   employeeName: 'Current User', // TODO: Get from context
-      //   requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-      //   category: this.mapCategoryFromReason(item.Reason),
-      //   fromDate: item.StartDate,
-      //   toDate: item.EndDate || item.StartDate,
-      //   startTime: item.ExpectedIn,
-      //   endTime: item.ExpectedOut,
-      //   reason: item.Reason,
-      //   status: item.Status.toLowerCase() as 'pending' | 'approved' | 'rejected',
-      //   submittedOn: item.Created || '',
-      //   approvedBy: item.Editor?.Title,
-      //   approvedOn: item.Modified,
-      //   managerComment: item.ManagerComment
-      // }));
+      // Transform to regularization requests
+      const requests: IRegularizationRequest[] = items.map(item => ({
+        id: item.Id,
+        employeeId: item.EmployeeID,
+        employeeName: 'Current User', // TODO: Get from context
+        requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
+        category: this.mapCategoryFromReason(item.Reason),
+        fromDate: item.StartDate,
+        toDate: item.EndDate || item.StartDate,
+        startTime: item.ExpectedIn,
+        endTime: item.ExpectedOut,
+        reason: item.Reason,
+        status: item.Status.toLowerCase() as 'pending' | 'approved' | 'rejected',
+        submittedOn: item.Created || '',
+        approvedBy: item.Editor?.Title,
+        approvedOn: item.Modified,
+        managerComment: item.ManagerComment
+      }));
       
-      // return requests;
+      return requests;
       
       // PLACEHOLDER: Return empty array until implemented
-      console.log(`[ApprovalService] getEmployeeRegularizations for ${employeeId}`);
-      return [];
+      // console.log(`[ApprovalService] getEmployeeRegularizations for ${employeeId}`);
+      // return [];
       
     } catch (error) {
       console.error('[ApprovalService] Error getting employee regularizations:', error);
@@ -271,7 +271,7 @@ export class ApprovalService {
       }
       
       // TODO: Call httpService.updateListItem
-      // await this.httpService.updateListItem(listName, requestId, itemData);
+      await this.httpService.updateListItem(listName, requestId, itemData);
       
       // PLACEHOLDER: Log until implemented
       console.log(`[ApprovalService] approveRequest ${requestId}`, managerComment);
@@ -301,7 +301,7 @@ export class ApprovalService {
       }
       
       // TODO: Call httpService.updateListItem
-      // await this.httpService.updateListItem(listName, requestId, itemData);
+      await this.httpService.updateListItem(listName, requestId, itemData);
       
       // PLACEHOLDER: Log until implemented
       console.log(`[ApprovalService] rejectRequest ${requestId}`, managerComment);
@@ -333,20 +333,20 @@ export class ApprovalService {
       };
       
       // TODO: Call httpService.createListItem
-      // const newRequest = await this.httpService.createListItem<IAttendanceRegularization>(
-      //   listName,
-      //   itemData
-      // );
+      const newRequest = await this.httpService.createListItem<IAttendanceRegularization>(
+        listName,
+        itemData
+      );
       
-      // return newRequest;
+      return newRequest;
       
       // PLACEHOLDER: Return mock data until implemented
-      console.log(`[ApprovalService] submitRegularizationRequest`, request);
-      return {
-        Id: -1,
-        ...request,
-        Status: 'Pending'
-      } as IAttendanceRegularization;
+      // console.log(`[ApprovalService] submitRegularizationRequest`, request);
+      // return {
+      //   Id: -1,
+      //   ...request,
+      //   Status: 'Pending'
+      // } as IAttendanceRegularization;
       
     } catch (error) {
       console.error('[ApprovalService] Error submitting regularization request:', error);

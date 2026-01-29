@@ -1,6 +1,6 @@
 // services/HttpClientService.ts
+// FIXED VERSION - All TODO items enabled
 // Base service for SharePoint REST API calls using spHttpClient
-// All SharePoint REST calls should go through this service
 
 import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { SharePointConfig, ODataHelpers } from '../config/SharePointConfig';
@@ -16,12 +16,6 @@ export class HttpClientService {
 
   /**
    * Get items from SharePoint list (threshold-safe)
-   * @param listName Internal name of the list
-   * @param selectFields Array of fields to select
-   * @param filterQuery OData filter string
-   * @param orderBy Field to order by
-   * @param top Maximum number of items (default 1000)
-   * @param expandFields Array of lookup fields to expand
    */
   public async getListItems<T>(
     listName: string,
@@ -32,8 +26,6 @@ export class HttpClientService {
     expandFields?: string[]
   ): Promise<T[]> {
     try {
-      // TODO: Implement REST call using spHttpClient
-      // Build the OData query
       const queryParts: string[] = [];
       
       if (selectFields && selectFields.length > 0) {
@@ -57,7 +49,7 @@ export class HttpClientService {
       const queryString = queryParts.join('&');
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items?${queryString}`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: REST call
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
         SPHttpClient.configurations.v1
@@ -70,10 +62,6 @@ export class HttpClientService {
       const data = await response.json();
       return data.value as T[];
       
-      // PLACEHOLDER: Return empty array until REST is implemented
-      // console.log(`[HttpClientService] GET ${endpoint}`);
-      // return [] as T[];
-      
     } catch (error) {
       console.error(`[HttpClientService] Error fetching items from ${listName}:`, error);
       throw error;
@@ -82,10 +70,6 @@ export class HttpClientService {
 
   /**
    * Get items with pagination support for large lists (5000+ items)
-   * @param listName Internal name of the list
-   * @param selectFields Array of fields to select
-   * @param filterQuery OData filter string
-   * @param orderBy Field to order by (must be indexed)
    */
   public async getAllListItemsPaged<T>(
     listName: string,
@@ -97,8 +81,6 @@ export class HttpClientService {
     let nextLink: string | null = null;
     
     try {
-      // TODO: Implement paginated REST calls
-      // First page
       const queryParts: string[] = [];
       
       if (selectFields && selectFields.length > 0) {
@@ -118,7 +100,7 @@ export class HttpClientService {
       const queryString = queryParts.join('&');
       let endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items?${queryString}`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: Pagination loop
       do {
         const response: SPHttpClientResponse = await this.spHttpClient.get(
           endpoint,
@@ -139,8 +121,7 @@ export class HttpClientService {
         }
       } while (nextLink);
       
-      // PLACEHOLDER: Return empty array until REST is implemented
-      console.log(`[HttpClientService] GET (Paged) ${endpoint}`);
+      console.log(`[HttpClientService] GET (Paged) - Retrieved ${allItems.length} items from ${listName}`);
       return allItems;
       
     } catch (error) {
@@ -151,10 +132,6 @@ export class HttpClientService {
 
   /**
    * Get a single item by ID
-   * @param listName Internal name of the list
-   * @param itemId Item ID
-   * @param selectFields Array of fields to select
-   * @param expandFields Array of lookup fields to expand
    */
   public async getListItemById<T>(
     listName: string,
@@ -163,7 +140,6 @@ export class HttpClientService {
     expandFields?: string[]
   ): Promise<T | null> {
     try {
-      // TODO: Implement REST call
       const queryParts: string[] = [];
       
       if (selectFields && selectFields.length > 0) {
@@ -177,7 +153,7 @@ export class HttpClientService {
       const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items(${itemId})${queryString}`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: REST call
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
         SPHttpClient.configurations.v1
@@ -193,10 +169,6 @@ export class HttpClientService {
       const data = await response.json();
       return data as T;
       
-      // PLACEHOLDER: Return null until REST is implemented
-      // console.log(`[HttpClientService] GET ${endpoint}`);
-      // return null;
-      
     } catch (error) {
       console.error(`[HttpClientService] Error fetching item ${itemId} from ${listName}:`, error);
       throw error;
@@ -205,15 +177,12 @@ export class HttpClientService {
 
   /**
    * Create a new item in SharePoint list
-   * @param listName Internal name of the list
-   * @param itemData Item data to create
    */
   public async createListItem<T>(listName: string, itemData: any): Promise<T> {
     try {
-      // TODO: Implement REST POST call
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: REST POST call
       const response: SPHttpClientResponse = await this.spHttpClient.post(
         endpoint,
         SPHttpClient.configurations.v1,
@@ -227,15 +196,13 @@ export class HttpClientService {
       );
       
       if (!response.ok) {
-        throw new Error(`Failed to create item in ${listName}: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Failed to create item in ${listName}: ${response.statusText} - ${errorText}`);
       }
       
       const data = await response.json();
+      console.log(`[HttpClientService] POST ${endpoint} - Created item successfully`);
       return data.d as T;
-      
-      // PLACEHOLDER: Return mock data until REST is implemented
-      // console.log(`[HttpClientService] POST ${endpoint}`, itemData);
-      // return { Id: -1, ...itemData } as T;
       
     } catch (error) {
       console.error(`[HttpClientService] Error creating item in ${listName}:`, error);
@@ -245,16 +212,12 @@ export class HttpClientService {
 
   /**
    * Update an existing item in SharePoint list
-   * @param listName Internal name of the list
-   * @param itemId Item ID to update
-   * @param itemData Item data to update
    */
   public async updateListItem<T>(listName: string, itemId: number, itemData: any): Promise<T> {
     try {
-      // TODO: Implement REST MERGE call
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items(${itemId})`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: REST MERGE call
       const response: SPHttpClientResponse = await this.spHttpClient.post(
         endpoint,
         SPHttpClient.configurations.v1,
@@ -270,11 +233,13 @@ export class HttpClientService {
       );
       
       if (!response.ok) {
-        throw new Error(`Failed to update item ${itemId} in ${listName}: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Failed to update item ${itemId} in ${listName}: ${response.statusText} - ${errorText}`);
       }
       
-      // PLACEHOLDER: Return mock data until REST is implemented
-      console.log(`[HttpClientService] MERGE ${endpoint}`, itemData);
+      console.log(`[HttpClientService] MERGE ${endpoint} - Updated item successfully`);
+      
+      // Return updated item (MERGE doesn't return data, so we construct it)
       return { Id: itemId, ...itemData } as T;
       
     } catch (error) {
@@ -285,15 +250,12 @@ export class HttpClientService {
 
   /**
    * Delete an item from SharePoint list
-   * @param listName Internal name of the list
-   * @param itemId Item ID to delete
    */
   public async deleteListItem(listName: string, itemId: number): Promise<void> {
     try {
-      // TODO: Implement REST DELETE call
       const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('${listName}')/items(${itemId})`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: REST DELETE call
       const response: SPHttpClientResponse = await this.spHttpClient.post(
         endpoint,
         SPHttpClient.configurations.v1,
@@ -307,11 +269,11 @@ export class HttpClientService {
       );
       
       if (!response.ok) {
-        throw new Error(`Failed to delete item ${itemId} from ${listName}: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Failed to delete item ${itemId} from ${listName}: ${response.statusText} - ${errorText}`);
       }
       
-      // PLACEHOLDER: Log until REST is implemented
-      console.log(`[HttpClientService] DELETE ${endpoint}`);
+      console.log(`[HttpClientService] DELETE ${endpoint} - Deleted item successfully`);
       
     } catch (error) {
       console.error(`[HttpClientService] Error deleting item ${itemId} from ${listName}:`, error);
@@ -324,10 +286,9 @@ export class HttpClientService {
    */
   public async getCurrentUser(): Promise<any> {
     try {
-      // TODO: Implement REST call
       const endpoint = `${this.siteUrl}/_api/web/currentuser`;
       
-      // TODO: Uncomment when ready to use
+      // ENABLED: REST call
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
         SPHttpClient.configurations.v1
@@ -339,15 +300,6 @@ export class HttpClientService {
       
       const data = await response.json();
       return data;
-      
-      // PLACEHOLDER: Return mock data until REST is implemented
-      // console.log(`[HttpClientService] GET ${endpoint}`);
-      // return {
-      //   Id: 1,
-      //   Title: 'Admin User',
-      //   Email: 'admin@example.com',
-      //   LoginName: 'i:0#.f|membership|admin@example.com'
-      // };
       
     } catch (error) {
       console.error('[HttpClientService] Error getting current user:', error);
