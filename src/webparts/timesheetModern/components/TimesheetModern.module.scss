@@ -59,114 +59,82 @@
    Append this at the BOTTOM of TimesheetModern.module.scss
    ===================================================== */
 
-:global {
-  /* Force SharePoint page to remove default spacing */
-  #workbenchPageContent,
-  .SPPageChrome,
-  .SPCanvas,
-  .CanvasZone {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
+/* =====================================================
+   SPFx WHITE SCREEN FIX - WORKING SOLUTION
+   Place at BOTTOM of TimesheetModern.module.scss
+   ===================================================== */
 
-  /* Remove canvas section padding */
-  .CanvasSection {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
+// /* Target global SharePoint elements */
+// :global {
+//   /* Hide SharePoint suite bar and navigation */
+//   #SuiteNavWrapper,
+//   #suiteBarLeft,
+//   #suiteBar,
+//   .ms-HubNav,
+//   div[data-automation-id="pageHeader"],
+//   .ms-CommandBar,
+//   #DeltaPlaceHolderPageTitleInTitleArea {
+//     display: none !important;
+//     height: 0 !important;
+//     min-height: 0 !important;
+//     visibility: hidden !important;
+//   }
 
-  /* Remove web part wrapper padding */
-  div[data-automation-id="CanvasControl"] {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
+//   /* Remove all canvas and page padding */
+//   #workbenchPageContent,
+//   .SPPageChrome,
+//   .SPCanvas,
+//   .CanvasZone,
+//   .CanvasSection,
+//   .CanvasSection-xl12,
+//   .SPCanvasContent,
+//   #contentRow,
+//   .ControlZone,
+//   .ms-webpart-zone,
+//   .ms-webpartPage-root,
+//   #s4-workspace,
+//   #s4-bodyContainer {
+//     padding: 0 !important;
+//     margin: 0 !important;
+//   }
 
-  /* Force web part container to full height */
-  div[data-sp-webpart] {
-    min-height: 100vh !important;
-    margin: 0 !important;
-  }
+//   /* Force web part container to full height */
+//   div[data-automation-id="CanvasControl"],
+//   div[data-sp-webpart] {
+//     padding: 0 !important;
+//     margin: 0 !important;
+//     min-height: 100vh !important;
+//   }
 
-  /* Hide all SharePoint chrome elements */
-  #SuiteNavWrapper,
-  #suiteBarLeft,
-  #suiteBar,
-  div[data-automation-id="pageHeader"],
-  div[class*="pageHeader"],
-  .ms-CommandBar,
-  .ms-webpart-chrome-title,
-  #DeltaPlaceHolderPageTitleInTitleArea {
-    display: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    visibility: hidden !important;
-  }
+//   /* Remove footer */
+//   footer,
+//   .ms-footer,
+//   div[data-sp-feature-tag="Footer"] {
+//     display: none !important;
+//     height: 0 !important;
+//   }
 
-  /* Remove body/html default margins */
-  body[class*="SPBody"],
-  html {
-    margin: 0 !important;
-    padding: 0 !important;
-  }
+//   /* Force body/html to full height */
+//   html,
+//   body {
+//     margin: 0 !important;
+//     padding: 0 !important;
+//     height: 100% !important;
+//   }
 
-  /* Fix canvas root container */
-  .SPCanvas-canvas {
-    min-height: 100vh !important;
-    padding: 0 !important;
-  }
+//   /* Fix canvas */
+//   .SPCanvas-canvas {
+//     min-height: 100vh !important;
+//     padding: 0 !important;
+//   }
 
-  /* Remove footer spacing */
-  footer,
-  .ms-footer,
-  div[data-sp-feature-tag="Footer"] {
-    display: none !important;
-    height: 0 !important;
-    margin: 0 !important;
-  }
+//   /* Hide page chrome */
+//   #spPageChromeAppDiv {
+//     display: none !important;
+//   }
+// }
 
-  /* Fix content row */
-  #contentRow {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  /* Remove zone padding */
-  .ControlZone,
-  .ms-webpart-zone {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  /* Fix canvas content wrapper */
-  .SPCanvasContent {
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  /* Remove page title spacing */
-  .ms-webpartPage-root {
-    padding: 0 !important;
-  }
-
-  /* Fix section wrapper */
-  .CanvasSection-xl12 {
-    padding: 0 !important;
-  }
-
-  /* Remove ghost space from workspace */
-  #s4-workspace,
-  #s4-bodyContainer {
-    padding: 0 !important;
-  }
-
-  /* Fix page chrome app */
-  #spPageChromeAppDiv {
-    display: none !important;
-    height: 0 !important;
-  }
-}
-
-/* Ensure our web part root takes full space */
+/* Ensure web part root takes full space */
 .timesheetModern {
   min-height: 100vh;
   width: 100%;
@@ -174,6 +142,7 @@
   padding: 0;
   display: block;
   position: relative;
+  background: var(--bg-main); /* Add background color */
 }
 
 // Top Navigation

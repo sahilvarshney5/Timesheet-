@@ -95,7 +95,50 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
       // Don't block app initialization on URL enforcement errors
     });
   }, []); // Run only once on mount
-
+// ============================================================================
+// GLOBAL CSS OVERRIDE - Remove SharePoint Chrome
+// ============================================================================
+React.useEffect(() => {
+  // Inject global CSS to remove SharePoint chrome
+  const styleId = 'spfx-chrome-remover';
+  
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = `
+      #SuiteNavWrapper,
+      #suiteBarLeft,
+      #suiteBar,
+      .ms-HubNav,
+      div[data-automation-id="pageHeader"],
+      .ms-CommandBar,
+      #DeltaPlaceHolderPageTitleInTitleArea,
+      footer,
+      .ms-footer {
+        display: none !important;
+        height: 0 !important;
+        visibility: hidden !important;
+      }
+      
+      #workbenchPageContent,
+      .SPPageChrome,
+      .SPCanvas,
+      .CanvasZone,
+      .CanvasSection,
+      div[data-automation-id="CanvasControl"],
+      div[data-sp-webpart] {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}, []); // Run once on mount
   // ============================================================================
   // EMPLOYEE MASTER LOADING
   // ============================================================================
