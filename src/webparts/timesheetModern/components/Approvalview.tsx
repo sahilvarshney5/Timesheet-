@@ -15,16 +15,11 @@ export interface IApprovalViewProps {
 }
 
 const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
-  const { onViewChange, spHttpClient, siteUrl } = props;
+  const {  spHttpClient, siteUrl } = props;
 
   // Services
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
-    [spHttpClient, siteUrl]
-  );
-
-  const userService = React.useMemo(
-    () => new UserService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
 
@@ -37,40 +32,8 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
   const [error, setError] = React.useState<string | null>(null);
   const [isManager, setIsManager] = React.useState<boolean>(false);
 
-  // Load data on mount
-  React.useEffect(() => {
-    checkPermissionsAndLoadData();
-  }, []);
-
- const checkPermissionsAndLoadData = async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-    setError(null);
-
-    // Check user role from props
-    const isManagerOrAdmin = props.userRole === 'Manager' || props.userRole === 'Admin';
-    setIsManager(isManagerOrAdmin);
-
-    if (!isManagerOrAdmin) {
-      setError('You do not have manager privileges to view the approval queue.');
-      return;
-    }
-
-    // Load both tabs in parallel
-    await Promise.all([
-      loadPendingRequests(),
-      loadApprovalHistory()
-    ]);
-
-  } catch (err) {
-    console.error('[ApprovalView] Error checking permissions and loading data:', err);
-    setError('Failed to load approval data. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-const loadPendingRequests = async (): Promise<void> => {
+ 
+  const loadPendingRequests = React.useCallback(async (): Promise<void> => {
   try {
     // Get pending approvals (filtered by manager if needed)
     const requests = await approvalService.getPendingApprovals();
@@ -96,8 +59,8 @@ const loadPendingRequests = async (): Promise<void> => {
     console.error('[ApprovalView] Error loading pending requests:', err);
     throw err;
   }
-};
-  const loadApprovalHistory = async (): Promise<void> => {
+},[approvalService]);
+  const loadApprovalHistory = React.useCallback(async (): Promise<void> => {
     try {
       const history = await approvalService.getApprovalHistory();
       setApprovalHistory(history);
@@ -107,7 +70,40 @@ const loadPendingRequests = async (): Promise<void> => {
       console.error('[ApprovalView] Error loading approval history:', err);
       throw err;
     }
-  };
+  },[approvalService]);
+
+ const checkPermissionsAndLoadData = React.useCallback(async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+    setError(null);
+
+    // Check user role from props
+    const isManagerOrAdmin = props.userRole === 'Manager' || props.userRole === 'Admin';
+    setIsManager(isManagerOrAdmin);
+
+    if (!isManagerOrAdmin) {
+      setError('You do not have manager privileges to view the approval queue.');
+      return;
+    }
+
+    // Load both tabs in parallel
+    await Promise.all([
+      loadPendingRequests(),
+      loadApprovalHistory()
+    ]);
+
+  } catch (err) {
+    console.error('[ApprovalView] Error checking permissions and loading data:', err);
+    setError('Failed to load approval data. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+},[props.userRole, loadPendingRequests, loadApprovalHistory]);
+ // Load data on mount
+  React.useEffect(() => {
+    checkPermissionsAndLoadData();
+  }, []);
+
 
   const handleTabChange = (tabName: string): void => {
     setActiveTab(tabName);

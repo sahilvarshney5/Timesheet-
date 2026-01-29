@@ -76,7 +76,7 @@ export class DashboardService {
 
       // Count pending timesheet entries (days without timesheet in current week)
       const weekDays = this.getWeekDays(today);
-      let pendingTimesheetEntries = 0;
+      const pendingTimesheetEntries = 0;
       
       for (const day of weekDays) {
         const dayString = day.toISOString().split('T')[0];

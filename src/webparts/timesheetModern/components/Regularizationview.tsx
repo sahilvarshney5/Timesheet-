@@ -15,16 +15,11 @@ export interface IRegularizationViewProps {
 }
 
 const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
-  const { onViewChange, spHttpClient, siteUrl, currentUserDisplayName } = props;
+  const { onViewChange, spHttpClient, siteUrl } = props;
   
   // Services
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
-    [spHttpClient, siteUrl]
-  );
-
-  const userService = React.useMemo(
-    () => new UserService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
 
@@ -34,14 +29,10 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [employeeId, setEmployeeId] = React.useState<string>('');
 
-  // Load data on mount
-  React.useEffect(() => {
-    loadRegularizationHistory();
-  }, []);
+  
 
- const loadRegularizationHistory = async (): Promise<void> => {
+ const loadRegularizationHistory = React.useCallback(async (): Promise<void> => {
   try {
     setIsLoading(true);
     setError(null);
@@ -63,8 +54,11 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   } finally {
     setIsLoading(false);
   }
-};
-
+  }, [props.employeeMaster.EmployeeID, approvalService]);
+// Load data on mount
+  React.useEffect(() => {
+    loadRegularizationHistory();
+  }, []);
   const handleTypeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRegularizationType(event.target.value);
   };
@@ -119,7 +113,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
       ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
       Reason: `${category.replace(/_/g, ' ').toUpperCase()}: ${reason}`,
-      Status: 'Pending' as 'Pending'
+      Status: 'Pending' as const
     };
     
     // Submit to SharePoint
@@ -131,7 +125,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       employeeId: empId,
       employeeName: props.employeeMaster.EmployeeDisplayName || props.currentUserDisplayName,
       requestType: regularizationType as 'day_based' | 'time_based',
-      category: category as any,
+      category: category as IRegularizationRequest['category'],  // FIXED: Proper type
       fromDate: fromDate,
       toDate: toDate,
       startTime: regularizationType === 'time_based' ? timeStart : undefined,
@@ -176,7 +170,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   }
 };
 
-  const handleView = (request: IRegularizationRequest): void => {
+  const handleView = React.useCallback((request: IRegularizationRequest): void => {
     const fromDate = new Date(request.fromDate);
     const toDate = new Date(request.toDate);
     const submittedDate = new Date(request.submittedOn);
@@ -216,9 +210,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     }
     
     alert(message);
-  };
+  }, []);
 
-  const handleRecall = async (requestId: number): Promise<void> => {
+  const handleRecall = React.useCallback(async (requestId: number): Promise<void> => {
     if (!confirm('Are you sure you want to recall this pending regularization request?')) {
       return;
     }
@@ -236,7 +230,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       console.error('[RegularizationView] Error recalling request:', err);
       alert('Failed to recall regularization request. Please try again.');
     }
-  };
+    }, []);
+
 
   const handleCancel = async (requestId: number): Promise<void> => {
     if (!confirm('Are you sure you want to cancel this approved regularization request?')) {
@@ -258,9 +253,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     }
   };
 
-  const handleRefresh = (): void => {
+  const handleRefresh = React.useCallback((): void => {
     loadRegularizationHistory();
-  };
+  },[loadRegularizationHistory]);
 
   const formatCategoryText = (category: string): string => {
     return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());

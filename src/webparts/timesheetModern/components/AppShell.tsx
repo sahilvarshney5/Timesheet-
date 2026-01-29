@@ -30,24 +30,24 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
   const [state, setState] = React.useState<IAppShellState>({
     activeView: 'dashboard',
     sidebarHidden: false,
-    employeeMaster: null,
+    employeeMaster: undefined,
     isLoading: true,
-    error: null,
+    error: undefined,
     userRole: 'Member'
   });
 
   // Employee Service
-  const employeeService = React.useMemo(
-    () => new EmployeeService(httpClient, siteUrl),
-    [httpClient, siteUrl]
-  );
+ 
 
   // Load employee master on mount - THIS IS CRITICAL
   React.useEffect(() => {
     loadEmployeeMaster();
   }, []);
-
-  const loadEmployeeMaster = async (): Promise<void> => {
+ const employeeService = React.useMemo(
+    () => new EmployeeService(httpClient, siteUrl),
+    [httpClient, siteUrl]
+  );
+  const loadEmployeeMaster = React.useCallback(async (): Promise<void> => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -93,7 +93,7 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
         error: err instanceof Error ? err.message : 'Failed to load employee data'
       }));
     }
-  };
+  }, [employeeService]);
 
   const handleViewChange = React.useCallback((viewName: string): void => {
     setState(prev => ({

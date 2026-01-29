@@ -5,6 +5,15 @@ import { TimesheetService } from '../services/TimesheetService';
 import { AttendanceService } from '../services/AttendanceService';
 import { IEmployeeMaster } from '../models';
 
+interface ITimesheetEntry {
+  id: number;
+  date: string;
+  project: string;
+  hours: number;
+  taskType: string;
+  description: string;
+}
+
 export interface ITimesheetViewProps {
   onViewChange: (viewName: string) => void;
   spHttpClient: SPHttpClient;
@@ -14,14 +23,6 @@ export interface ITimesheetViewProps {
   userRole: 'Admin' | 'Manager' | 'Member';  // NEW
 }
 
-interface ITimesheetEntry {
-  id: number;
-  date: string;
-  project: string;
-  hours: number;
-  taskType: string;
-  description: string;
-}
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { onViewChange, spHttpClient, siteUrl } = props;
@@ -32,10 +33,10 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     [spHttpClient, siteUrl]
   );
 
-  const attendanceService = React.useMemo(
-    () => new AttendanceService(spHttpClient, siteUrl),
-    [spHttpClient, siteUrl]
-  );
+  // const attendanceService = React.useMemo(
+  //   () => new AttendanceService(spHttpClient, siteUrl),
+  //   [spHttpClient, siteUrl]
+  // );
 
   // State management
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false);
@@ -53,12 +54,31 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     description: ''
   });
 
-  // Load timesheet data when week changes
-  React.useEffect(() => {
-    loadTimesheetData();
-  }, [currentWeekOffset]);
+  
 
-const loadTimesheetData = async (): Promise<void> => {
+  // Get current week days based on offset
+  const getCurrentWeekDays = React.useCallback((): string[] => {
+    const today = new Date();
+    const adjustedDate = new Date(today);
+    adjustedDate.setDate(today.getDate() + (currentWeekOffset * 7));
+    
+    // Get Monday of this week
+    const startOfWeek = new Date(adjustedDate);
+    const dayOfWeek = adjustedDate.getDay();
+    const diff = adjustedDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    startOfWeek.setDate(diff);
+    
+    // Get all 7 days (Monday to Sunday)
+    const days: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + i);
+      days.push(day.toISOString().split('T')[0]);
+    }
+    
+    return days;
+  },[currentWeekOffset]);
+const loadTimesheetData = React.useCallback(async (): Promise<void> => {
   try {
     setIsLoading(true);
     
@@ -104,30 +124,12 @@ const loadTimesheetData = async (): Promise<void> => {
   } finally {
     setIsLoading(false);
   }
-};
-
-  // Get current week days based on offset
-  const getCurrentWeekDays = (): string[] => {
-    const today = new Date();
-    const adjustedDate = new Date(today);
-    adjustedDate.setDate(today.getDate() + (currentWeekOffset * 7));
-    
-    // Get Monday of this week
-    const startOfWeek = new Date(adjustedDate);
-    const dayOfWeek = adjustedDate.getDay();
-    const diff = adjustedDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    startOfWeek.setDate(diff);
-    
-    // Get all 7 days (Monday to Sunday)
-    const days: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(startOfWeek);
-      day.setDate(startOfWeek.getDate() + i);
-      days.push(day.toISOString().split('T')[0]);
-    }
-    
-    return days;
-  };
+  }, [getCurrentWeekDays, props.employeeMaster.EmployeeID, timesheetService]);
+// Load timesheet data when week changes
+  React.useEffect(() => {
+    loadTimesheetData();
+  }, [currentWeekOffset]);
+  
 
   // Get week range display text
   const getWeekRangeText = (): string => {
@@ -191,7 +193,7 @@ const loadTimesheetData = async (): Promise<void> => {
   // Close modal
   const handleCloseModal = (): void => {
     setIsModalOpen(false);
-    setEditingEntry(null);
+    setEditingEntry(null);loadTimesheetData 
     setFormData({
       date: '',
       project: '',
