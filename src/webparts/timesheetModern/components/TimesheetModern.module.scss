@@ -54,66 +54,126 @@
    DO NOT add global html/body resets here!
 */
 
+/* =====================================================
+   SPFx WHITE SPACE FIX - FINAL SOLUTION
+   Append this at the BOTTOM of TimesheetModern.module.scss
+   ===================================================== */
+
 :global {
-  /* Hide SharePoint suite bar and chrome (SAFE) */
+  /* Force SharePoint page to remove default spacing */
+  #workbenchPageContent,
+  .SPPageChrome,
+  .SPCanvas,
+  .CanvasZone {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Remove canvas section padding */
+  .CanvasSection {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Remove web part wrapper padding */
+  div[data-automation-id="CanvasControl"] {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Force web part container to full height */
+  div[data-sp-webpart] {
+    min-height: 100vh !important;
+    margin: 0 !important;
+  }
+
+  /* Hide all SharePoint chrome elements */
   #SuiteNavWrapper,
   #suiteBarLeft,
   #suiteBar,
-  .ms-webpart-chrome-title,
-  #DeltaPlaceHolderPageTitleInTitleArea,
-  .ms-commandBar,
   div[data-automation-id="pageHeader"],
-  div[data-sp-feature-tag="Page Title"] {
+  div[class*="pageHeader"],
+  .ms-CommandBar,
+  .ms-webpart-chrome-title,
+  #DeltaPlaceHolderPageTitleInTitleArea {
     display: none !important;
-    visibility: hidden !important;
     height: 0 !important;
     min-height: 0 !important;
+    visibility: hidden !important;
   }
 
-  /* Hide page title elements (SAFE) */
-  .ms-webpart-titleText,
-  .ms-webpart-chrome,
-  div[data-automation-id="pageTitle"] {
-    display: none !important;
-  }
-
-  /* Ensure canvas takes full space (SAFE) */
-  .CanvasZone,
-  .CanvasSection {
-    max-width: 100% !important;
+  /* Remove body/html default margins */
+  body[class*="SPBody"],
+  html {
+    margin: 0 !important;
     padding: 0 !important;
   }
 
-  /* Remove web part chrome padding (SAFE) */
-  .SPCanvas-canvas,
-  div[data-automation-id="CanvasControl"] {
+  /* Fix canvas root container */
+  .SPCanvas-canvas {
+    min-height: 100vh !important;
     padding: 0 !important;
   }
 
-  /* Hide footer (SAFE) */
+  /* Remove footer spacing */
   footer,
   .ms-footer,
   div[data-sp-feature-tag="Footer"] {
     display: none !important;
     height: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Fix content row */
+  #contentRow {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Remove zone padding */
+  .ControlZone,
+  .ms-webpart-zone {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Fix canvas content wrapper */
+  .SPCanvasContent {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Remove page title spacing */
+  .ms-webpartPage-root {
+    padding: 0 !important;
+  }
+
+  /* Fix section wrapper */
+  .CanvasSection-xl12 {
+    padding: 0 !important;
+  }
+
+  /* Remove ghost space from workspace */
+  #s4-workspace,
+  #s4-bodyContainer {
+    padding: 0 !important;
+  }
+
+  /* Fix page chrome app */
+  #spPageChromeAppDiv {
+    display: none !important;
+    height: 0 !important;
   }
 }
 
+/* Ensure our web part root takes full space */
 .timesheetModern {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: var(--bg-main);
-  color: var(--text-primary);
-  line-height: 1.4;
-  font-size: var(--font-base);
   min-height: 100vh;
   width: 100%;
-  position: relative;
-  overflow-x: hidden;
-  
-  /* CRITICAL: Ensure our component renders properly */
-  display: block;
   margin: 0;
   padding: 0;
+  display: block;
+  position: relative;
 }
 
 // Top Navigation
