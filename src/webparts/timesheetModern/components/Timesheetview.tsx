@@ -2,7 +2,6 @@ import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { TimesheetService } from '../services/TimesheetService';
-import { AttendanceService } from '../services/AttendanceService';
 import { IEmployeeMaster } from '../models';
 
 interface ITimesheetEntry {
@@ -19,24 +18,18 @@ export interface ITimesheetViewProps {
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
-  employeeMaster: IEmployeeMaster;  // NEW
-  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
+  employeeMaster: IEmployeeMaster;
+  userRole: 'Admin' | 'Manager' | 'Member';
 }
 
-
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
-  const { onViewChange, spHttpClient, siteUrl } = props;
+  const { spHttpClient, siteUrl } = props;
 
   // Services
   const timesheetService = React.useMemo(
     () => new TimesheetService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
-
-  // const attendanceService = React.useMemo(
-  //   () => new AttendanceService(spHttpClient, siteUrl),
-  //   [spHttpClient, siteUrl]
-  // );
 
   // State management
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false);
@@ -53,8 +46,6 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     taskType: 'Development',
     description: ''
   });
-
-  
 
   // Get current week days based on offset
   const getCurrentWeekDays = React.useCallback((): string[] => {
@@ -77,59 +68,62 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     }
     
     return days;
-  },[currentWeekOffset]);
-const loadTimesheetData = React.useCallback(async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-    
-    // Get week dates
-    const weekDays = getCurrentWeekDays();
-    const startDate = weekDays[0];
-    const endDate = weekDays[weekDays.length - 1];
-    
-    // Get Employee ID from props
-    const empId = props.employeeMaster.EmployeeID;
-    
-    console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
-    
-    // Check if timesheet header exists for this week
-    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
-    
-    if (!timesheetHeader) {
-      // Create new timesheet header
-      timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
-      console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
-    }
-    
-    // Load timesheet lines for this header
-    const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
-    
-    // Convert to ITimesheetEntry format
-    const convertedEntries: ITimesheetEntry[] = lines.map(line => ({
-      id: line.Id!,
-      date: line.WorkDate!,
-      project: line.ProjectNo!,
-      hours: line.HoursBooked!,
-      taskType: 'Development', // Default
-      description: line.Description || ''
-    }));
-    
-    setEntries(convertedEntries);
-    
-    console.log(`[TimesheetView] Loaded ${convertedEntries.length} timesheet entries`);
-    
-  } catch (error) {
-    console.error('[TimesheetView] Error loading timesheet data:', error);
-    alert('Failed to load timesheet data. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-  }, [getCurrentWeekDays, props.employeeMaster.EmployeeID, timesheetService]);
-// Load timesheet data when week changes
-  React.useEffect(() => {
-  void  loadTimesheetData();
   }, [currentWeekOffset]);
-  
+
+  const loadTimesheetData = React.useCallback(async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      // Get week dates
+      const weekDays = getCurrentWeekDays();
+      const startDate = weekDays[0];
+      const endDate = weekDays[weekDays.length - 1];
+      
+      // Get Employee ID from props
+      const empId = props.employeeMaster.EmployeeID;
+      
+      console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
+      
+      // Check if timesheet header exists for this week
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      
+      if (!timesheetHeader) {
+        // Create new timesheet header
+        timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
+        console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
+      }
+      
+      // Load timesheet lines for this header
+      const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
+      
+      // Convert to ITimesheetEntry format
+      const convertedEntries: ITimesheetEntry[] = lines.map(line => ({
+        id: line.Id!,
+        date: line.WorkDate!,
+        project: line.ProjectNo!,
+        hours: line.HoursBooked!,
+        taskType: 'Development', // Default
+        description: line.Description || ''
+      }));
+      
+      setEntries(convertedEntries);
+      
+      console.log(`[TimesheetView] Loaded ${convertedEntries.length} timesheet entries`);
+      
+    } catch (error) {
+      console.error('[TimesheetView] Error loading timesheet data:', error);
+      alert('Failed to load timesheet data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getCurrentWeekDays, props.employeeMaster.EmployeeID, timesheetService]);
+
+  // Load timesheet data when week changes
+  React.useEffect(() => {
+    loadTimesheetData().catch(err => {
+      console.error('[TimesheetView] Effect error:', err);
+    });
+  }, [currentWeekOffset, loadTimesheetData]);
 
   // Get week range display text
   const getWeekRangeText = (): string => {
@@ -194,7 +188,10 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
   const handleCloseModal = (): void => {
     setIsModalOpen(false);
     setEditingEntry(null);
-    loadTimesheetData(); // Refresh data after closing 
+    // FIXED: Handle promise properly
+    loadTimesheetData().catch(err => {
+      console.error('[TimesheetView] Error refreshing after close:', err);
+    });
     setFormData({
       date: '',
       project: '',
@@ -205,7 +202,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
   };
 
   // Form input change
-  const handleInputChange = (field: string, value: any): void => {
+  const handleInputChange = (field: string, value: unknown): void => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -214,146 +211,146 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
 
   // Submit form
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
-  event.preventDefault();
-  
-  try {
-    setIsLoading(true);
+    event.preventDefault();
     
-    const empId = props.employeeMaster.EmployeeID;
-    
-    // Get or create timesheet header
-    const weekDays = getCurrentWeekDays();
-    const startDate = weekDays[0];
-    
-    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
-    
-    if (!timesheetHeader) {
-      timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
-    }
-    
-    if (editingEntry) {
-      // Update existing entry in SharePoint
-      const updatedLine = await timesheetService.updateTimesheetLine(editingEntry.id, {
-        WorkDate: formData.date,
-        ProjectNo: formData.project,
-        HoursBooked: formData.hours,
-        Description: formData.description
-      });
-      
-      // Update local state
-      setEntries(prev => prev.map(entry => 
-        entry.id === editingEntry.id 
-          ? { ...entry, ...formData }
-          : entry
-      ));
-      
-      alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
-    } else {
-      // Create new entry in SharePoint
-      const newLine = await timesheetService.createTimesheetLine({
-        TimesheetID: timesheetHeader.Id,
-        WorkDate: formData.date,
-        ProjectNo: formData.project,
-        TaskNo: '', // TODO: Add task selection
-        HoursBooked: formData.hours,
-        Description: formData.description
-      });
-      
-      // Add to local state
-      const newEntry: ITimesheetEntry = {
-        id: newLine.Id!,
-        ...formData
-      };
-      setEntries(prev => [...prev, newEntry]);
-      
-      alert(`Timesheet entry added: ${formData.hours} hours for ${formData.project}`);
-    }
-    
-    handleCloseModal();
-    
-  } catch (error) {
-    console.error('[TimesheetView] Error saving entry:', error);
-    alert('Error saving timesheet entry. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  // Delete entry
- const handleDeleteEntry = async (entryId: number): Promise<void> => {
-  if (confirm('Are you sure you want to delete this timesheet entry?')) {
-    try {
-      setIsLoading(true);
-      
-      const deletedEntry = entries.find(e => e.id === entryId);
-      
-      // Delete from SharePoint
-      await timesheetService.deleteTimesheetLine(entryId);
-      
-      // Remove from local state
-      setEntries(prev => prev.filter(e => e.id !== entryId));
-      
-      if (deletedEntry) {
-        alert(`Timesheet entry deleted: ${deletedEntry.hours} hours for ${deletedEntry.project}`);
-      }
-      
-    } catch (error) {
-      console.error('[TimesheetView] Error deleting entry:', error);
-      alert('Error deleting timesheet entry. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }
-};
-  // Submit timesheet
- const handleSubmitTimesheet = async (): Promise<void> => {
-  const weekDays = getCurrentWeekDays();
-  const weekEntries = entries.filter(entry => 
-    weekDays.indexOf(entry.date) !== -1
-  );
-  
-  if (weekEntries.length === 0) {
-    alert('Please add at least one timesheet entry before submitting.');
-    return;
-  }
-  
-  const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
-  
-  if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet will be sent for approval.`)) {
     try {
       setIsLoading(true);
       
       const empId = props.employeeMaster.EmployeeID;
+      
+      // Get or create timesheet header
+      const weekDays = getCurrentWeekDays();
       const startDate = weekDays[0];
       
-      // Get timesheet header
-      const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
       
       if (!timesheetHeader) {
-        throw new Error('Timesheet header not found');
+        timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
       }
       
-      // Submit for approval
-      await timesheetService.submitTimesheet(timesheetHeader.Id!);
+      if (editingEntry) {
+        // Update existing entry in SharePoint
+        await timesheetService.updateTimesheetLine(editingEntry.id, {
+          WorkDate: formData.date,
+          ProjectNo: formData.project,
+          HoursBooked: formData.hours,
+          Description: formData.description
+        });
+        
+        // Update local state
+        setEntries(prev => prev.map(entry => 
+          entry.id === editingEntry.id 
+            ? { ...entry, ...formData }
+            : entry
+        ));
+        
+        alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
+      } else {
+        // Create new entry in SharePoint
+        const newLine = await timesheetService.createTimesheetLine({
+          TimesheetID: timesheetHeader.Id,
+          WorkDate: formData.date,
+          ProjectNo: formData.project,
+          TaskNo: '', // TODO: Add task selection
+          HoursBooked: formData.hours,
+          Description: formData.description
+        });
+        
+        // Add to local state
+        const newEntry: ITimesheetEntry = {
+          id: newLine.Id!,
+          ...formData
+        };
+        setEntries(prev => [...prev, newEntry]);
+        
+        alert(`Timesheet entry added: ${formData.hours} hours for ${formData.project}`);
+      }
       
-      alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet has been sent for approval.`);
-      
-      // Reload data
-      await loadTimesheetData();
+      handleCloseModal();
       
     } catch (error) {
-      console.error('[TimesheetView] Error submitting timesheet:', error);
-      alert('Error submitting timesheet. Please try again.');
+      console.error('[TimesheetView] Error saving entry:', error);
+      alert('Error saving timesheet entry. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }
-};
+  };
+
+  // Delete entry
+  const handleDeleteEntry = async (entryId: number): Promise<void> => {
+    if (confirm('Are you sure you want to delete this timesheet entry?')) {
+      try {
+        setIsLoading(true);
+        
+        const deletedEntry = entries.find(e => e.id === entryId);
+        
+        // Delete from SharePoint
+        await timesheetService.deleteTimesheetLine(entryId);
+        
+        // Remove from local state
+        setEntries(prev => prev.filter(e => e.id !== entryId));
+        
+        if (deletedEntry) {
+          alert(`Timesheet entry deleted: ${deletedEntry.hours} hours for ${deletedEntry.project}`);
+        }
+        
+      } catch (error) {
+        console.error('[TimesheetView] Error deleting entry:', error);
+        alert('Error deleting timesheet entry. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Submit timesheet
+  const handleSubmitTimesheet = async (): Promise<void> => {
+    const weekDays = getCurrentWeekDays();
+    const weekEntries = entries.filter(entry => 
+      weekDays.indexOf(entry.date) !== -1
+    );
+    
+    if (weekEntries.length === 0) {
+      alert('Please add at least one timesheet entry before submitting.');
+      return;
+    }
+    
+    const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
+    
+    if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet will be sent for approval.`)) {
+      try {
+        setIsLoading(true);
+        
+        const empId = props.employeeMaster.EmployeeID;
+        const startDate = weekDays[0];
+        
+        // Get timesheet header
+        const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+        
+        if (!timesheetHeader) {
+          throw new Error('Timesheet header not found');
+        }
+        
+        // Submit for approval
+        await timesheetService.submitTimesheet(timesheetHeader.Id!);
+        
+        alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet has been sent for approval.`);
+        
+        // Reload data
+        await loadTimesheetData();
+        
+      } catch (error) {
+        console.error('[TimesheetView] Error submitting timesheet:', error);
+        alert('Error submitting timesheet. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
 
   // Calculate totals for current week
-  const calculateWeekTotals = () => {
+  const calculateWeekTotals = (): { totalHours: number; daysWithEntries: number; totalDays: number } => {
     const weekDays = getCurrentWeekDays();
-    // FIXED: Use indexOf instead of includes
     const weekEntries = entries.filter(entry => 
       weekDays.indexOf(entry.date) !== -1
     );
@@ -442,7 +439,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
           </div>
         ) : (
           <div className={styles.timesheetGrid}>
-            {weekDays.map((date, index) => {
+            {weekDays.map((date) => {
               const dateEntries = getEntriesForDate(date);
               const dateTotalHours = getTotalHoursForDate(date);
               const isTodayDate = isToday(date);
@@ -485,7 +482,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
                           </button>
                           <button 
                             className={`${styles.entryActionBtn} ${styles.deleteBtn}`}
-                            onClick={() => handleDeleteEntry(entry.id)}
+                            onClick={() => { handleDeleteEntry(entry.id).catch(console.error); }}
                           >
                             <span>🗑️</span> Delete
                           </button>
@@ -509,7 +506,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
         {/* Submit Timesheet Button */}
         <button 
           className={styles.submitTimesheetBtn}
-          onClick={handleSubmitTimesheet}
+          onClick={() => { handleSubmitTimesheet().catch(console.error); }}
           disabled={isLoading}
         >
           <span>✓</span> Submit Timesheet
@@ -540,7 +537,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
               <button className={styles.closeBtn} onClick={handleCloseModal}>×</button>
             </div>
             
-            <form className={styles.timesheetForm} onSubmit={handleSubmit}>
+            <form className={styles.timesheetForm} onSubmit={(e) => { handleSubmit(e).catch(console.error); }}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Date *</label>
                 <input 
@@ -610,7 +607,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
                   value={formData.description}
                   onChange={(e) => handleInputChange('description', e.target.value)}
                   required
-                ></textarea>
+                />
               </div>
               
               <div className={styles.formActions}>

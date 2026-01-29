@@ -2,7 +2,6 @@ import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
-import { UserService } from '../services/UserService';
 import { IEmployeeMaster, ITimesheetDay } from '../models';
 
 export interface IAttendanceViewProps {
@@ -10,8 +9,8 @@ export interface IAttendanceViewProps {
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
-  employeeMaster: IEmployeeMaster;  // NEW - Required
-  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
+  employeeMaster: IEmployeeMaster;
+  userRole: 'Admin' | 'Manager' | 'Member';
 }
 
 const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
@@ -23,136 +22,16 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     [spHttpClient, siteUrl]
   );
 
-  const userService = React.useMemo(
-    () => new UserService(spHttpClient, siteUrl),
-    [spHttpClient, siteUrl]
-  );
-
   // State
   const [currentMonth, setCurrentMonth] = React.useState<number>(new Date().getMonth());
   const [currentYear, setCurrentYear] = React.useState<number>(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [employeeId, setEmployeeId] = React.useState<string>('');
 
- 
-
-  const handleDownloadReport = async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-    
-    await attendanceService.downloadAttendanceReport(
-      props.employeeMaster.EmployeeID,
-      currentYear,
-      currentMonth + 1
-    );
-    
-    alert('Attendance report downloaded successfully!');
-    
-  } catch (err) {
-    console.error('[AttendanceView] Error downloading report:', err);
-    alert('Failed to download attendance report. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
- const loadCalendarData = async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-    setError(null);
-
-    // Use Employee ID from props.employeeMaster
-    const empId = props.employeeMaster.EmployeeID;
-    
-    console.log(`[AttendanceView] Loading calendar for Employee ID: ${empId}`);
-
-    // Load calendar data from AttendanceService
-    const calendar = await attendanceService.buildCalendarForMonth(
-      empId,  // Use Employee ID (e.g., "R0398")
-      currentYear,
-      currentMonth + 1
-    );
-
-    setCalendarDays(calendar);
-    console.log(`[AttendanceView] Loaded ${calendar.length} calendar days for ${getMonthName(currentMonth)} ${currentYear}`);
-
-  } catch (err) {
-    console.error('[AttendanceView] Error loading calendar data:', err);
-    setError('Failed to load calendar data. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  const handleMonthChange = (direction: number): void => {
-    let newMonth = currentMonth + direction;
-    let newYear = currentYear;
-
-    if (newMonth < 0) {
-      newMonth = 11;
-      newYear--;
-    } else if (newMonth > 11) {
-      newMonth = 0;
-      newYear++;
-    }
-
-    setCurrentMonth(newMonth);
-    setCurrentYear(newYear);
-  };
- // Load calendar data when month/year changes
-  React.useEffect(() => {
-    void loadCalendarData();
-  }, [currentMonth, currentYear]);
-  const handleDayClick = (day: ITimesheetDay): void => {
-    if (day.status === 'empty') return;
-
-    const date = new Date(day.date);
-    const formattedDate = date.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-
-    let message = `Details for ${formattedDate}:\n\n`;
-    message += `Status: ${getStatusText(day.status || '')}\n`;
-
-    if (day.firstPunchIn) {
-      message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
-    }
-
-    if (day.lastPunchOut) {
-      message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
-    }
-
-    if (day.totalHours && day.totalHours > 0) {
-      message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
-    }
-
-    if (day.leaveType) {
-      message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
-    }
-
-    // Timesheet info
-    const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
-    message += `\nTimesheet Status: ${timesheetStatus}\n`;
-    
-    if (day.timesheetHours > 0) {
-      message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
-    }
-
-    // If present day with no timesheet, offer to fill
-    if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
-      message += `\n Would you like to fill timesheet for this day?`;
-      
-      if (confirm(message)) {
-        onViewChange('timesheet');
-      }
-    } else {
-      alert(message);
-    }
-  };
+  // ============================================================================
+  // HELPER FUNCTIONS - DEFINED FIRST BEFORE USAGE
+  // ============================================================================
 
   const getMonthName = (month: number): string => {
     const monthNames = [
@@ -255,11 +134,131 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     return legendMap[type] || '';
   };
 
-  // Generate calendar grid with proper padding
+  // ============================================================================
+  // DATA LOADING FUNCTIONS
+  // ============================================================================
+
+  const loadCalendarData = React.useCallback(async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const empId = props.employeeMaster.EmployeeID;
+      
+      console.log(`[AttendanceView] Loading calendar for Employee ID: ${empId}`);
+
+      const calendar = await attendanceService.buildCalendarForMonth(
+        empId,
+        currentYear,
+        currentMonth + 1
+      );
+
+      setCalendarDays(calendar);
+      console.log(`[AttendanceView] Loaded ${calendar.length} calendar days for ${getMonthName(currentMonth)} ${currentYear}`);
+
+    } catch (err) {
+      console.error('[AttendanceView] Error loading calendar data:', err);
+      setError('Failed to load calendar data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth]);
+
+  const handleDownloadReport = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      await attendanceService.downloadAttendanceReport(
+        props.employeeMaster.EmployeeID,
+        currentYear,
+        currentMonth + 1
+      );
+      
+      alert('Attendance report downloaded successfully!');
+      
+    } catch (err) {
+      console.error('[AttendanceView] Error downloading report:', err);
+      alert('Failed to download attendance report. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // EVENT HANDLERS
+  // ============================================================================
+
+  const handleMonthChange = (direction: number): void => {
+    let newMonth = currentMonth + direction;
+    let newYear = currentYear;
+
+    if (newMonth < 0) {
+      newMonth = 11;
+      newYear--;
+    } else if (newMonth > 11) {
+      newMonth = 0;
+      newYear++;
+    }
+
+    setCurrentMonth(newMonth);
+    setCurrentYear(newYear);
+  };
+
+  const handleDayClick = (day: ITimesheetDay): void => {
+    if (day.status === 'empty') return;
+
+    const date = new Date(day.date);
+    const formattedDate = date.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+
+    let message = `Details for ${formattedDate}:\n\n`;
+    message += `Status: ${getStatusText(day.status || '')}\n`;
+
+    if (day.firstPunchIn) {
+      message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
+    }
+
+    if (day.lastPunchOut) {
+      message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
+    }
+
+    if (day.totalHours && day.totalHours > 0) {
+      message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
+    }
+
+    if (day.leaveType) {
+      message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
+    }
+
+    const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
+    message += `\nTimesheet Status: ${timesheetStatus}\n`;
+    
+    if (day.timesheetHours > 0) {
+      message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
+    }
+
+    if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
+      message += `\n Would you like to fill timesheet for this day?`;
+      
+      if (confirm(message)) {
+        onViewChange('timesheet');
+      }
+    } else {
+      alert(message);
+    }
+  };
+
+  // ============================================================================
+  // CALENDAR GRID GENERATOR
+  // ============================================================================
+
   const generateCalendarGrid = (): JSX.Element[] => {
     const grid: JSX.Element[] = [];
     
-    // Add day headers
     ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(day => {
       grid.push(
         <div key={`header-${day}`} className={styles.calendarDayHeader}>
@@ -268,11 +267,9 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       );
     });
 
-    // Add empty cells for padding before first day
     if (calendarDays.length > 0) {
       const firstDay = new Date(calendarDays[0].date);
       let startDay = firstDay.getDay();
-      // Convert to Monday as first day (0 = Sunday -> 6, 1 = Monday -> 0, etc.)
       startDay = startDay === 0 ? 6 : startDay - 1;
       
       for (let i = 0; i < startDay; i++) {
@@ -285,7 +282,6 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       }
     }
 
-    // Add calendar days
     calendarDays.forEach((day, index) => {
       const dayNumber = new Date(day.date).getDate();
       
@@ -341,6 +337,20 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     return grid;
   };
 
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  React.useEffect(() => {
+    loadCalendarData().catch(err => {
+      console.error('[AttendanceView] Effect error:', err);
+    });
+  }, [currentMonth, currentYear, loadCalendarData]);
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   if (isLoading) {
     return (
       <div className={styles.viewContainer}>
@@ -360,7 +370,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
           <p style={{ color: 'var(--danger)' }}>{error}</p>
           <button 
             className={`${styles.btn} ${styles.btnPrimary}`}
-            onClick={loadCalendarData}
+            onClick={() => { loadCalendarData().catch(console.error); }}
             style={{ marginTop: '1rem' }}
           >
             Retry
@@ -401,7 +411,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
           <div className={styles.calendarActions}>
             <button 
               className={`${styles.btn} ${styles.btnOutline}`}
-                onClick={handleDownloadReport}
+              onClick={() => { handleDownloadReport().catch(console.error); }}
               disabled={isLoading}
             >
               Download Report
@@ -422,35 +432,35 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         
         <div className={styles.calendarLegend}>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('present')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('present')}`} />
             <span>Present</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`} />
             <span>Absent</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`} />
             <span>Holiday</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`} />
             <span>On Leave</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`} />
             <span>Weekend</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`} />
             <span>Timesheet: Filled</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`} />
             <span>Timesheet: Partial</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`}></div>
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`} />
             <span>Timesheet: Not Filled</span>
           </div>
         </div>
