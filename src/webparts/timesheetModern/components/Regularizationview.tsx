@@ -57,7 +57,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   }, [props.employeeMaster.EmployeeID, approvalService]);
 // Load data on mount
   React.useEffect(() => {
-    loadRegularizationHistory();
+   void loadRegularizationHistory();
   }, []);
   const handleTypeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRegularizationType(event.target.value);
@@ -254,7 +254,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   };
 
   const handleRefresh = React.useCallback((): void => {
-    loadRegularizationHistory();
+    void loadRegularizationHistory();
   },[loadRegularizationHistory]);
 
   const formatCategoryText = (category: string): string => {

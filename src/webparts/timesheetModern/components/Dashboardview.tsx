@@ -41,13 +41,7 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
     () => new UserService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
-
-  // Load dashboard data on mount
-  React.useEffect(() => {
-    loadDashboardData();
-  }, []);
-
- const loadDashboardData = async (): Promise<void> => {
+   const loadDashboardData = async (): Promise<void> => {
   try {
     setIsLoading(true);
     setError(null);
@@ -71,6 +65,13 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
     setIsLoading(false);
   }
 };
+
+  // Load dashboard data on mount
+  React.useEffect(() => {
+  void  loadDashboardData();
+  }, []);
+
+
   if (isLoading) {
     return (
       <div className={styles.viewContainer}>

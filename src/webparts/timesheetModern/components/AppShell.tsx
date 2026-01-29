@@ -30,20 +30,14 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
   const [state, setState] = React.useState<IAppShellState>({
     activeView: 'dashboard',
     sidebarHidden: false,
-    employeeMaster: undefined,
+    employeeMaster: null,  // FIXED: Changed from undefined to null
     isLoading: true,
-    error: undefined,
+    error: null,  // FIXED: Changed from undefined to null
     userRole: 'Member'
   });
 
   // Employee Service
- 
-
-  // Load employee master on mount - THIS IS CRITICAL
-  React.useEffect(() => {
-    loadEmployeeMaster();
-  }, []);
- const employeeService = React.useMemo(
+  const employeeService = React.useMemo(
     () => new EmployeeService(httpClient, siteUrl),
     [httpClient, siteUrl]
   );
@@ -94,6 +88,12 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
       }));
     }
   }, [employeeService]);
+
+  // Load employee master on mount - THIS IS CRITICAL
+  React.useEffect(() => {
+    void loadEmployeeMaster();
+  }, []);
+
 
   const handleViewChange = React.useCallback((viewName: string): void => {
     setState(prev => ({

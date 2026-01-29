@@ -127,7 +127,7 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
   }, [getCurrentWeekDays, props.employeeMaster.EmployeeID, timesheetService]);
 // Load timesheet data when week changes
   React.useEffect(() => {
-    loadTimesheetData();
+  void  loadTimesheetData();
   }, [currentWeekOffset]);
   
 
@@ -193,7 +193,8 @@ const loadTimesheetData = React.useCallback(async (): Promise<void> => {
   // Close modal
   const handleCloseModal = (): void => {
     setIsModalOpen(false);
-    setEditingEntry(null);loadTimesheetData 
+    setEditingEntry(null);
+    loadTimesheetData(); // Refresh data after closing 
     setFormData({
       date: '',
       project: '',

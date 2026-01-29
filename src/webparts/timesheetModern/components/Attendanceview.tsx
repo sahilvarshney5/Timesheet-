@@ -36,10 +36,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [error, setError] = React.useState<string | null>(null);
   const [employeeId, setEmployeeId] = React.useState<string>('');
 
-  // Load calendar data when month/year changes
-  React.useEffect(() => {
-    loadCalendarData();
-  }, [currentMonth, currentYear]);
+ 
 
   const handleDownloadReport = async (): Promise<void> => {
   try {
@@ -103,7 +100,10 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     setCurrentMonth(newMonth);
     setCurrentYear(newYear);
   };
-
+ // Load calendar data when month/year changes
+  React.useEffect(() => {
+    void loadCalendarData();
+  }, [currentMonth, currentYear]);
   const handleDayClick = (day: ITimesheetDay): void => {
     if (day.status === 'empty') return;
 

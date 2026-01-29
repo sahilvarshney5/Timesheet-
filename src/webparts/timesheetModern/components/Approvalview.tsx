@@ -101,7 +101,7 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
 },[props.userRole, loadPendingRequests, loadApprovalHistory]);
  // Load data on mount
   React.useEffect(() => {
-    checkPermissionsAndLoadData();
+   void checkPermissionsAndLoadData();
   }, []);
 
 
