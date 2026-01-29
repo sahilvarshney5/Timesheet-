@@ -45,19 +45,19 @@ export class AttendanceService {
       const orderBy = dateCol;
       
       // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<IPunchData>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery,
-      //   orderBy,
-      //   ODataHelpers.DEFAULT_PAGE_SIZE
-      // );
+      const items = await this.httpService.getListItems<IPunchData>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy,
+        ODataHelpers.DEFAULT_PAGE_SIZE
+      );
       
-      // return items;
+      return items;
       
       // PLACEHOLDER: Return empty array until implemented
-      console.log(`[AttendanceService] getPunchData for ${employeeId}, ${startDate} to ${endDate}`);
-      return [];
+      // console.log(`[AttendanceService] getPunchData for ${employeeId}, ${startDate} to ${endDate}`);
+      // return [];
       
     } catch (error) {
       console.error('[AttendanceService] Error getting punch data:', error);
@@ -118,19 +118,19 @@ export class AttendanceService {
       const orderBy = startDateCol;
       
       // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<ILeaveData>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery,
-      //   orderBy
-      // );
+      const items = await this.httpService.getListItems<ILeaveData>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy
+      );
       
-      // // Filter to only approved leaves
-      // return items.filter(leave => leave.Status === 'Approved');
+      // Filter to only approved leaves
+      return items.filter(leave => leave.Status === 'Approved');
       
       // PLACEHOLDER: Return empty array until implemented
-      console.log(`[AttendanceService] getLeaveData for ${employeeId}, ${startDate} to ${endDate}`);
-      return [];
+      // console.log(`[AttendanceService] getLeaveData for ${employeeId}, ${startDate} to ${endDate}`);
+      // return [];
       
     } catch (error) {
       console.error('[AttendanceService] Error getting leave data:', error);

@@ -20,28 +20,28 @@ export class LeaveService {
   public async getLeaveBalance(employeeId: string): Promise<ILeaveBalance[]> {
     try {
       // TODO: If LeaveBalance list exists, uncomment this code
-      // const listName = getListInternalName('leaveBalance');
-      // const empIdCol = getColumnInternalName('LeaveBalance', 'EmployeeID');
-      // const filterQuery = `$filter=${empIdCol} eq '${employeeId}'`;
-      // 
-      // const selectFields = [
-      //   'Id',
-      //   empIdCol,
-      //   getColumnInternalName('LeaveBalance', 'LeaveType'),
-      //   getColumnInternalName('LeaveBalance', 'Balance')
-      // ];
-      // 
-      // const items = await this.httpService.getListItems<ILeaveBalance>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery
-      // );
-      // 
-      // return items;
+      const listName = getListInternalName('leaveBalance');
+      const empIdCol = getColumnInternalName('LeaveBalance', 'EmployeeID');
+      const filterQuery = `$filter=${empIdCol} eq '${employeeId}'`;
+      
+      const selectFields = [
+        'Id',
+        empIdCol,
+        getColumnInternalName('LeaveBalance', 'LeaveType'),
+        getColumnInternalName('LeaveBalance', 'Balance')
+      ];
+      
+      const items = await this.httpService.getListItems<ILeaveBalance>(
+        listName,
+        selectFields,
+        filterQuery
+      );
+      
+      return items;
       
       // PLACEHOLDER: Return empty array until LeaveBalance list is created
-      console.log(`[LeaveService] getLeaveBalance for ${employeeId} - LeaveBalance list not configured`);
-      return [];
+      // console.log(`[LeaveService] getLeaveBalance for ${employeeId} - LeaveBalance list not configured`);
+      // return [];
       
     } catch (error) {
       console.error('[LeaveService] Error getting leave balance:', error);
@@ -100,34 +100,34 @@ export class LeaveService {
         statusCol
       ];
       
-      // TODO: Uncomment when ready to use
-      // const leaves = await this.httpService.getListItems<ILeaveData>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery
-      // );
+      TODO: Uncomment when ready to use
+      const leaves = await this.httpService.getListItems<ILeaveData>(
+        listName,
+        selectFields,
+        filterQuery
+      );
       
-      // // Calculate total leave days taken
-      // let daysTaken = 0;
-      // leaves.forEach(leave => {
-      //   const start = new Date(leave.StartDate);
-      //   const end = new Date(leave.EndDate);
-      //   const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      //   
-      //   if (leave.IsHalfDay) {
-      //     daysTaken += 0.5;
-      //   } else {
-      //     daysTaken += days;
-      //   }
-      // });
+      // Calculate total leave days taken
+      let daysTaken = 0;
+      leaves.forEach(leave => {
+        const start = new Date(leave.StartDate);
+        const end = new Date(leave.EndDate);
+        const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        
+        if (leave.IsHalfDay) {
+          daysTaken += 0.5;
+        } else {
+          daysTaken += days;
+        }
+      });
       
-      // // Total annual leave entitlement (configurable)
-      // const totalAnnualLeave = 20;
-      // return Math.max(0, totalAnnualLeave - daysTaken);
+      // Total annual leave entitlement (configurable)
+      const totalAnnualLeave = 20;
+      return Math.max(0, totalAnnualLeave - daysTaken);
       
       // PLACEHOLDER: Return default value until implemented
-      console.log(`[LeaveService] calculateLeaveDaysFromLeaveData for ${employeeId} - returning default`);
-      return 12; // Default value
+      // console.log(`[LeaveService] calculateLeaveDaysFromLeaveData for ${employeeId} - returning default`);
+      // return 12; // Default value
       
     } catch (error) {
       console.error('[LeaveService] Error calculating leave days from LeaveData:', error);

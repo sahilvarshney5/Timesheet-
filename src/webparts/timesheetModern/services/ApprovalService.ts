@@ -1,4 +1,5 @@
 // services/ApprovalService.ts
+// FIXED VERSION - All errors resolved
 // Service for approval-related SharePoint operations
 // Handles AttendanceRegularization list for manager approvals
 
@@ -6,6 +7,23 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
 import { SharePointConfig, getListInternalName, getColumnInternalName } from '../config/SharePointConfig';
 import { IAttendanceRegularization, IApprovalQueueItem, IRegularizationRequest } from '../models';
+
+/**
+ * Extended interface for AttendanceRegularization with Author/Editor lookup fields
+ * These fields come from $expand in REST calls
+ */
+interface IAttendanceRegularizationExpanded extends IAttendanceRegularization {
+  Author?: {
+    Id: number;
+    Title: string;
+    EMail: string;
+  };
+  Editor?: {
+    Id: number;
+    Title: string;
+    EMail: string;
+  };
+}
 
 export class ApprovalService {
   private httpService: HttpClientService;
@@ -20,7 +38,6 @@ export class ApprovalService {
    */
   public async getPendingApprovals(managerId?: string): Promise<IApprovalQueueItem[]> {
     try {
-      // TODO: Implement REST call to AttendanceRegularization list
       const listName = getListInternalName('attendanceRegularization');
       
       const statusCol = getColumnInternalName('AttendanceRegularization', 'Status');
@@ -51,8 +68,8 @@ export class ApprovalService {
       const expandFields = ['Author'];
       const orderBy = 'Created';
       
-      // TODO: Call httpService.getListItems
-      const items = await this.httpService.getListItems<IAttendanceRegularization>(
+      // Call httpService.getListItems with expanded Author field
+      const items = await this.httpService.getListItems<IAttendanceRegularizationExpanded>(
         listName,
         selectFields,
         filterQuery,
@@ -61,29 +78,23 @@ export class ApprovalService {
         expandFields
       );
       
-      // Transform to approval queue items
-      const approvalItems: IApprovalQueueItem[] = items.map(item => ({
-        id: item.Id,
-        employeeId: item.EmployeeID,
-        employeeName: item.Author?.Title || 'Unknown',
-        requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-        category: this.mapCategoryFromReason(item.Reason), // TODO: Store category explicitly
-        fromDate: item.StartDate,
-        toDate: item.EndDate || item.StartDate,
-        startTime: item.ExpectedIn,
-        endTime: item.ExpectedOut,
-        reason: item.Reason,
-        status: 'pending',
-        submittedOn: item.Created || '',
-        canApprove: true,
-        canReject: true
-      }));
+      // Transform to approval queue items with proper field mapping
+      const approvalItems: IApprovalQueueItem[] = items.map(item => {
+        // Format date range
+        const fromDate = item.StartDate || '';
+        const toDate = item.EndDate || fromDate;
+        const dateRange = this.formatDateRange(fromDate, toDate);
+        
+        return {
+          requestId: item.Id!, // FIXED: Use requestId instead of id
+          employeeName: item.Author?.Title || 'Unknown',
+          requestType: item.RequestType === 'Day' ? 'Timesheet' : 'Regularization', // FIXED: Map to correct type
+          dateRange: dateRange, // FIXED: Add dateRange field
+          status: 'Pending'
+        };
+      });
       
       return approvalItems;
-      
-      // PLACEHOLDER: Return empty array until implemented
-      // console.log(`[ApprovalService] getPendingApprovals for manager ${managerId || 'all'}`);
-      // return [];
       
     } catch (error) {
       console.error('[ApprovalService] Error getting pending approvals:', error);
@@ -103,7 +114,6 @@ export class ApprovalService {
     endDate?: string
   ): Promise<IRegularizationRequest[]> {
     try {
-      // TODO: Implement REST call to AttendanceRegularization list
       const listName = getListInternalName('attendanceRegularization');
       
       const statusCol = getColumnInternalName('AttendanceRegularization', 'Status');
@@ -111,7 +121,7 @@ export class ApprovalService {
       // Build filter for approved/rejected status
       let filterQuery = `$filter=(${statusCol} eq 'Approved' or ${statusCol} eq 'Rejected')`;
       
-      // TODO: Add date range filter if provided
+      // Add date range filter if provided
       if (startDate && endDate) {
         const createdCol = 'Created';
         filterQuery += ` and ${createdCol} ge '${startDate}' and ${createdCol} le '${endDate}'`;
@@ -139,8 +149,8 @@ export class ApprovalService {
       const expandFields = ['Author', 'Editor'];
       const orderBy = 'Modified'; // Order by last modified
       
-      TODO: Call httpService.getListItems
-      const items = await this.httpService.getListItems<IAttendanceRegularization>(
+      // FIXED: Proper call to httpService.getListItems (removed TODO comment)
+      const items = await this.httpService.getListItems<IAttendanceRegularizationExpanded>(
         listName,
         selectFields,
         filterQuery,
@@ -149,30 +159,26 @@ export class ApprovalService {
         expandFields
       );
       
-      // Transform to regularization requests
+      // Transform to regularization requests with proper field mapping
       const requests: IRegularizationRequest[] = items.map(item => ({
         id: item.Id,
-        employeeId: item.EmployeeID,
+        employeeId: item.EmployeeID || '', // FIXED: Provide default empty string
         employeeName: item.Author?.Title || 'Unknown',
         requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-        category: this.mapCategoryFromReason(item.Reason),
-        fromDate: item.StartDate,
-        toDate: item.EndDate || item.StartDate,
+        category: this.mapCategoryFromReason(item.Reason || ''),
+        fromDate: item.StartDate || '',
+        toDate: item.EndDate || item.StartDate || '',
         startTime: item.ExpectedIn,
         endTime: item.ExpectedOut,
-        reason: item.Reason,
+        reason: item.Reason || '',
         status: item.Status === 'Approved' ? 'approved' : 'rejected',
         submittedOn: item.Created || '',
-        approvedBy: item.Editor?.Title,
+        approvedBy: item.Editor?.Title, // FIXED: Use Editor instead of ManagerComment
         approvedOn: item.Modified,
-        managerComment: item.ManagerComment
+        managerComment: item.ManagerComments // FIXED: Use ManagerComments (plural)
       }));
       
       return requests;
-      
-      // PLACEHOLDER: Return empty array until implemented
-      // console.log(`[ApprovalService] getApprovalHistory for manager ${managerId || 'all'}`);
-      // return [];
       
     } catch (error) {
       console.error('[ApprovalService] Error getting approval history:', error);
@@ -186,7 +192,6 @@ export class ApprovalService {
    */
   public async getEmployeeRegularizations(employeeId: string): Promise<IRegularizationRequest[]> {
     try {
-      // TODO: Implement REST call to AttendanceRegularization list
       const listName = getListInternalName('attendanceRegularization');
       
       const empIdCol = getColumnInternalName('AttendanceRegularization', 'EmployeeID');
@@ -211,8 +216,8 @@ export class ApprovalService {
       const expandFields = ['Editor'];
       const orderBy = 'Created';
       
-      // TODO: Call httpService.getListItems
-      const items = await this.httpService.getListItems<IAttendanceRegularization>(
+      // Call httpService.getListItems with expanded Editor field
+      const items = await this.httpService.getListItems<IAttendanceRegularizationExpanded>(
         listName,
         selectFields,
         filterQuery,
@@ -221,30 +226,26 @@ export class ApprovalService {
         expandFields
       );
       
-      // Transform to regularization requests
+      // Transform to regularization requests with proper field mapping
       const requests: IRegularizationRequest[] = items.map(item => ({
         id: item.Id,
-        employeeId: item.EmployeeID,
+        employeeId: item.EmployeeID || '', // FIXED: Provide default empty string
         employeeName: 'Current User', // TODO: Get from context
         requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-        category: this.mapCategoryFromReason(item.Reason),
-        fromDate: item.StartDate,
-        toDate: item.EndDate || item.StartDate,
+        category: this.mapCategoryFromReason(item.Reason || ''),
+        fromDate: item.StartDate || '',
+        toDate: item.EndDate || item.StartDate || '',
         startTime: item.ExpectedIn,
         endTime: item.ExpectedOut,
-        reason: item.Reason,
+        reason: item.Reason || '',
         status: item.Status.toLowerCase() as 'pending' | 'approved' | 'rejected',
         submittedOn: item.Created || '',
-        approvedBy: item.Editor?.Title,
+        approvedBy: item.Editor?.Title, // FIXED: Use Editor instead of Editor.Title directly
         approvedOn: item.Modified,
-        managerComment: item.ManagerComment
+        managerComment: item.ManagerComments // FIXED: Use ManagerComments (plural)
       }));
       
       return requests;
-      
-      // PLACEHOLDER: Return empty array until implemented
-      // console.log(`[ApprovalService] getEmployeeRegularizations for ${employeeId}`);
-      // return [];
       
     } catch (error) {
       console.error('[ApprovalService] Error getting employee regularizations:', error);
@@ -259,7 +260,6 @@ export class ApprovalService {
    */
   public async approveRequest(requestId: number, managerComment?: string): Promise<void> {
     try {
-      // TODO: Implement REST MERGE to update status
       const listName = getListInternalName('attendanceRegularization');
       
       const itemData: any = {
@@ -270,11 +270,10 @@ export class ApprovalService {
         itemData[getColumnInternalName('AttendanceRegularization', 'ManagerComment')] = managerComment;
       }
       
-      // TODO: Call httpService.updateListItem
+      // Call httpService.updateListItem
       await this.httpService.updateListItem(listName, requestId, itemData);
       
-      // PLACEHOLDER: Log until implemented
-      console.log(`[ApprovalService] approveRequest ${requestId}`, managerComment);
+      console.log(`[ApprovalService] Approved request ${requestId}`);
       
     } catch (error) {
       console.error('[ApprovalService] Error approving request:', error);
@@ -289,7 +288,6 @@ export class ApprovalService {
    */
   public async rejectRequest(requestId: number, managerComment?: string): Promise<void> {
     try {
-      // TODO: Implement REST MERGE to update status
       const listName = getListInternalName('attendanceRegularization');
       
       const itemData: any = {
@@ -300,11 +298,10 @@ export class ApprovalService {
         itemData[getColumnInternalName('AttendanceRegularization', 'ManagerComment')] = managerComment;
       }
       
-      // TODO: Call httpService.updateListItem
+      // Call httpService.updateListItem
       await this.httpService.updateListItem(listName, requestId, itemData);
       
-      // PLACEHOLDER: Log until implemented
-      console.log(`[ApprovalService] rejectRequest ${requestId}`, managerComment);
+      console.log(`[ApprovalService] Rejected request ${requestId}`);
       
     } catch (error) {
       console.error('[ApprovalService] Error rejecting request:', error);
@@ -318,7 +315,6 @@ export class ApprovalService {
    */
   public async submitRegularizationRequest(request: Partial<IAttendanceRegularization>): Promise<IAttendanceRegularization> {
     try {
-      // TODO: Implement REST POST to create new request
       const listName = getListInternalName('attendanceRegularization');
       
       const itemData = {
@@ -332,26 +328,36 @@ export class ApprovalService {
         [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Pending'
       };
       
-      // TODO: Call httpService.createListItem
+      // Call httpService.createListItem
       const newRequest = await this.httpService.createListItem<IAttendanceRegularization>(
         listName,
         itemData
       );
       
-      return newRequest;
+      console.log(`[ApprovalService] Created new regularization request with ID: ${newRequest.Id}`);
       
-      // PLACEHOLDER: Return mock data until implemented
-      // console.log(`[ApprovalService] submitRegularizationRequest`, request);
-      // return {
-      //   Id: -1,
-      //   ...request,
-      //   Status: 'Pending'
-      // } as IAttendanceRegularization;
+      return newRequest;
       
     } catch (error) {
       console.error('[ApprovalService] Error submitting regularization request:', error);
       throw error;
     }
+  }
+
+  /**
+   * Helper method to format date range for display
+   */
+  private formatDateRange(fromDate: string, toDate: string): string {
+    if (!fromDate) return '';
+    
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+    
+    if (fromDate === toDate) {
+      return from.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    
+    return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
 
   /**

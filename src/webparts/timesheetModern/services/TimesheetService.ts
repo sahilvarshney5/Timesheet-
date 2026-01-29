@@ -47,17 +47,17 @@ export class TimesheetService {
       ];
       
       // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<ITimesheetHeader>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery
-      // );
+      const items = await this.httpService.getListItems<ITimesheetHeader>(
+        listName,
+        selectFields,
+        filterQuery
+      );
       
-      // return items.length > 0 ? items[0] : null;
+      return items.length > 0 ? items[0] : null;
       
       // PLACEHOLDER: Return null until implemented
-      console.log(`[TimesheetService] getTimesheetHeader for ${employeeId}, week ${weekStartDate}`);
-      return null;
+      // console.log(`[TimesheetService] getTimesheetHeader for ${employeeId}, week ${weekStartDate}`);
+      // return null;
       
     } catch (error) {
       console.error('[TimesheetService] Error getting timesheet header:', error);
@@ -91,18 +91,18 @@ export class TimesheetService {
       const orderBy = getColumnInternalName('TimesheetLines', 'WorkDate');
       
       // TODO: Call httpService.getListItems
-      // const items = await this.httpService.getListItems<ITimesheetLines>(
-      //   listName,
-      //   selectFields,
-      //   filterQuery,
-      //   orderBy
-      // );
+      const items = await this.httpService.getListItems<ITimesheetLines>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy
+      );
       
-      // return items;
+      return items;
       
       // PLACEHOLDER: Return empty array until implemented
-      console.log(`[TimesheetService] getTimesheetLines for timesheet ${timesheetId}`);
-      return [];
+      // console.log(`[TimesheetService] getTimesheetLines for timesheet ${timesheetId}`);
+      // return [];
       
     } catch (error) {
       console.error('[TimesheetService] Error getting timesheet lines:', error);
@@ -152,24 +152,24 @@ export class TimesheetService {
       };
       
       // TODO: Call httpService.createListItem
-      // const newHeader = await this.httpService.createListItem<ITimesheetHeader>(
-      //   listName,
-      //   itemData
-      // );
+      const newHeader = await this.httpService.createListItem<ITimesheetHeader>(
+        listName,
+        itemData
+      );
       
-      // return newHeader;
+      return newHeader;
       
       // PLACEHOLDER: Return mock data until implemented
-      console.log(`[TimesheetService] createTimesheetHeader for ${employeeId}, week ${weekStartDate}`);
+      // console.log(`[TimesheetService] createTimesheetHeader for ${employeeId}, week ${weekStartDate}`);
     
-      const header: ITimesheetHeader = {
-        Id: -1,
-        EmployeeId: Number(employeeId),
-        WeekStartDate: weekStartDate,
-        WeekEndDate: '', // TODO: calculate week end if missing
-        Status: 'Draft'
-      };
-      return header as ITimesheetHeader;
+      // const header: ITimesheetHeader = {
+      //   Id: -1,
+      //   EmployeeId: Number(employeeId),
+      //   WeekStartDate: weekStartDate,
+      //   WeekEndDate: '', // TODO: calculate week end if missing
+      //   Status: 'Draft'
+      // };
+      // return header as ITimesheetHeader;
       
     } catch (error) {
       console.error('[TimesheetService] Error creating timesheet header:', error);
@@ -197,19 +197,19 @@ export class TimesheetService {
       };
       
       // TODO: Call httpService.createListItem
-      // const newLine = await this.httpService.createListItem<ITimesheetLines>(
-      //   listName,
-      //   itemData
-      // );
+      const newLine = await this.httpService.createListItem<ITimesheetLines>(
+        listName,
+        itemData
+      );
       
-      // return newLine;
+      return newLine;
       
       // PLACEHOLDER: Return mock data until implemented
-      console.log(`[TimesheetService] createTimesheetLine`, timesheetLine);
-      return {
-        Id: -1,
-        ...timesheetLine
-      } as ITimesheetLines;
+      // console.log(`[TimesheetService] createTimesheetLine`, timesheetLine);
+      // return {
+      //   Id: -1,
+      //   ...timesheetLine
+      // } as ITimesheetLines;
       
     } catch (error) {
       console.error('[TimesheetService] Error creating timesheet line:', error);
@@ -249,20 +249,20 @@ export class TimesheetService {
       }
       
       // TODO: Call httpService.updateListItem
-      // const updatedLine = await this.httpService.updateListItem<ITimesheetLines>(
-      //   listName,
-      //   lineId,
-      //   itemData
-      // );
+      const updatedLine = await this.httpService.updateListItem<ITimesheetLines>(
+        listName,
+        lineId,
+        itemData
+      );
       
-      // return updatedLine;
+      return updatedLine;
       
       // PLACEHOLDER: Return mock data until implemented
-      console.log(`[TimesheetService] updateTimesheetLine ${lineId}`, timesheetLine);
-      return {
-        Id: lineId,
-        ...timesheetLine
-      } as ITimesheetLines;
+      // console.log(`[TimesheetService] updateTimesheetLine ${lineId}`, timesheetLine);
+      // return {
+      //   Id: lineId,
+      //   ...timesheetLine
+      // } as ITimesheetLines;
       
     } catch (error) {
       console.error('[TimesheetService] Error updating timesheet line:', error);
@@ -280,7 +280,7 @@ export class TimesheetService {
       const listName = getListInternalName('timesheetLines');
       
       // TODO: Call httpService.deleteListItem
-      // await this.httpService.deleteListItem(listName, lineId);
+      await this.httpService.deleteListItem(listName, lineId);
       
       // PLACEHOLDER: Log until implemented
       console.log(`[TimesheetService] deleteTimesheetLine ${lineId}`);
@@ -306,7 +306,7 @@ export class TimesheetService {
       };
       
       // TODO: Call httpService.updateListItem
-      // await this.httpService.updateListItem(listName, timesheetId, itemData);
+      await this.httpService.updateListItem(listName, timesheetId, itemData);
       
       // PLACEHOLDER: Log until implemented
       console.log(`[TimesheetService] submitTimesheet ${timesheetId}`);
