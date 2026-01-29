@@ -3,7 +3,7 @@
   "solution": {
     "name": "timesheet-modern-client-side-solution",
     "id": "8ad55610-ca4d-4213-860b-4de947d52af0",
-    "version": "1.0.0.0",
+    "version": "1.0.0.1",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": true,
     "isDomainIsolated": false,
