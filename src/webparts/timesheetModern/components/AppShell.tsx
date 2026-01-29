@@ -20,6 +20,49 @@ export interface IAppShellState {
   userRole: 'Admin' | 'Manager' | 'Member';
 }
 
+/**
+ * Enforce env=WebView parameter in URL for Timesheet.aspx page
+ * This ensures consistent behavior across all timesheet page loads
+ */
+const enforceWebViewUrl = async (): Promise<void> => {
+  try {
+    const url = new URL(window.location.href);
+
+    // ✅ Check page name - only enforce on Timesheet.aspx
+    const isTimesheetPage = url.pathname.toLowerCase().indexOf("timesheet.aspx") !== -1;
+
+    if (!isTimesheetPage) {
+      console.log("[AppShell] Not on Timesheet.aspx, skipping URL enforcement");
+      return;
+    }
+
+    // ✅ Read query params safely
+    const hasEnvParam = url.searchParams.has("env");
+    const hasSkipParam = url.searchParams.has("skipEnv"); // bypass param
+
+    // ❌ Skip enforcement if bypass param exists
+    if (hasSkipParam) {
+      console.log("[AppShell] skipEnv parameter present, bypassing URL enforcement");
+      return;
+    }
+
+    // ✅ env already exists → do nothing
+    if (hasEnvParam) {
+      console.log("[AppShell] env parameter already present:", url.searchParams.get("env"));
+      return;
+    }
+
+    // ❌ env missing → add it once
+    url.searchParams.set("env", "WebView");
+
+    console.warn("[AppShell] env=WebView missing, redirecting to:", url.toString());
+    window.location.replace(url.toString());
+
+  } catch (error) {
+    console.error("[AppShell] URL enforcement failed:", error);
+  }
+};
+
 const AppShell: React.FC<ITimesheetModernProps> = (props) => {
   const { 
     currentUserDisplayName, 
@@ -30,9 +73,9 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
   const [state, setState] = React.useState<IAppShellState>({
     activeView: 'dashboard',
     sidebarHidden: false,
-    employeeMaster: null,  // FIXED: Changed from undefined to null
+    employeeMaster: null,
     isLoading: true,
-    error: null,  // FIXED: Changed from undefined to null
+    error: null,
     userRole: 'Member'
   });
 
@@ -41,6 +84,21 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     () => new EmployeeService(httpClient, siteUrl),
     [httpClient, siteUrl]
   );
+
+  // ============================================================================
+  // URL ENFORCEMENT - Run on mount
+  // ============================================================================
+  React.useEffect(() => {
+    // Enforce URL parameter on mount
+    enforceWebViewUrl().catch(err => {
+      console.error('[AppShell] URL enforcement error:', err);
+      // Don't block app initialization on URL enforcement errors
+    });
+  }, []); // Run only once on mount
+
+  // ============================================================================
+  // EMPLOYEE MASTER LOADING
+  // ============================================================================
   const loadEmployeeMaster = React.useCallback(async (): Promise<void> => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -94,7 +152,9 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     void loadEmployeeMaster();
   }, []);
 
-
+  // ============================================================================
+  // EVENT HANDLERS
+  // ============================================================================
   const handleViewChange = React.useCallback((viewName: string): void => {
     setState(prev => ({
       ...prev,
@@ -119,7 +179,39 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }, []);
 
-  // Render loading state
+  // ============================================================================
+  // RENDER VIEW CONTENT
+  // ============================================================================
+  const renderView = (): JSX.Element => {
+    // Common props for all views
+    const viewProps = {
+      onViewChange: handleViewChange,
+      spHttpClient: httpClient,
+      siteUrl: siteUrl,
+      currentUserDisplayName: currentUserDisplayName,
+      employeeMaster: state.employeeMaster!,
+      userRole: state.userRole
+    };
+
+    switch (state.activeView) {
+      case 'dashboard':
+        return <DashboardView {...viewProps} />;
+      case 'attendance':
+        return <AttendanceView {...viewProps} />;
+      case 'timesheet':
+        return <TimesheetView {...viewProps} />;
+      case 'regularize':
+        return <RegularizationView {...viewProps} />;
+      case 'approval':
+        return <ApprovalView {...viewProps} />;
+      default:
+        return <DashboardView {...viewProps} />;
+    }
+  };
+
+  // ============================================================================
+  // RENDER LOADING STATE
+  // ============================================================================
   if (state.isLoading) {
     return (
       <div className={styles.timesheetModern}>
@@ -143,7 +235,9 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     );
   }
 
-  // Render error state
+  // ============================================================================
+  // RENDER ERROR STATE
+  // ============================================================================
   if (state.error || !state.employeeMaster) {
     return (
       <div className={styles.timesheetModern}>
@@ -178,34 +272,9 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     );
   }
 
-  // Render the appropriate view component based on activeView
-  const renderView = (): JSX.Element => {
-    // Common props for all views - NOW INCLUDING EMPLOYEE MASTER
-    const viewProps = {
-      onViewChange: handleViewChange,
-      spHttpClient: httpClient,
-      siteUrl: siteUrl,
-      currentUserDisplayName: currentUserDisplayName,
-      employeeMaster: state.employeeMaster!,
-      userRole: state.userRole
-    };
-
-    switch (state.activeView) {
-      case 'dashboard':
-        return <DashboardView {...viewProps} />;
-      case 'attendance':
-        return <AttendanceView {...viewProps} />;
-      case 'timesheet':
-        return <TimesheetView {...viewProps} />;
-      case 'regularize':
-        return <RegularizationView {...viewProps} />;
-      case 'approval':
-        return <ApprovalView {...viewProps} />;
-      default:
-        return <DashboardView {...viewProps} />;
-    }
-  };
-
+  // ============================================================================
+  // RENDER MAIN APPLICATION
+  // ============================================================================
   return (
     <div className={styles.timesheetModern}>
       <TopNav 
