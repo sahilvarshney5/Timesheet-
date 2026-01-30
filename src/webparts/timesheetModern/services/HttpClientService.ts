@@ -156,7 +156,12 @@ export class HttpClientService {
       // ENABLED: REST call
       const response: SPHttpClientResponse = await this.spHttpClient.get(
         endpoint,
-        SPHttpClient.configurations.v1
+        SPHttpClient.configurations.v1,
+        {headers: {
+            'Accept': 'application/json;odata=nometadata',
+            'odata-version': ''
+          }
+        }
       );
       
       if (!response.ok) {
@@ -188,8 +193,9 @@ export class HttpClientService {
         SPHttpClient.configurations.v1,
         {
           headers: {
-            'Accept': 'application/json;odata=verbose',
-            'Content-Type': 'application/json;odata=verbose'
+          'Accept': 'application/json;odata=nometadata',
+           'Content-Type': 'application/json;odata=nometadata',
+           'odata-version': ''
           },
           body: JSON.stringify(itemData)
         }
@@ -202,7 +208,7 @@ export class HttpClientService {
       
       const data = await response.json();
       console.log(`[HttpClientService] POST ${endpoint} - Created item successfully`);
-      return data.d as T;
+      return data as T;
       
     } catch (error) {
       console.error(`[HttpClientService] Error creating item in ${listName}:`, error);
@@ -223,8 +229,9 @@ export class HttpClientService {
         SPHttpClient.configurations.v1,
         {
           headers: {
-            'Accept': 'application/json;odata=verbose',
-            'Content-Type': 'application/json;odata=verbose',
+            'Accept': 'application/json;odata=nometadata',
+            'Content-Type': 'application/json;odata=nometadata',
+            'odata-version': '',
             'IF-MATCH': '*',
             'X-HTTP-Method': 'MERGE'
           },
@@ -261,7 +268,9 @@ export class HttpClientService {
         SPHttpClient.configurations.v1,
         {
           headers: {
-            'Accept': 'application/json;odata=verbose',
+            'Accept': 'application/json;odata=nometadata',
+            'Content-type': 'application/json;odata=verbose',
+            'odata-version': '',
             'IF-MATCH': '*',
             'X-HTTP-Method': 'DELETE'
           }

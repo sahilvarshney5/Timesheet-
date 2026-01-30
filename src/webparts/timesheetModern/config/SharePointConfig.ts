@@ -1,4 +1,4 @@
-// SharePointConfig.ts - UPDATED with EmployeeMaster
+// SharePointConfig.ts - UPDATED with LeaveBalance list
 // Centralized configuration for SharePoint lists and columns
 
 export interface IListConfig {
@@ -16,6 +16,7 @@ export interface ISharePointConfig {
     employeeMaster: IListConfig;
     punchData: IListConfig;
     leaveData: IListConfig;
+    leaveBalance: IListConfig; // ADDED
     timesheetHeader: IListConfig;
     timesheetLines: IListConfig;
     attendanceRegularization: IListConfig;
@@ -36,30 +37,35 @@ export interface ISharePointConfig {
 // Main configuration object
 export const SharePointConfig: ISharePointConfig = {
   lists: {
-    // NEW: Employee Master List
+    // Employee Master List
     employeeMaster: {
       displayName: 'Employee Master',
-      internalName: 'EmployeeMasterData' // TODO: Verify this matches your SharePoint list internal name
+      internalName: 'EmployeeMasterData'
     },
     punchData: {
       displayName: 'Punch Data',
-      internalName: 'PunchData'
+      internalName: 'Punch Data'
     },
     leaveData: {
       displayName: 'Leave Data',
-      internalName: 'LeaveData'
+      internalName: 'Leave Data'
+    },
+    // ADDED: Leave Balance List
+    leaveBalance: {
+      displayName: 'Leave Balance',
+      internalName: 'Leave Balance'
     },
     timesheetHeader: {
       displayName: 'Timesheet Header',
-      internalName: 'TimesheetHeader'
+      internalName: 'Timesheet Header'
     },
     timesheetLines: {
       displayName: 'Timesheet Lines',
-      internalName: 'TimesheetLines'
+      internalName: 'Timesheet Lines'
     },
     attendanceRegularization: {
       displayName: 'Attendance Regularization',
-      internalName: 'AttendanceRegularization'
+      internalName: 'Attendance Regularization'
     },
     projectTaskMaster: {
       displayName: 'Project Task Master',
@@ -71,11 +77,11 @@ export const SharePointConfig: ISharePointConfig = {
     EmployeeMaster: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'Title' // TODO: Verify - this is the R0398 format ID
+        internalName: 'Title'
       },
       Employee: {
         displayName: 'Employee',
-        internalName: 'Employee' // TODO: Verify - this is the Person or Group field
+        internalName: 'Employee'
       },
       Email: {
         displayName: 'Email',
@@ -87,22 +93,22 @@ export const SharePointConfig: ISharePointConfig = {
       },
       Manager: {
         displayName: 'Manager',
-        internalName: 'Manager' // Person or Group field
+        internalName: 'Manager'
       },
       Active: {
         displayName: 'Active',
-        internalName: 'Active' // Yes/No field
+        internalName: 'Active'
       }
     },
     // PunchData columns
     PunchData: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID'
+        internalName: 'Title'
       },
       AttendanceDate: {
         displayName: 'Attendance Date',
-        internalName: 'AttendanceDate'
+        internalName: 'PunchDate'
       },
       FirstPunchIn: {
         displayName: 'First Punch In',
@@ -123,13 +129,17 @@ export const SharePointConfig: ISharePointConfig = {
       Source: {
         displayName: 'Source',
         internalName: 'Source'
+      },
+      AvailableHours: {
+        displayName: 'Available Hours',
+        internalName: 'AvailableHours'
       }
     },
     // LeaveData columns
     LeaveData: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID'
+        internalName: 'Title'
       },
       LeaveType: {
         displayName: 'Leave Type',
@@ -156,6 +166,21 @@ export const SharePointConfig: ISharePointConfig = {
         internalName: 'ColorCode'
       }
     },
+    // ADDED: LeaveBalance columns
+    LeaveBalance: {
+      EmployeeID: {
+        displayName: 'Employee ID',
+        internalName: 'Title'
+      },
+      LeaveType: {
+        displayName: 'Leave Type',
+        internalName: 'LeaveType'
+      },
+      Balance: {
+        displayName: 'Balance',
+        internalName: 'Allocated'
+      }
+    },
     // TimesheetHeader columns
     TimesheetHeader: {
       TimesheetID: {
@@ -164,7 +189,7 @@ export const SharePointConfig: ISharePointConfig = {
       },
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID'
+        internalName: 'Title'
       },
       WeekStartDate: {
         displayName: 'Week Start Date',
@@ -187,23 +212,23 @@ export const SharePointConfig: ISharePointConfig = {
     TimesheetLines: {
       TimesheetID: {
         displayName: 'Timesheet ID',
-        internalName: 'TimesheetID'
+        internalName: 'TimesheetHeaderId'
       },
       WorkDate: {
         displayName: 'Work Date',
-        internalName: 'WorkDate'
+        internalName: 'EntryDate'
       },
       ProjectNo: {
         displayName: 'Project No',
-        internalName: 'ProjectNo'
+        internalName: 'ProjectNumber'
       },
       TaskNo: {
         displayName: 'Task No',
-        internalName: 'TaskNo'
+        internalName: 'Title'
       },
       BLA_No: {
         displayName: 'BLA No',
-        internalName: 'BLA_x005f_No'
+        internalName: 'BLANumber'
       },
       HoursBooked: {
         displayName: 'Hours Booked',
@@ -218,27 +243,27 @@ export const SharePointConfig: ISharePointConfig = {
     AttendanceRegularization: {
       EmployeeID: {
         displayName: 'Employee ID',
-        internalName: 'EmployeeID'
+        internalName: 'Title'
       },
       RequestType: {
         displayName: 'Request Type',
-        internalName: 'RequestType'
+        internalName: 'RegularizationType'
       },
       StartDate: {
         displayName: 'Start Date',
-        internalName: 'StartDate'
+        internalName: 'SubmittedDate'
       },
       EndDate: {
         displayName: 'End Date',
-        internalName: 'EndDate'
+        internalName: 'ApprovedDate'
       },
       ExpectedIn: {
         displayName: 'Expected In',
-        internalName: 'ExpectedIn'
+        internalName: 'ExpectedInTime'
       },
       ExpectedOut: {
         displayName: 'Expected Out',
-        internalName: 'ExpectedOut'
+        internalName: 'ExpectedOutTime'
       },
       Reason: {
         displayName: 'Reason',
@@ -250,7 +275,7 @@ export const SharePointConfig: ISharePointConfig = {
       },
       ManagerComment: {
         displayName: 'Manager Comment',
-        internalName: 'ManagerComment'
+        internalName: 'ManagerComments'
       }
     },
     // ProjectTaskMaster columns
@@ -310,23 +335,23 @@ export const getColumnInternalName = (listName: string, columnKey: string): stri
 // OData query helpers for threshold-safe queries
 export const ODataHelpers = {
   DEFAULT_PAGE_SIZE: 1000,
-  
+
   buildSelectQuery: (columns: string[]): string => {
     return `$select=${columns.join(',')}`;
   },
-  
+
   buildFilterQuery: (filters: string[]): string => {
     return filters.length > 0 ? `$filter=${filters.join(' and ')}` : '';
   },
-  
+
   buildOrderByQuery: (orderBy: string, ascending: boolean = true): string => {
     return `$orderby=${orderBy} ${ascending ? 'asc' : 'desc'}`;
   },
-  
+
   buildTopQuery: (top: number = 1000): string => {
     return `$top=${Math.min(top, 5000)}`;
   },
-  
+
   buildExpandQuery: (expandColumns: string[]): string => {
     return expandColumns.length > 0 ? `$expand=${expandColumns.join(',')}` : '';
   }
