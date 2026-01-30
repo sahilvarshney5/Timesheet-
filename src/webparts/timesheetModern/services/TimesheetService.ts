@@ -33,8 +33,8 @@ private mapToTimesheetLine(spItem: any): ITimesheetLines {
     // Canonical properties (normalized)
     TimesheetHeaderId: spItem.TimesheetHeaderId || spItem.TimesheetID,
     WorkDate: spItem.EntryDate || spItem.WorkDate, // ✅ Map EntryDate → WorkDate
-    ProjectId: undefined, // Not available in current schema
-    TaskId: undefined,    // Not available in current schema
+    ProjectId: 0, // Not available in current schema
+    TaskId: 0,    // Not available in current schema
     Hours: spItem.HoursBooked || spItem.Hours,
     Comments: spItem.Description || spItem.Comments,
     
