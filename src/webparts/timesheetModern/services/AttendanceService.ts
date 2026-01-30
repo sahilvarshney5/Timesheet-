@@ -42,7 +42,6 @@ export class AttendanceService {
    */
   public async getPunchData(employeeId: string, startDate: string, endDate: string): Promise<IPunchData[]> {
     try {
-      // TODO: Implement REST call to PunchData list
       const listName = getListInternalName('punchData');
       
       const empIdCol = getColumnInternalName('PunchData', 'EmployeeID');
@@ -67,8 +66,8 @@ export class AttendanceService {
       
       const orderBy = dateCol;
       
-      // TODO: Call httpService.getListItems
-      const rawItems  = await this.httpService.getListItems<IPunchData>(
+      // Call httpService.getListItems
+      const rawItems = await this.httpService.getListItems<IPunchData>(
         listName,
         selectFields,
         filterQuery,
@@ -77,11 +76,10 @@ export class AttendanceService {
       );
       
       const items = rawItems.map(item => this.mapToPunchData(item));
-            console.log(`[AttendanceService] Loaded ${items.length} punch records for ${employeeId}`);
-
-      // PLACEHOLDER: Return empty array until implemented
-      // console.log(`[AttendanceService] getPunchData for ${employeeId}, ${startDate} to ${endDate}`);
-      // return [];
+      console.log(`[AttendanceService] Loaded ${items.length} punch records for ${employeeId}`);
+      
+      // ✅ FIXED: Added explicit return statement
+      return items;
       
     } catch (error) {
       console.error('[AttendanceService] Error getting punch data:', error);
@@ -117,44 +115,42 @@ export class AttendanceService {
    */
   public async getLeaveData(employeeId: string, startDate: string, endDate: string): Promise<ILeaveData[]> {
     try {
-      // TODO: Implement REST call to LeaveData list
       const listName = getListInternalName('leaveData');
       
       const empIdCol = getColumnInternalName('LeaveData', 'EmployeeID');
       const startDateCol = getColumnInternalName('LeaveData', 'StartDate');
       const endDateCol = getColumnInternalName('LeaveData', 'EndDate');
-          const statusCol = getColumnInternalName('LeaveData', 'Status');
+      const statusCol = getColumnInternalName('LeaveData', 'Status');
 
       // Build filter for employee and overlapping date range
       // Leave overlaps if: LeaveStart <= EndDate AND LeaveEnd >= StartDate
-    const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${startDateCol} le '${endDate}' and ${endDateCol} ge '${startDate}' and ${statusCol} eq 'Approved'`;
+      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${startDateCol} le '${endDate}' and ${endDateCol} ge '${startDate}' and ${statusCol} eq 'Approved'`;
       
       const selectFields = [
-      'Id',
-      empIdCol,  // Title (Employee ID)
-      getColumnInternalName('LeaveData', 'LeaveType'),
-      startDateCol,
-      endDateCol,
-      getColumnInternalName('LeaveData', 'TotalDays'),
-      getColumnInternalName('LeaveData', 'LeaveDuration'),
-      statusCol,
-      getColumnInternalName('LeaveData', 'HRMSLeaveID'),
-      getColumnInternalName('LeaveData', 'AppliedDate'),
-      getColumnInternalName('LeaveData', 'ApprovedDate'),
-      getColumnInternalName('LeaveData', 'Reason'),
-      getColumnInternalName('LeaveData', 'ColorCode'),
-      'Employee/Id',
-      'Employee/Title',
-      'Employee/EMail',
-      'ApprovedBy/Id',
-      'ApprovedBy/Title',
-      'ApprovedBy/EMail'
-    ];
-    const expandFields = ['Employee', 'ApprovedBy'];
+        'Id',
+        empIdCol,  // Title (Employee ID)
+        getColumnInternalName('LeaveData', 'LeaveType'),
+        startDateCol,
+        endDateCol,
+        getColumnInternalName('LeaveData', 'TotalDays'),
+        getColumnInternalName('LeaveData', 'LeaveDuration'),
+        statusCol,
+        getColumnInternalName('LeaveData', 'HRMSLeaveID'),
+        getColumnInternalName('LeaveData', 'AppliedDate'),
+        getColumnInternalName('LeaveData', 'ApprovedDate'),
+        getColumnInternalName('LeaveData', 'Reason'),
+        getColumnInternalName('LeaveData', 'ColorCode'),
+        'Employee/Id',
+        'Employee/Title',
+        'Employee/EMail',
+        'ApprovedBy/Id',
+        'ApprovedBy/Title',
+        'ApprovedBy/EMail'
+      ];
+      const expandFields = ['Employee', 'ApprovedBy'];
 
       const orderBy = startDateCol;
       
-      // TODO: Call httpService.getListItems
       const items = await this.httpService.getListItems<ILeaveData>(
         listName,
         selectFields,
@@ -163,14 +159,9 @@ export class AttendanceService {
         1000,
         expandFields
       );
-          console.log(`[AttendanceService] Loaded ${items.length} approved leaves for ${employeeId}`);
+      console.log(`[AttendanceService] Loaded ${items.length} approved leaves for ${employeeId}`);
 
-      // Filter to only approved leaves
-    return items;
-      
-      // PLACEHOLDER: Return empty array until implemented
-      // console.log(`[AttendanceService] getLeaveData for ${employeeId}, ${startDate} to ${endDate}`);
-      // return [];
+      return items;
       
     } catch (error) {
       console.error('[AttendanceService] Error getting leave data:', error);
@@ -206,15 +197,9 @@ export class AttendanceService {
    */
   public async buildCalendarForMonth(employeeId: string, year: number, month: number): Promise<ITimesheetDay[]> {
     try {
-      // TODO: Implement calendar building logic
-      // 1. Get punch data for month
-      // 2. Get leave data for month
-      // 3. Get timesheet data for month (from TimesheetService)
-      // 4. Merge all data to build calendar days
-      
       const punchData = await this.getPunchDataForMonth(employeeId, year, month);
       const leaveData = await this.getLeaveDataForMonth(employeeId, year, month);
-          console.log(`[AttendanceService] Building calendar - Punch: ${punchData.length}, Leave: ${leaveData.length}`);
+      console.log(`[AttendanceService] Building calendar - Punch: ${punchData.length}, Leave: ${leaveData.length}`);
 
       // Build calendar days
       const calendarDays: ITimesheetDay[] = [];
@@ -226,8 +211,8 @@ export class AttendanceService {
         const dayOfWeek = date.getDay();
         
         // Determine status
-      let status: 'present' | 'absent' | 'holiday' | 'leave' | 'weekend' | 'empty' = 'absent';
-      let leaveType: 'sick' | 'casual' | 'earned' | undefined = undefined;
+        let status: 'present' | 'absent' | 'holiday' | 'leave' | 'weekend' | 'empty' = 'absent';
+        let leaveType: 'sick' | 'casual' | 'earned' | undefined = undefined;
         
         // Check if weekend
         const isWeekendDay = dayOfWeek === 0 || dayOfWeek === 6;
@@ -235,20 +220,21 @@ export class AttendanceService {
           status = 'weekend';
         }
         
-        // 2. Holiday (override weekend if it's a holiday)
+        // Holiday (override weekend if it's a holiday)
         const isHolidayDay = false; // TODO: Implement holiday check
         if (isHolidayDay) {
           status = 'holiday';
         }
+        
         // Check if on leave
         const dayLeave = leaveData.find(leave => {
           const leaveStart = new Date(leave.StartDate);
           const leaveEnd = new Date(leave.EndDate);
           leaveStart.setHours(0, 0, 0, 0);
           leaveEnd.setHours(23, 59, 59, 999);
-                  date.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
+          date.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
 
-        return date >= leaveStart && date <= leaveEnd;
+          return date >= leaveStart && date <= leaveEnd;
         });
 
         const isLeaveDay = !!dayLeave;
@@ -263,20 +249,18 @@ export class AttendanceService {
           else if (dayLeave.LeaveType.includes('Comp Off')) leaveType = 'casual';
         }
         
-       
-        
-        // FIXED: Find punch data using AttendanceDate (which is now mapped from PunchDate)
+        // Find punch data using AttendanceDate
         const dayPunch = punchData.find(punch => punch.AttendanceDate === dateString);
         if (dayPunch && !isWeekendDay && !isHolidayDay && !dayLeave) {
           status = 'present';
         }
+        
         // Check if today
         const today = new Date();
         const isToday = date.getDate() === today.getDate() && 
                        date.getMonth() === today.getMonth() && 
                        date.getFullYear() === today.getFullYear();
         
-        // FIXED: Include all required properties from ITimesheetDay interface
         calendarDays.push({
           date: dateString,
           dayNumber: day,
@@ -292,7 +276,6 @@ export class AttendanceService {
             status: 'notFilled'
           },
           isToday: isToday,
-          // ADDED: Required properties from ITimesheetDay interface
           isWeekend: isWeekendDay,
           isHoliday: isHolidayDay,
           isLeave: isLeaveDay,
@@ -320,7 +303,6 @@ export class AttendanceService {
     endDate: string
   ): Promise<{ daysPresent: number; daysAbsent: number; totalHours: number }> {
     try {
-      // TODO: Implement statistics calculation
       const punchData = await this.getPunchData(employeeId, startDate, endDate);
       
       const daysPresent = punchData.filter(punch => punch.Status === 'Synced').length;
@@ -338,95 +320,96 @@ export class AttendanceService {
       throw error;
     }
   }
+
   /**
- * Generate attendance report CSV for download
- * @param employeeId Employee ID
- * @param year Year
- * @param month Month (1-12)
- */
-public async downloadAttendanceReport(
-  employeeId: string,
-  year: number,
-  month: number
-): Promise<void> {
-  try {
-    // Get punch data and leave data for month
-    const [punchData, leaveData] = await Promise.all([
-      this.getPunchDataForMonth(employeeId, year, month),
-      this.getLeaveDataForMonth(employeeId, year, month)
-    ]);
+   * Generate attendance report CSV for download
+   * @param employeeId Employee ID
+   * @param year Year
+   * @param month Month (1-12)
+   */
+  public async downloadAttendanceReport(
+    employeeId: string,
+    year: number,
+    month: number
+  ): Promise<void> {
+    try {
+      // Get punch data and leave data for month
+      const [punchData, leaveData] = await Promise.all([
+        this.getPunchDataForMonth(employeeId, year, month),
+        this.getLeaveDataForMonth(employeeId, year, month)
+      ]);
 
-    // Build calendar for the month
-    const calendarDays = await this.buildCalendarForMonth(employeeId, year, month);
+      // Build calendar for the month
+      const calendarDays = await this.buildCalendarForMonth(employeeId, year, month);
 
-    // Generate CSV content
-    const csvRows: string[] = [];
-    
-    // Header
-    csvRows.push('Date,Day,Status,First Punch In,Last Punch Out,Total Hours,Timesheet Hours,Leave Type');
-
-    // Data rows
-    calendarDays.forEach(day => {
-      const date = new Date(day.date);
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      const dateStr = date.toLocaleDateString('en-US');
+      // Generate CSV content
+      const csvRows: string[] = [];
       
-      const status = this.getStatusText(day.status || '');
-      const firstPunchIn = day.firstPunchIn ? this.formatTimeForCsv(day.firstPunchIn) : '';
-      const lastPunchOut = day.lastPunchOut ? this.formatTimeForCsv(day.lastPunchOut) : '';
-      const totalHours = day.totalHours ? day.totalHours.toFixed(2) : '0.00';
-      const timesheetHours = day.timesheetHours ? day.timesheetHours.toFixed(2) : '0.00';
-      const leaveType = day.leaveType || '';
+      // Header
+      csvRows.push('Date,Day,Status,First Punch In,Last Punch Out,Total Hours,Timesheet Hours,Leave Type');
 
-      csvRows.push(`${dateStr},${dayName},${status},${firstPunchIn},${lastPunchOut},${totalHours},${timesheetHours},${leaveType}`);
-    });
+      // Data rows
+      calendarDays.forEach(day => {
+        const date = new Date(day.date);
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+        const dateStr = date.toLocaleDateString('en-US');
+        
+        const status = this.getStatusText(day.status || '');
+        const firstPunchIn = day.firstPunchIn ? this.formatTimeForCsv(day.firstPunchIn) : '';
+        const lastPunchOut = day.lastPunchOut ? this.formatTimeForCsv(day.lastPunchOut) : '';
+        const totalHours = day.totalHours ? day.totalHours.toFixed(2) : '0.00';
+        const timesheetHours = day.timesheetHours ? day.timesheetHours.toFixed(2) : '0.00';
+        const leaveType = day.leaveType || '';
 
-    // Create CSV file and download
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Attendance_Report_${employeeId}_${year}_${month}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    console.log(`[AttendanceService] Downloaded attendance report for ${employeeId}, ${month}/${year}`);
+        csvRows.push(`${dateStr},${dayName},${status},${firstPunchIn},${lastPunchOut},${totalHours},${timesheetHours},${leaveType}`);
+      });
 
-  } catch (error) {
-    console.error('[AttendanceService] Error downloading attendance report:', error);
-    throw error;
+      // Create CSV file and download
+      const csvContent = csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Attendance_Report_${employeeId}_${year}_${month}.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log(`[AttendanceService] Downloaded attendance report for ${employeeId}, ${month}/${year}`);
+
+    } catch (error) {
+      console.error('[AttendanceService] Error downloading attendance report:', error);
+      throw error;
+    }
   }
-}
 
-private getStatusText(status: string): string {
-  const statusMap: { [key: string]: string } = {
-    'present': 'Present',
-    'absent': 'Absent',
-    'holiday': 'Holiday',
-    'leave': 'On Leave',
-    'weekend': 'Weekend',
-    'empty': ''
-  };
-  return statusMap[status] || status;
-}
-
-private formatTimeForCsv(timeString: string): string {
-  if (!timeString) return '';
-  
-  try {
-    const date = new Date(timeString);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
-  } catch {
-    return timeString;
+  private getStatusText(status: string): string {
+    const statusMap: { [key: string]: string } = {
+      'present': 'Present',
+      'absent': 'Absent',
+      'holiday': 'Holiday',
+      'leave': 'On Leave',
+      'weekend': 'Weekend',
+      'empty': ''
+    };
+    return statusMap[status] || status;
   }
-}
+
+  private formatTimeForCsv(timeString: string): string {
+    if (!timeString) return '';
+    
+    try {
+      const date = new Date(timeString);
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    } catch {
+      return timeString;
+    }
+  }
 }
