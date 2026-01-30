@@ -110,40 +110,30 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
   };
 
   const handleApprove = async (requestId: number): Promise<void> => {
-    if (!confirm('Are you sure you want to approve this regularization request?')) {
-      return;
-    }
+  if (!confirm('Are you sure you want to approve this regularization request?')) {
+    return;
+  }
 
-    try {
-      setIsProcessing(true);
+  try {
+    setIsProcessing(true);
 
-      // Approve in SharePoint
-      await approvalService.approveRequest(requestId);
+    await approvalService.approveRequest(requestId);
 
-      // Remove from pending list
-      const approvedRequest = pendingRequests.find(req => req.id === requestId);
-      setPendingRequests(prev => prev.filter(req => req.id !== requestId));
+    // ✅ Reload BOTH tabs
+    await Promise.all([
+      loadPendingRequests(),
+      loadApprovalHistory()
+    ]);
 
-      // Add to history
-      if (approvedRequest) {
-        const historyItem: IRegularizationRequest = {
-          ...approvedRequest,
-          status: 'approved',
-          approvedBy: 'Current Manager',
-          approvedOn: new Date().toISOString().split('T')[0]
-        };
-        setApprovalHistory(prev => [historyItem, ...prev]);
-      }
+    alert('Request approved successfully.');
 
-      alert('Request approved successfully.');
-
-    } catch (err) {
-      console.error('[ApprovalView] Error approving request:', err);
-      alert('Failed to approve request. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  } catch (err) {
+    console.error('[ApprovalView] Error approving request:', err);
+    alert('Failed to approve request. Please try again.');
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const handleReject = async (requestId: number): Promise<void> => {
     const comment = prompt('Please provide a reason for rejection (optional):');

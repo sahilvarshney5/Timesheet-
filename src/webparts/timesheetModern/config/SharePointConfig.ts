@@ -141,6 +141,11 @@ export const SharePointConfig: ISharePointConfig = {
         displayName: 'Employee ID',
         internalName: 'Title'
       },
+      Employee: {
+    displayName: 'Employee',
+    internalName: 'Employee'  // ✅ Person or Group
+  },
+
       LeaveType: {
         displayName: 'Leave Type',
         internalName: 'LeaveType'
@@ -161,10 +166,30 @@ export const SharePointConfig: ISharePointConfig = {
         displayName: 'Status',
         internalName: 'Status'
       },
+      HRMSLeaveID: {
+    displayName: 'HRMS Leave ID',
+    internalName: 'HRMSLeaveID'
+  },
+  AppliedDate: {
+    displayName: 'Applied Date',
+    internalName: 'AppliedDate'
+  },
+  ApprovedDate: {
+    displayName: 'Approved Date',
+    internalName: 'ApprovedDate'
+  },
       ColorCode: {
         displayName: 'Color Code',
         internalName: 'ColorCode'
-      }
+      },
+      Reason: {
+    displayName: 'Reason',
+    internalName: 'Reason'
+  },
+  ApprovedBy: {
+    displayName: 'Approved By',
+    internalName: 'ApprovedBy'
+  }
     },
     // ADDED: LeaveBalance columns
     LeaveBalance: {

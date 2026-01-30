@@ -237,17 +237,11 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
           Description: formData.description
         });
         
-        // Update local state
-        setEntries(prev => prev.map(entry => 
-          entry.id === editingEntry.id 
-            ? { ...entry, ...formData }
-            : entry
-        ));
         
         alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
       } else {
         // Create new entry in SharePoint
-        const newLine = await timesheetService.createTimesheetLine({
+       await timesheetService.createTimesheetLine({
           TimesheetID: timesheetHeader.Id,
           WorkDate: formData.date,
           ProjectNo: formData.project,
@@ -256,15 +250,11 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
           Description: formData.description
         });
         
-        // Add to local state
-        const newEntry: ITimesheetEntry = {
-          id: newLine.Id!,
-          ...formData
-        };
-        setEntries(prev => [...prev, newEntry]);
-        
+       
         alert(`Timesheet entry added: ${formData.hours} hours for ${formData.project}`);
       }
+          await loadTimesheetData();
+
       
       handleCloseModal();
       

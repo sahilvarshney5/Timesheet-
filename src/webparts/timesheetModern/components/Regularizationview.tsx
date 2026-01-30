@@ -158,9 +158,11 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     // Reset form
     form.reset();
     setRegularizationType('day_based');
-    
+      // ✅ Reload history after successful submission
+    await loadRegularizationHistory();
     // Navigate to dashboard
     onViewChange('dashboard');
+   
 
   } catch (err) {
     console.error('[RegularizationView] Error submitting regularization:', err);

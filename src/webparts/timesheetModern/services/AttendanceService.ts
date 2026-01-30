@@ -99,22 +99,35 @@ export class AttendanceService {
       const empIdCol = getColumnInternalName('LeaveData', 'EmployeeID');
       const startDateCol = getColumnInternalName('LeaveData', 'StartDate');
       const endDateCol = getColumnInternalName('LeaveData', 'EndDate');
-      
+          const statusCol = getColumnInternalName('LeaveData', 'Status');
+
       // Build filter for employee and overlapping date range
       // Leave overlaps if: LeaveStart <= EndDate AND LeaveEnd >= StartDate
-      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${startDateCol} le '${endDate}' and ${endDateCol} ge '${startDate}'`;
+    const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${startDateCol} le '${endDate}' and ${endDateCol} ge '${startDate}' and ${statusCol} eq 'Approved'`;
       
       const selectFields = [
-        'Id',
-        empIdCol,
-        getColumnInternalName('LeaveData', 'LeaveType'),
-        startDateCol,
-        endDateCol,
-        getColumnInternalName('LeaveData', 'LeaveDuration'),
-        getColumnInternalName('LeaveData', 'Status'),
-        getColumnInternalName('LeaveData', 'ColorCode')
-      ];
-      
+      'Id',
+      empIdCol,  // Title (Employee ID)
+      getColumnInternalName('LeaveData', 'LeaveType'),
+      startDateCol,
+      endDateCol,
+      getColumnInternalName('LeaveData', 'TotalDays'),
+      getColumnInternalName('LeaveData', 'LeaveDuration'),
+      statusCol,
+      getColumnInternalName('LeaveData', 'HRMSLeaveID'),
+      getColumnInternalName('LeaveData', 'AppliedDate'),
+      getColumnInternalName('LeaveData', 'ApprovedDate'),
+      getColumnInternalName('LeaveData', 'Reason'),
+      getColumnInternalName('LeaveData', 'ColorCode'),
+      'Employee/Id',
+      'Employee/Title',
+      'Employee/EMail',
+      'ApprovedBy/Id',
+      'ApprovedBy/Title',
+      'ApprovedBy/EMail'
+    ];
+    const expandFields = ['Employee', 'ApprovedBy'];
+
       const orderBy = startDateCol;
       
       // TODO: Call httpService.getListItems
@@ -122,11 +135,14 @@ export class AttendanceService {
         listName,
         selectFields,
         filterQuery,
-        orderBy
+        orderBy,
+        1000,
+        expandFields
       );
-      
+          console.log(`[AttendanceService] Loaded ${items.length} approved leaves for ${employeeId}`);
+
       // Filter to only approved leaves
-      return items.filter(leave => leave.Status === 'Approved');
+    return items;
       
       // PLACEHOLDER: Return empty array until implemented
       // console.log(`[AttendanceService] getLeaveData for ${employeeId}, ${startDate} to ${endDate}`);
@@ -174,7 +190,8 @@ export class AttendanceService {
       
       const punchData = await this.getPunchDataForMonth(employeeId, year, month);
       const leaveData = await this.getLeaveDataForMonth(employeeId, year, month);
-      
+          console.log(`[AttendanceService] Building calendar - Punch: ${punchData.length}, Leave: ${leaveData.length}`);
+
       // Build calendar days
       const calendarDays: ITimesheetDay[] = [];
       const daysInMonth = new Date(year, month, 0).getDate();
@@ -185,8 +202,8 @@ export class AttendanceService {
         const dayOfWeek = date.getDay();
         
         // Determine status
-        let status: 'present' | 'absent' | 'holiday' | 'leave' | 'weekend' | 'empty' = 'present';
-        let leaveType: 'sick' | 'casual' | 'earned' | undefined = undefined;
+      let status: 'present' | 'absent' | 'holiday' | 'leave' | 'weekend' | 'empty' = 'absent';
+      let leaveType: 'sick' | 'casual' | 'earned' | undefined = undefined;
         
         // Check if weekend
         const isWeekendDay = dayOfWeek === 0 || dayOfWeek === 6;
@@ -194,31 +211,41 @@ export class AttendanceService {
           status = 'weekend';
         }
         
+        // 2. Holiday (override weekend if it's a holiday)
+        const isHolidayDay = false; // TODO: Implement holiday check
+        if (isHolidayDay) {
+          status = 'holiday';
+        }
         // Check if on leave
         const dayLeave = leaveData.find(leave => {
           const leaveStart = new Date(leave.StartDate);
           const leaveEnd = new Date(leave.EndDate);
-          return date >= leaveStart && date <= leaveEnd;
+          leaveStart.setHours(0, 0, 0, 0);
+          leaveEnd.setHours(23, 59, 59, 999);
+                  date.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
+
+        return date >= leaveStart && date <= leaveEnd;
         });
-        
+
         const isLeaveDay = !!dayLeave;
         if (dayLeave) {
           status = 'leave';
           // Map leave type
-          if (dayLeave.LeaveType.includes('Sick')) leaveType = 'sick';
+          if (dayLeave.LeaveType.includes('Medical')) leaveType = 'sick';
           else if (dayLeave.LeaveType.includes('Casual')) leaveType = 'casual';
-          else if (dayLeave.LeaveType.includes('Earned')) leaveType = 'earned';
+          else if (dayLeave.LeaveType.includes('Maternity')) leaveType = 'casual';
+          else if (dayLeave.LeaveType.includes('Paternity')) leaveType = 'casual';
+          else if (dayLeave.LeaveType.includes('Annual')) leaveType = 'casual';
+          else if (dayLeave.LeaveType.includes('Comp Off')) leaveType = 'casual';
         }
         
-        // Check if holiday
-        const isHolidayDay = false; // TODO: Add holiday logic
-        if (isHolidayDay) {
-          status = 'holiday';
-        }
+       
         
         // Find punch data for this day
         const dayPunch = punchData.find(punch => punch.AttendanceDate === dateString);
-        
+        if (dayPunch && !isWeekendDay && !isHolidayDay && !dayLeave) {
+          status = 'present';
+        }
         // Check if today
         const today = new Date();
         const isToday = date.getDate() === today.getDate() && 

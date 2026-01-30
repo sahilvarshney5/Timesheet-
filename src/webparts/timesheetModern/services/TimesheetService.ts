@@ -197,13 +197,32 @@ export class TimesheetService {
       };
       
       // TODO: Call httpService.createListItem
-      const newLine = await this.httpService.createListItem<ITimesheetLines>(
+      const createdItem  = await this.httpService.createListItem<ITimesheetLines>(
         listName,
         itemData
       );
-      
-      return newLine;
-      
+        
+    // ✅ CRITICAL FIX: Fetch complete item after creation
+    if (createdItem && createdItem.Id) {
+      const selectFields = [
+        'Id',
+        getColumnInternalName('TimesheetLines', 'TimesheetID'),
+        getColumnInternalName('TimesheetLines', 'WorkDate'),
+        getColumnInternalName('TimesheetLines', 'ProjectNo'),
+        getColumnInternalName('TimesheetLines', 'TaskNo'),
+        getColumnInternalName('TimesheetLines', 'BLA_No'),
+        getColumnInternalName('TimesheetLines', 'HoursBooked'),
+        getColumnInternalName('TimesheetLines', 'Description')
+      ];
+        const completeItem = await this.httpService.getListItemById<ITimesheetLines>(
+        listName,
+        createdItem.Id,
+        selectFields
+      );
+      return completeItem!;
+    }
+        return createdItem as ITimesheetLines;
+
       // PLACEHOLDER: Return mock data until implemented
       // console.log(`[TimesheetService] createTimesheetLine`, timesheetLine);
       // return {
