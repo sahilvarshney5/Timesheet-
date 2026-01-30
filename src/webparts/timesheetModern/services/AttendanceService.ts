@@ -13,27 +13,58 @@ export class AttendanceService {
   constructor(spHttpClient: SPHttpClient, siteUrl: string) {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
-  /**
-   * Map SharePoint response to IPunchData canonical format
-   * CRITICAL: SharePoint returns PunchDate, we need AttendanceDate
-   */
-  private mapToPunchData(spItem: any): IPunchData {
-    return {
-      Id: spItem.Id || spItem.ID,
-      EmployeeId: 0, // Will be set from Title/EmployeeID
-      AttendanceDate: spItem.PunchDate || spItem.AttendanceDate, // Map PunchDate to AttendanceDate
-      FirstPunchIn: spItem.FirstPunchIn,
-      LastPunchOut: spItem.LastPunchOut,
-      TotalHours: spItem.TotalHours,
-      Status: spItem.Status,
-      Source: spItem.Source,
-      Created: spItem.Created,
-      Modified: spItem.Modified,
-      // Keep internal fields for reference
-      PunchDate: spItem.PunchDate,
-      Title: spItem.Title
-    };
+  // services/AttendanceService.ts
+
+// services/AttendanceService.ts
+
+/**
+ * Normalize ISO date to YYYY-MM-DD format (ES5-compatible, timezone-safe)
+ */
+private normalizeToDateString(isoDateString: string): string {
+  if (!isoDateString) return '';
+  
+  try {
+    const date = new Date(isoDateString);
+    
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    
+    // ES5-compatible padding
+    const monthStr = month < 10 ? '0' + month : '' + month;
+    const dayStr = day < 10 ? '0' + day : '' + day;
+    
+    return `${year}-${monthStr}-${dayStr}`;
+  } catch (error) {
+    console.error('[AttendanceService] Error normalizing date:', isoDateString, error);
+    return '';
   }
+}
+
+/**
+ * Map SharePoint response to IPunchData canonical format
+ * CRITICAL: SharePoint returns PunchDate, we need AttendanceDate
+ */
+private mapToPunchData(spItem: any): IPunchData {
+  // FIXED: Normalize date to YYYY-MM-DD format
+  const rawDate = spItem.PunchDate || spItem.AttendanceDate;
+  const normalizedDate = this.normalizeToDateString(rawDate);
+  
+  return {
+    Id: spItem.Id || spItem.ID,
+    EmployeeId: 0,
+    AttendanceDate: normalizedDate, // ✅ NOW IN YYYY-MM-DD FORMAT
+    FirstPunchIn: spItem.FirstPunchIn,
+    LastPunchOut: spItem.LastPunchOut,
+    TotalHours: spItem.TotalHours,
+    Status: spItem.Status,
+    Source: spItem.Source,
+    Created: spItem.Created,
+    Modified: spItem.Modified,
+    PunchDate: spItem.PunchDate,
+    Title: spItem.Title
+  };
+}
   /**
    * Get punch data for a specific employee and date range
    * @param employeeId Employee ID
