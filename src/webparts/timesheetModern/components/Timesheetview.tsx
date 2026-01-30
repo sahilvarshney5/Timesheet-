@@ -1,12 +1,24 @@
+// Timesheetview.tsx
+// FIXED: Added date normalization to handle ISO format dates
+// All date comparisons now use normalized YYYY-MM-DD format
+
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { TimesheetService } from '../services/TimesheetService';
 import { IEmployeeMaster } from '../models';
+import { 
+  normalizeDateToString, 
+  formatDateForDisplay, 
+  isToday as checkIsToday,
+  getWeekDays,
+  getWeekStartDate,
+  getTodayString
+} from '../utils/DateUtils';
 
 interface ITimesheetEntry {
   id: number;
-  date: string;
+  date: string; // ✅ Always normalized to YYYY-MM-DD
   project: string;
   hours: number;
   taskType: string;
@@ -37,7 +49,6 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const [editingEntry, setEditingEntry] = React.useState<ITimesheetEntry | null>(null);
   const [currentWeekOffset, setCurrentWeekOffset] = React.useState<number>(0);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  const [debugInfo, setDebugInfo] = React.useState<string>('');
   
   // Form state
   const [formData, setFormData] = React.useState({
@@ -48,38 +59,75 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     description: ''
   });
 
-  // ============================================================================
-  // HELPER FUNCTIONS - DEFINED FIRST
-  // ============================================================================
-
-  // Get current week days based on offset
+  // ✅ FIXED: Get current week days based on offset with normalized dates
   const getCurrentWeekDays = React.useCallback((): string[] => {
     const today = new Date();
     const adjustedDate = new Date(today);
     adjustedDate.setDate(today.getDate() + (currentWeekOffset * 7));
     
-    // Get Monday of this week
-    const startOfWeek = new Date(adjustedDate);
-    const dayOfWeek = adjustedDate.getDay();
-    const diff = adjustedDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    startOfWeek.setDate(diff);
-    
-    // Get all 7 days (Monday to Sunday)
-    const days: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(startOfWeek);
-      day.setDate(startOfWeek.getDate() + i);
-      days.push(day.toISOString().split('T')[0]);
-    }
-    
-    return days;
+    // ✅ Use DateUtils function which returns normalized dates
+    return getWeekDays(adjustedDate);
   }, [currentWeekOffset]);
 
+  const loadTimesheetData = React.useCallback(async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      // Get week dates (already normalized by getCurrentWeekDays)
+      const weekDays = getCurrentWeekDays();
+      const startDate = weekDays[0];
+      const endDate = weekDays[weekDays.length - 1];
+      
+      const empId = props.employeeMaster.EmployeeID;
+      
+      console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
+      
+      // Check if timesheet header exists for this week
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      
+      if (!timesheetHeader) {
+        timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
+        console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
+      }
+      
+      // Load timesheet lines for this header
+      const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
+      
+      // ✅ CRITICAL: Convert to ITimesheetEntry format with normalized dates
+      // The dates from TimesheetService are already normalized
+      const convertedEntries: ITimesheetEntry[] = lines.map(line => ({
+        id: line.Id!,
+        date: line.WorkDate || line.EntryDate || '', // Already normalized by service
+        project: line.ProjectNo || line.ProjectNumber || '',
+        hours: line.HoursBooked || line.Hours || 0,
+        taskType: 'Development', // Default
+        description: line.Description || line.Comments || ''
+      }));
+      
+      setEntries(convertedEntries);
+      
+      console.log(`[TimesheetView] Loaded ${convertedEntries.length} timesheet entries with normalized dates`);
+      
+    } catch (error) {
+      console.error('[TimesheetView] Error loading timesheet data:', error);
+      alert('Failed to load timesheet data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getCurrentWeekDays, props.employeeMaster.EmployeeID, timesheetService]);
+
+  // Load timesheet data when week changes
+  React.useEffect(() => {
+    loadTimesheetData().catch(err => {
+      console.error('[TimesheetView] Effect error:', err);
+    });
+  }, [currentWeekOffset, loadTimesheetData]);
+
   // Get week range display text
-  const getWeekRangeText = React.useCallback((): string => {
+  const getWeekRangeText = (): string => {
     const weekDays = getCurrentWeekDays();
-    const startDate = new Date(weekDays[0]);
-    const endDate = new Date(weekDays[6]);
+    const startDate = new Date(weekDays[0] + 'T00:00:00');
+    const endDate = new Date(weekDays[6] + 'T00:00:00');
     
     const options = { month: 'short', day: 'numeric' } as const;
     const startStr = startDate.toLocaleDateString('en-US', options);
@@ -96,147 +144,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     }
     
     return weekText;
-  }, [getCurrentWeekDays, currentWeekOffset]);
-
-  // Format date for display
-  const formatDateDisplay = React.useCallback((dateString: string): string => {
-    const date = new Date(dateString);
-    const options = { weekday: 'short', month: 'short', day: 'numeric' } as const;
-    return date.toLocaleDateString('en-US', options);
-  }, []);
-
-  // Check if date is today
-  const isToday = React.useCallback((dateString: string): boolean => {
-    const today = new Date().toISOString().split('T')[0];
-    return dateString === today;
-  }, []);
-
-  // Get entries for a specific date
-  const getEntriesForDate = React.useCallback((date: string): ITimesheetEntry[] => {
-    return entries.filter(entry => entry.date === date);
-  }, [entries]);
-
-  // Calculate total hours for a date
-  const getTotalHoursForDate = React.useCallback((date: string): number => {
-    return getEntriesForDate(date).reduce((sum, entry) => sum + entry.hours, 0);
-  }, [getEntriesForDate]);
-
-  // Calculate totals for current week
-  const calculateWeekTotals = React.useCallback((): { totalHours: number; daysWithEntries: number; totalDays: number } => {
-    const weekDays = getCurrentWeekDays();
-    const weekEntries = entries.filter(entry => 
-      weekDays.indexOf(entry.date) !== -1
-    );
-    
-    const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
-    const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
-    
-    return { totalHours, daysWithEntries, totalDays: weekDays.length };
-  }, [getCurrentWeekDays, entries]);
-
-  // ============================================================================
-  // DATA LOADING FUNCTION - WITH ENHANCED DEBUGGING
-  // ============================================================================
-
-  const loadTimesheetData = React.useCallback(async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      let debugLog = '=== TIMESHEET LOAD DEBUG ===\n';
-      
-      // Get week dates
-      const weekDays = getCurrentWeekDays();
-      const startDate = weekDays[0];
-      const endDate = weekDays[weekDays.length - 1];
-      
-      // Get Employee ID from props
-      const empId = props.employeeMaster.EmployeeID;
-      
-      debugLog += `Employee ID: ${empId}\n`;
-      debugLog += `Week Start: ${startDate}\n`;
-      debugLog += `Week End: ${endDate}\n`;
-      debugLog += `Week Days: ${weekDays.join(', ')}\n\n`;
-      
-      console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
-      console.log('[TimesheetView] Week Days:', weekDays);
-      
-      // Check if timesheet header exists for this week
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
-      
-      debugLog += `Timesheet Header: ${timesheetHeader ? `Found (ID: ${timesheetHeader.Id})` : 'Not Found'}\n`;
-      console.log('[TimesheetView] Timesheet Header:', timesheetHeader);
-      
-      if (!timesheetHeader) {
-        // Create new timesheet header
-        debugLog += 'Creating new timesheet header...\n';
-        timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
-        debugLog += `Created new header with ID: ${timesheetHeader.Id}\n`;
-        console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
-      }
-      
-      // Load timesheet lines for this header
-      debugLog += `\nFetching lines for Timesheet ID: ${timesheetHeader.Id}...\n`;
-      const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
-      
-      debugLog += `Found ${lines.length} line(s) in SharePoint\n\n`;
-      console.log('[TimesheetView] Loaded Lines from SharePoint:', lines);
-      
-      // Log each line
-      if (lines.length > 0) {
-        debugLog += 'Line Details:\n';
-        lines.forEach((line, index) => {
-          debugLog += `  Line ${index + 1}:\n`;
-          debugLog += `    - ID: ${line.Id}\n`;
-          debugLog += `    - Date: ${line.WorkDate || line.EntryDate || 'MISSING'}\n`;
-          debugLog += `    - Project: ${line.ProjectNo || line.ProjectNumber || 'MISSING'}\n`;
-          debugLog += `    - Hours: ${line.HoursBooked || line.Hours || 0}\n`;
-          debugLog += `    - Description: ${line.Description || line.Comments || 'N/A'}\n`;
-        });
-      } else {
-        debugLog += 'No lines found for this timesheet.\n';
-        debugLog += '\nPossible reasons:\n';
-        debugLog += '1. Timesheet Header ID mismatch\n';
-        debugLog += '2. Lines exist but under different Timesheet ID\n';
-        debugLog += '3. Column name mismatch in SharePointConfig.ts\n';
-      }
-      
-      // Convert to ITimesheetEntry format
-      const convertedEntries: ITimesheetEntry[] = lines.map(line => ({
-        id: line.Id!,
-        date: line.WorkDate || line.EntryDate || '',
-        project: line.ProjectNo || line.ProjectNumber || '',
-        hours: line.HoursBooked || line.Hours || 0,
-        taskType: 'Development', // Default
-        description: line.Description || line.Comments || ''
-      }));
-      
-      debugLog += `\nConverted ${convertedEntries.length} entries for display\n`;
-      console.log('[TimesheetView] Converted Entries:', convertedEntries);
-      
-      setEntries(convertedEntries);
-      setDebugInfo(debugLog);
-      
-      console.log(`[TimesheetView] FINAL - Loaded ${convertedEntries.length} timesheet entries into state`);
-      console.log('=== DEBUG INFO ===\n' + debugLog);
-      
-    } catch (error) {
-      console.error('[TimesheetView] Error loading timesheet data:', error);
-      setDebugInfo('ERROR: ' + (error as Error).message);
-      alert('Failed to load timesheet data. Check console for details.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getCurrentWeekDays, props.employeeMaster.EmployeeID, timesheetService]);
-
-  // Load timesheet data when week changes
-  React.useEffect(() => {
-    loadTimesheetData().catch(err => {
-      console.error('[TimesheetView] Effect error:', err);
-    });
-  }, [currentWeekOffset, loadTimesheetData]);
-
-  // ============================================================================
-  // EVENT HANDLERS
-  // ============================================================================
+  };
 
   // Change week
   const handleChangeWeek = (direction: number): void => {
@@ -247,11 +155,12 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const handleAddEntry = (date?: string): void => {
     setEditingEntry(null);
     
+    // ✅ FIXED: Normalize date parameter
     const weekDays = getCurrentWeekDays();
-    const defaultDate = date || weekDays[0];
+    const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
     
     setFormData({
-      date: defaultDate,
+      date: normalizedDate,
       project: '',
       hours: 0,
       taskType: 'Development',
@@ -263,6 +172,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // Open modal for editing
   const handleEditEntry = (entry: ITimesheetEntry): void => {
     setEditingEntry(entry);
+    // ✅ Entry date is already normalized
     setFormData({
       date: entry.date,
       project: entry.project,
@@ -301,6 +211,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     try {
       setIsLoading(true);
       
+      // ✅ CRITICAL: Normalize date before saving
+      const normalizedDate = normalizeDateToString(formData.date);
+      
       const empId = props.employeeMaster.EmployeeID;
       
       // Get or create timesheet header
@@ -314,9 +227,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       }
       
       if (editingEntry) {
-        // Update existing entry in SharePoint
+        // Update existing entry in SharePoint with normalized date
         await timesheetService.updateTimesheetLine(editingEntry.id, {
-          WorkDate: formData.date,
+          WorkDate: normalizedDate,
           ProjectNo: formData.project,
           HoursBooked: formData.hours,
           Description: formData.description
@@ -324,12 +237,12 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
         
         alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
       } else {
-        // Create new entry in SharePoint
+        // Create new entry in SharePoint with normalized date
         await timesheetService.createTimesheetLine({
           TimesheetID: timesheetHeader.Id,
-          WorkDate: formData.date,
+          WorkDate: normalizedDate,
           ProjectNo: formData.project,
-          TaskNo: '',
+          TaskNo: '', // TODO: Add task selection
           HoursBooked: formData.hours,
           Description: formData.description
         });
@@ -375,9 +288,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // Submit timesheet
   const handleSubmitTimesheet = async (): Promise<void> => {
     const weekDays = getCurrentWeekDays();
-    const weekEntries = entries.filter(entry => 
-      weekDays.indexOf(entry.date) !== -1
-    );
+    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
     
     if (weekEntries.length === 0) {
       alert('Please add at least one timesheet entry before submitting.');
@@ -414,15 +325,40 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     }
   };
 
-  // Show debug info
-  const handleShowDebugInfo = (): void => {
-    alert(debugInfo || 'No debug info available. Load data first.');
-    console.log('=== FULL DEBUG INFO ===\n' + debugInfo);
+  // Calculate totals for current week
+  const calculateWeekTotals = (): { totalHours: number; daysWithEntries: number; totalDays: number } => {
+    const weekDays = getCurrentWeekDays();
+    // ✅ FIXED: Date comparison now works because both are normalized
+    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    
+    const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
+    const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
+    
+    return { totalHours, daysWithEntries, totalDays: weekDays.length };
   };
 
-  // ============================================================================
-  // RENDER
-  // ============================================================================
+  // ✅ FIXED: Get entries for a specific date (date comparison now works)
+  const getEntriesForDate = React.useCallback((date: string): ITimesheetEntry[] => {
+    // ✅ Normalize input date for comparison
+    const normalizedDate = normalizeDateToString(date);
+    // ✅ Entry dates are already normalized, so direct comparison works
+    return entries.filter(entry => entry.date === normalizedDate);
+  }, [entries]);
+
+  // ✅ FIXED: Calculate total hours for a date
+  const getTotalHoursForDate = React.useCallback((date: string): number => {
+    return getEntriesForDate(date).reduce((sum, entry) => sum + entry.hours, 0);
+  }, [getEntriesForDate]);
+
+  // ✅ FIXED: Format date for display using DateUtils
+  const formatDateDisplay = (dateString: string): string => {
+    return formatDateForDisplay(dateString);
+  };
+
+  // ✅ FIXED: Check if date is today using DateUtils
+  const isToday = (dateString: string): boolean => {
+    return checkIsToday(dateString);
+  };
 
   const { totalHours, daysWithEntries, totalDays } = calculateWeekTotals();
   const weekDays = getCurrentWeekDays();
@@ -433,22 +369,6 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       <div className={styles.dashboardHeader}>
         <h1>Timesheet Entries</h1>
         <p>Log your daily work hours and project allocations</p>
-        {/* Debug Button */}
-        <button 
-          onClick={handleShowDebugInfo}
-          style={{ 
-            marginTop: '0.5rem', 
-            padding: '0.25rem 0.5rem', 
-            fontSize: '11px',
-            background: '#FF9800',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          🐛 Show Debug Info
-        </button>
       </div>
       
       <div className={styles.timesheetContainer}>
@@ -492,21 +412,6 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: '2rem' }}>
             Loading timesheet data...
-          </div>
-        ) : entries.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
-            <p>No timesheet entries found for this week.</p>
-            <p style={{ fontSize: '12px', marginTop: '0.5rem' }}>
-              Employee ID: {props.employeeMaster.EmployeeID}<br />
-              Week: {weekRangeText}
-            </p>
-            <button 
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              onClick={() => handleAddEntry()}
-              style={{ marginTop: '1rem' }}
-            >
-              Add Your First Entry
-            </button>
           </div>
         ) : (
           <div className={styles.timesheetGrid}>
@@ -578,7 +483,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
         <button 
           className={styles.submitTimesheetBtn}
           onClick={() => { handleSubmitTimesheet().catch(console.error); }}
-          disabled={isLoading || entries.length === 0}
+          disabled={isLoading}
         >
           <span>✓</span> Submit Timesheet
         </button>

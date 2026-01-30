@@ -1,0 +1,228 @@
+// utils/DateUtils.ts
+// Centralized date utility functions for consistent date handling
+// Fixes ISO date format inconsistencies from SharePoint
+
+/**
+ * Normalize any date input to YYYY-MM-DD format
+ * Handles:
+ * - ISO strings with timezone: "2026-01-26T08:00:00Z"
+ * - ISO strings without timezone: "2026-01-26T08:00:00"
+ * - Date objects
+ * - Already normalized strings: "2026-01-26"
+ * 
+ * @param dateInput Date string, Date object, or null/undefined
+ * @returns Normalized date string in YYYY-MM-DD format, or empty string if invalid
+ */
+export function normalizeDateToString(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return '';
+  
+  try {
+    let date: Date;
+    
+    if (typeof dateInput === 'string') {
+      // Check if already in YYYY-MM-DD format
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        return dateInput;
+      }
+      
+      // Parse ISO string
+      date = new Date(dateInput);
+    } else {
+      date = dateInput;
+    }
+    
+    // Validate date
+    if (isNaN(date.getTime())) {
+      console.warn('[DateUtils] Invalid date:', dateInput);
+      return '';
+    }
+    
+    // Extract year, month, day
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    
+    // Format as YYYY-MM-DD with zero-padding
+    const monthStr = month < 10 ? '0' + month : '' + month;
+    const dayStr = day < 10 ? '0' + day : '' + day;
+    
+    return `${year}-${monthStr}-${dayStr}`;
+  } catch (error) {
+    console.error('[DateUtils] Error normalizing date:', dateInput, error);
+    return '';
+  }
+}
+
+/**
+ * Compare two dates for equality (ignoring time)
+ * @param date1 First date
+ * @param date2 Second date
+ * @returns True if dates are equal (same year, month, day)
+ */
+export function areDatesEqual(
+  date1: string | Date | null | undefined,
+  date2: string | Date | null | undefined
+): boolean {
+  const normalized1 = normalizeDateToString(date1);
+  const normalized2 = normalizeDateToString(date2);
+  
+  if (!normalized1 || !normalized2) return false;
+  
+  return normalized1 === normalized2;
+}
+
+/**
+ * Format date for display
+ * @param dateInput Date string or Date object
+ * @param options Intl.DateTimeFormatOptions
+ * @returns Formatted date string
+ */
+export function formatDateForDisplay(
+  dateInput: string | Date | null | undefined,
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!dateInput) return '';
+  
+  try {
+    const normalized = normalizeDateToString(dateInput);
+    if (!normalized) return '';
+    
+    const date = new Date(normalized + 'T00:00:00'); // Add time to avoid timezone issues
+    
+    const defaultOptions: Intl.DateTimeFormatOptions = {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      ...options
+    };
+    
+    return date.toLocaleDateString('en-US', defaultOptions);
+  } catch (error) {
+    console.error('[DateUtils] Error formatting date:', dateInput, error);
+    return '';
+  }
+}
+
+/**
+ * Get today's date in YYYY-MM-DD format
+ * @returns Today's date string
+ */
+export function getTodayString(): string {
+  const today = new Date();
+  return normalizeDateToString(today);
+}
+
+/**
+ * Check if a date is today
+ * @param dateInput Date to check
+ * @returns True if date is today
+ */
+export function isToday(dateInput: string | Date | null | undefined): boolean {
+  return areDatesEqual(dateInput, new Date());
+}
+
+/**
+ * Get week start date (Monday) for a given date
+ * @param dateInput Date input
+ * @returns Monday of the week in YYYY-MM-DD format
+ */
+export function getWeekStartDate(dateInput: string | Date): string {
+  const normalized = normalizeDateToString(dateInput);
+  if (!normalized) return '';
+  
+  const date = new Date(normalized + 'T00:00:00');
+  const dayOfWeek = date.getDay();
+  const diff = date.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust for Sunday
+  
+  date.setDate(diff);
+  return normalizeDateToString(date);
+}
+
+/**
+ * Get week end date (Sunday) for a given date
+ * @param dateInput Date input
+ * @returns Sunday of the week in YYYY-MM-DD format
+ */
+export function getWeekEndDate(dateInput: string | Date): string {
+  const weekStart = getWeekStartDate(dateInput);
+  if (!weekStart) return '';
+  
+  const date = new Date(weekStart + 'T00:00:00');
+  date.setDate(date.getDate() + 6);
+  
+  return normalizeDateToString(date);
+}
+
+/**
+ * Get all days in a week (Monday to Sunday)
+ * @param dateInput Any date in the week
+ * @returns Array of 7 date strings (Monday to Sunday)
+ */
+export function getWeekDays(dateInput: string | Date): string[] {
+  const weekStart = getWeekStartDate(dateInput);
+  if (!weekStart) return [];
+  
+  const days: string[] = [];
+  const startDate = new Date(weekStart + 'T00:00:00');
+  
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(startDate);
+    day.setDate(startDate.getDate() + i);
+    days.push(normalizeDateToString(day));
+  }
+  
+  return days;
+}
+
+/**
+ * Check if date is weekend (Saturday or Sunday)
+ * @param dateInput Date to check
+ * @returns True if weekend
+ */
+export function isWeekend(dateInput: string | Date | null | undefined): boolean {
+  if (!dateInput) return false;
+  
+  const normalized = normalizeDateToString(dateInput);
+  if (!normalized) return false;
+  
+  const date = new Date(normalized + 'T00:00:00');
+  const dayOfWeek = date.getDay();
+  
+  return dayOfWeek === 0 || dayOfWeek === 6;
+}
+
+/**
+ * Add days to a date
+ * @param dateInput Starting date
+ * @param days Number of days to add (can be negative)
+ * @returns New date string in YYYY-MM-DD format
+ */
+export function addDays(dateInput: string | Date, days: number): string {
+  const normalized = normalizeDateToString(dateInput);
+  if (!normalized) return '';
+  
+  const date = new Date(normalized + 'T00:00:00');
+  date.setDate(date.getDate() + days);
+  
+  return normalizeDateToString(date);
+}
+
+/**
+ * Get month start date
+ * @param year Year
+ * @param month Month (1-12)
+ * @returns First day of month in YYYY-MM-DD format
+ */
+export function getMonthStartDate(year: number, month: number): string {
+  return normalizeDateToString(new Date(year, month - 1, 1));
+}
+
+/**
+ * Get month end date
+ * @param year Year
+ * @param month Month (1-12)
+ * @returns Last day of month in YYYY-MM-DD format
+ */
+export function getMonthEndDate(year: number, month: number): string {
+  return normalizeDateToString(new Date(year, month, 0));
+}
