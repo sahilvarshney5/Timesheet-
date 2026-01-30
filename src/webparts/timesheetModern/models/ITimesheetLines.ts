@@ -14,6 +14,10 @@ export interface ITimesheetLines extends IBaseModel {
      =============================== */
 
   TimesheetID?: number;
+   EntryDate?: string;          // ✅ ACTUAL SharePoint column name
+  ProjectNumber?: string;      // ✅ ACTUAL SharePoint column name
+    Title?: string;              // ✅ Task Number (SharePoint default)
+ BLANumber?: string;          // ✅ BLA Number
   ProjectNo?: string;
   TaskNo?: string;
   BLA_No?: string;

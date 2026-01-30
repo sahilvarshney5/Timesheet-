@@ -99,11 +99,11 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       // Convert to ITimesheetEntry format
       const convertedEntries: ITimesheetEntry[] = lines.map(line => ({
         id: line.Id!,
-        date: line.WorkDate!,
-        project: line.ProjectNo!,
-        hours: line.HoursBooked!,
+  date: line.WorkDate || line.EntryDate || '',      // ✅ Use canonical or fallback
+  project: line.ProjectNo || line.ProjectNumber || '', // ✅ Use canonical or fallback
+  hours: line.HoursBooked || line.Hours || 0,
         taskType: 'Development', // Default
-        description: line.Description || ''
+  description: line.Description || line.Comments || ''
       }));
       
       setEntries(convertedEntries);

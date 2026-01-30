@@ -19,6 +19,40 @@ export class TimesheetService {
   constructor(spHttpClient: SPHttpClient, siteUrl: string) {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
+  /**
+ * Map SharePoint response to canonical ITimesheetLines format
+ * Handles both SharePoint column names and canonical property names
+ */
+private mapToTimesheetLine(spItem: any): ITimesheetLines {
+  return {
+    // SharePoint metadata
+    Id: spItem.Id || spItem.ID,
+    Created: spItem.Created,
+    Modified: spItem.Modified,
+    
+    // Canonical properties (normalized)
+    TimesheetHeaderId: spItem.TimesheetHeaderId || spItem.TimesheetID,
+    WorkDate: spItem.EntryDate || spItem.WorkDate, // ✅ Map EntryDate → WorkDate
+    ProjectId: undefined, // Not available in current schema
+    TaskId: undefined,    // Not available in current schema
+    Hours: spItem.HoursBooked || spItem.Hours,
+    Comments: spItem.Description || spItem.Comments,
+    
+    // SharePoint internal names (as-is)
+    TimesheetID: spItem.TimesheetHeaderId || spItem.TimesheetID,
+    EntryDate: spItem.EntryDate,
+    ProjectNumber: spItem.ProjectNumber, // ✅ Actual SharePoint field
+    Title: spItem.Title,
+    BLANumber: spItem.BLANumber,
+    HoursBooked: spItem.HoursBooked,
+    Description: spItem.Description,
+    
+    // Legacy aliases
+    ProjectNo: spItem.ProjectNumber, // ✅ Map ProjectNumber → ProjectNo
+    TaskNo: spItem.Title,
+    BLA_No: spItem.BLANumber
+  };
+}
 
   /**
    * Get timesheet header for a specific week and employee
@@ -79,31 +113,37 @@ export class TimesheetService {
       
       const selectFields = [
         'Id',
+         'ID',
         timesheetIdCol,
         getColumnInternalName('TimesheetLines', 'WorkDate'),
         getColumnInternalName('TimesheetLines', 'ProjectNo'),
         getColumnInternalName('TimesheetLines', 'TaskNo'),
         getColumnInternalName('TimesheetLines', 'BLA_No'),
         getColumnInternalName('TimesheetLines', 'HoursBooked'),
-        getColumnInternalName('TimesheetLines', 'Description')
+        getColumnInternalName('TimesheetLines', 'Description'),
+         'Created',
+      'Modified'
       ];
       
       const orderBy = getColumnInternalName('TimesheetLines', 'WorkDate');
       
       // TODO: Call httpService.getListItems
-      const items = await this.httpService.getListItems<ITimesheetLines>(
-        listName,
-        selectFields,
-        filterQuery,
-        orderBy
-      );
-      
-      return items;
+         // Get raw items from SharePoint
+    const rawItems = await this.httpService.getListItems<any>(
+      listName,
+      selectFields,
+      filterQuery,
+      orderBy
+    );
+    
+    // ✅ CRITICAL: Map SharePoint data to canonical format
+    const mappedItems = rawItems.map(item => this.mapToTimesheetLine(item));
       
       // PLACEHOLDER: Return empty array until implemented
       // console.log(`[TimesheetService] getTimesheetLines for timesheet ${timesheetId}`);
       // return [];
-      
+          return mappedItems;
+
     } catch (error) {
       console.error('[TimesheetService] Error getting timesheet lines:', error);
       throw error;
@@ -182,113 +222,124 @@ export class TimesheetService {
    * @param timesheetLine Timesheet line data
    */
   public async createTimesheetLine(timesheetLine: Partial<ITimesheetLines>): Promise<ITimesheetLines> {
-    try {
-      // TODO: Implement REST POST to TimesheetLines list
-      const listName = getListInternalName('timesheetLines');
-      
-      const itemData = {
-        [getColumnInternalName('TimesheetLines', 'TimesheetID')]: timesheetLine.TimesheetID,
-        [getColumnInternalName('TimesheetLines', 'WorkDate')]: timesheetLine.WorkDate,
-        [getColumnInternalName('TimesheetLines', 'ProjectNo')]: timesheetLine.ProjectNo,
-        [getColumnInternalName('TimesheetLines', 'TaskNo')]: timesheetLine.TaskNo,
-        [getColumnInternalName('TimesheetLines', 'BLA_No')]: timesheetLine.BLA_No || '',
-        [getColumnInternalName('TimesheetLines', 'HoursBooked')]: timesheetLine.HoursBooked,
-        [getColumnInternalName('TimesheetLines', 'Description')]: timesheetLine.Description || ''
-      };
-      
-      // TODO: Call httpService.createListItem
-      const createdItem  = await this.httpService.createListItem<ITimesheetLines>(
-        listName,
-        itemData
-      );
-        
-    // ✅ CRITICAL FIX: Fetch complete item after creation
+  try {
+    const listName = getListInternalName('timesheetLines');
+    
+    // ✅ FIXED: Use actual SharePoint column names
+    const itemData = {
+      [getColumnInternalName('TimesheetLines', 'TimesheetID')]: timesheetLine.TimesheetID || timesheetLine.TimesheetHeaderId,
+      [getColumnInternalName('TimesheetLines', 'WorkDate')]: timesheetLine.WorkDate || timesheetLine.EntryDate,
+      [getColumnInternalName('TimesheetLines', 'ProjectNo')]: timesheetLine.ProjectNo || timesheetLine.ProjectNumber,
+      [getColumnInternalName('TimesheetLines', 'TaskNo')]: timesheetLine.TaskNo || timesheetLine.Title || '',
+      [getColumnInternalName('TimesheetLines', 'BLA_No')]: timesheetLine.BLA_No || timesheetLine.BLANumber || '',
+      [getColumnInternalName('TimesheetLines', 'HoursBooked')]: timesheetLine.HoursBooked || timesheetLine.Hours,
+      [getColumnInternalName('TimesheetLines', 'Description')]: timesheetLine.Description || timesheetLine.Comments || ''
+    };
+    
+    const createdItem = await this.httpService.createListItem<any>(
+      listName,
+      itemData
+    );
+    
+    // ✅ CRITICAL: Fetch complete item and map it
     if (createdItem && createdItem.Id) {
       const selectFields = [
         'Id',
+        'ID',
         getColumnInternalName('TimesheetLines', 'TimesheetID'),
         getColumnInternalName('TimesheetLines', 'WorkDate'),
         getColumnInternalName('TimesheetLines', 'ProjectNo'),
         getColumnInternalName('TimesheetLines', 'TaskNo'),
         getColumnInternalName('TimesheetLines', 'BLA_No'),
         getColumnInternalName('TimesheetLines', 'HoursBooked'),
-        getColumnInternalName('TimesheetLines', 'Description')
+        getColumnInternalName('TimesheetLines', 'Description'),
+        'Created',
+        'Modified'
       ];
-        const completeItem = await this.httpService.getListItemById<ITimesheetLines>(
+      
+      const completeItem = await this.httpService.getListItemById<any>(
         listName,
         createdItem.Id,
         selectFields
       );
-      return completeItem!;
-    }
-        return createdItem;
-
-      // PLACEHOLDER: Return mock data until implemented
-      // console.log(`[TimesheetService] createTimesheetLine`, timesheetLine);
-      // return {
-      //   Id: -1,
-      //   ...timesheetLine
-      // } as ITimesheetLines;
       
-    } catch (error) {
-      console.error('[TimesheetService] Error creating timesheet line:', error);
-      throw error;
+      // ✅ Map to canonical format
+      return this.mapToTimesheetLine(completeItem);
     }
+    
+    return this.mapToTimesheetLine(createdItem);
+    
+  } catch (error) {
+    console.error('[TimesheetService] Error creating timesheet line:', error);
+    throw error;
   }
+}
 
   /**
    * Update an existing timesheet line
    * @param lineId Line ID
    * @param timesheetLine Updated timesheet line data
    */
-  public async updateTimesheetLine(lineId: number, timesheetLine: Partial<ITimesheetLines>): Promise<ITimesheetLines> {
-    try {
-      // TODO: Implement REST MERGE to TimesheetLines list
-      const listName = getListInternalName('timesheetLines');
-      
-      const itemData: any = {};
-      
-      if (timesheetLine.WorkDate) {
-        itemData[getColumnInternalName('TimesheetLines', 'WorkDate')] = timesheetLine.WorkDate;
-      }
-      if (timesheetLine.ProjectNo) {
-        itemData[getColumnInternalName('TimesheetLines', 'ProjectNo')] = timesheetLine.ProjectNo;
-      }
-      if (timesheetLine.TaskNo) {
-        itemData[getColumnInternalName('TimesheetLines', 'TaskNo')] = timesheetLine.TaskNo;
-      }
-      if (timesheetLine.BLA_No !== undefined) {
-        itemData[getColumnInternalName('TimesheetLines', 'BLA_No')] = timesheetLine.BLA_No;
-      }
-      if (timesheetLine.HoursBooked !== undefined) {
-        itemData[getColumnInternalName('TimesheetLines', 'HoursBooked')] = timesheetLine.HoursBooked;
-      }
-      if (timesheetLine.Description !== undefined) {
-        itemData[getColumnInternalName('TimesheetLines', 'Description')] = timesheetLine.Description;
-      }
-      
-      // TODO: Call httpService.updateListItem
-      const updatedLine = await this.httpService.updateListItem<ITimesheetLines>(
-        listName,
-        lineId,
-        itemData
-      );
-      
-      return updatedLine;
-      
-      // PLACEHOLDER: Return mock data until implemented
-      // console.log(`[TimesheetService] updateTimesheetLine ${lineId}`, timesheetLine);
-      // return {
-      //   Id: lineId,
-      //   ...timesheetLine
-      // } as ITimesheetLines;
-      
-    } catch (error) {
-      console.error('[TimesheetService] Error updating timesheet line:', error);
-      throw error;
+ public async updateTimesheetLine(lineId: number, timesheetLine: Partial<ITimesheetLines>): Promise<ITimesheetLines> {
+  try {
+    const listName = getListInternalName('timesheetLines');
+    
+    const itemData: any = {};
+    
+    // ✅ Only update provided fields, use actual SharePoint column names
+    if (timesheetLine.WorkDate || timesheetLine.EntryDate) {
+      itemData[getColumnInternalName('TimesheetLines', 'WorkDate')] = timesheetLine.WorkDate || timesheetLine.EntryDate;
     }
+    if (timesheetLine.ProjectNo || timesheetLine.ProjectNumber) {
+      itemData[getColumnInternalName('TimesheetLines', 'ProjectNo')] = timesheetLine.ProjectNo || timesheetLine.ProjectNumber;
+    }
+    if (timesheetLine.TaskNo || timesheetLine.Title !== undefined) {
+      itemData[getColumnInternalName('TimesheetLines', 'TaskNo')] = timesheetLine.TaskNo || timesheetLine.Title;
+    }
+    if (timesheetLine.BLA_No || timesheetLine.BLANumber !== undefined) {
+      itemData[getColumnInternalName('TimesheetLines', 'BLA_No')] = timesheetLine.BLA_No || timesheetLine.BLANumber;
+    }
+    if (timesheetLine.HoursBooked !== undefined || timesheetLine.Hours !== undefined) {
+      itemData[getColumnInternalName('TimesheetLines', 'HoursBooked')] = timesheetLine.HoursBooked || timesheetLine.Hours;
+    }
+    if (timesheetLine.Description !== undefined || timesheetLine.Comments !== undefined) {
+      itemData[getColumnInternalName('TimesheetLines', 'Description')] = timesheetLine.Description || timesheetLine.Comments;
+    }
+    
+    await this.httpService.updateListItem<any>(
+      listName,
+      lineId,
+      itemData
+    );
+    
+    // ✅ Fetch updated item and map
+    const selectFields = [
+      'Id',
+      'ID',
+      getColumnInternalName('TimesheetLines', 'TimesheetID'),
+      getColumnInternalName('TimesheetLines', 'WorkDate'),
+      getColumnInternalName('TimesheetLines', 'ProjectNo'),
+      getColumnInternalName('TimesheetLines', 'TaskNo'),
+      getColumnInternalName('TimesheetLines', 'BLA_No'),
+      getColumnInternalName('TimesheetLines', 'HoursBooked'),
+      getColumnInternalName('TimesheetLines', 'Description'),
+      'Created',
+      'Modified'
+    ];
+    
+    const updatedItem = await this.httpService.getListItemById<any>(
+      listName,
+      lineId,
+      selectFields
+    );
+    
+    return this.mapToTimesheetLine(updatedItem!);
+    
+  } catch (error) {
+    console.error('[TimesheetService] Error updating timesheet line:', error);
+    throw error;
   }
-
+}
   /**
    * Delete a timesheet line
    * @param lineId Line ID
