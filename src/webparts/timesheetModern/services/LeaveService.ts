@@ -48,87 +48,91 @@ export class LeaveService {
   }
 
   /**
-   * Calculate total remaining leave days from LeaveBalance list
-   * @param employeeId Employee ID
-   */
-  public async getTotalLeaveDaysLeft(employeeId: string): Promise<number> {
-    try {
-      const balances = await this.getLeaveBalance(employeeId);
-      
-      if (balances.length > 0) {
-        // Sum all leave type balances
-        return balances.reduce((sum, balance) => sum + balance.Balance, 0);
-      }
-      
-      // Fallback: Calculate from LeaveData if LeaveBalance doesn't exist
-      return await this.calculateLeaveDaysFromLeaveData(employeeId);
-      
-    } catch (error) {
-      console.error('[LeaveService] Error getting total leave days left:', error);
-      return 0; // Return 0 on error
+ * Calculate total remaining leave days from LeaveBalance list
+ * If LeaveBalance doesn't exist, calculate from LeaveData
+ */
+public async getTotalLeaveDaysLeft(employeeId: string): Promise<number> {
+  try {
+    // ✅ STRATEGY 1: Try LeaveBalance list first
+    const balances = await this.getLeaveBalance(employeeId);
+    
+    if (balances.length > 0) {
+      // Sum all leave type balances
+      const totalRemaining = balances.reduce((sum, balance) => sum + balance.Balance, 0);
+      console.log(`[LeaveService] Leave balance from LeaveBalance list: ${totalRemaining}`);
+      return totalRemaining;
     }
+    
+    // ✅ STRATEGY 2: Fallback to calculation from LeaveData
+    console.warn('[LeaveService] LeaveBalance list empty, calculating from LeaveData');
+    return await this.calculateLeaveDaysFromLeaveData(employeeId);
+    
+  } catch (error) {
+    console.error('[LeaveService] Error getting total leave days:', error);
+    return 0; // Return 0 on error (safe fallback)
   }
+}
 
-  /**
-   * Calculate remaining leave days from LeaveData (fallback method)
-   * Assumes: 20 total leave days per year (configurable)
-   * @param employeeId Employee ID
-   */
-  private async calculateLeaveDaysFromLeaveData(employeeId: string): Promise<number> {
-    try {
-      const currentYear = new Date().getFullYear();
-      const yearStart = `${currentYear}-01-01`;
-      const yearEnd = `${currentYear}-12-31`;
-      
-      // Get all approved leaves for current year
-      const listName = getListInternalName('leaveData');
-      const empIdCol = getColumnInternalName('LeaveData', 'EmployeeID');
-      const startDateCol = getColumnInternalName('LeaveData', 'StartDate');
-      const endDateCol = getColumnInternalName('LeaveData', 'EndDate');
-      const statusCol = getColumnInternalName('LeaveData', 'Status');
-      
-      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${statusCol} eq 'Approved' and ${startDateCol} ge '${yearStart}' and ${startDateCol} le '${yearEnd}'`;
-      
-      const selectFields = [
-        'Id',
-        empIdCol,
-        startDateCol,
-        endDateCol,
-        getColumnInternalName('LeaveData', 'LeaveDuration'),
-        statusCol
-      ];
-      
-      // Get leaves from SharePoint
-      const leaves = await this.httpService.getListItems<ILeaveData>(
-        listName,
-        selectFields,
-        filterQuery
-      );
-      
-      // Calculate total leave days taken
-      let daysTaken = 0;
-      leaves.forEach(leave => {
+/**
+ * Calculate remaining leave days from LeaveData (fallback)
+ * Assumes 20 total leave days per year
+ */
+private async calculateLeaveDaysFromLeaveData(employeeId: string): Promise<number> {
+  try {
+    const currentYear = new Date().getFullYear();
+    const yearStart = `${currentYear}-01-01`;
+    const yearEnd = `${currentYear}-12-31`;
+    
+    // Get all approved leaves for current year
+    const listName = getListInternalName('leaveData');
+    const empIdCol = getColumnInternalName('LeaveData', 'EmployeeID');
+    const startDateCol = getColumnInternalName('LeaveData', 'StartDate');
+    const statusCol = getColumnInternalName('LeaveData', 'Status');
+    
+    const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${statusCol} eq 'Approved' and ${startDateCol} ge '${yearStart}' and ${startDateCol} le '${yearEnd}'`;
+    
+    const selectFields = [
+      'Id',
+      empIdCol,
+      startDateCol,
+      getColumnInternalName('LeaveData', 'EndDate'),
+      getColumnInternalName('LeaveData', 'TotalDays'),
+      getColumnInternalName('LeaveData', 'LeaveDuration'),
+      statusCol
+    ];
+    
+    const leaves = await this.httpService.getListItems<ILeaveData>(
+      listName,
+      selectFields,
+      filterQuery
+    );
+    
+    // ✅ Calculate total days taken (handle TotalDays field directly)
+    let daysTaken = 0;
+    leaves.forEach(leave => {
+      // Use TotalDays if available, otherwise calculate
+      if (leave.TotalDays) {
+        daysTaken += leave.TotalDays;
+      } else {
         const start = new Date(leave.StartDate);
         const end = new Date(leave.EndDate);
         const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-        
-        if (leave.IsHalfDay) {
-          daysTaken += 0.5;
-        } else {
-          daysTaken += days;
-        }
-      });
-      
-      // Total annual leave entitlement (configurable)
-      const totalAnnualLeave = 20;
-      return Math.max(0, totalAnnualLeave - daysTaken);
-      
-    } catch (error) {
-      console.error('[LeaveService] Error calculating leave days from LeaveData:', error);
-      return 12; // Return default on error
-    }
+        daysTaken += days;
+      }
+    });
+    
+    // ✅ Total annual leave entitlement (configurable)
+    const TOTAL_ANNUAL_LEAVE = 20; // TODO: Make this configurable
+    const remaining = Math.max(0, TOTAL_ANNUAL_LEAVE - daysTaken);
+    
+    console.log(`[LeaveService] Calculated leave: Total=${TOTAL_ANNUAL_LEAVE}, Taken=${daysTaken}, Remaining=${remaining}`);
+    return remaining;
+    
+  } catch (error) {
+    console.error('[LeaveService] Error calculating leave days:', error);
+    return 20; // Return full entitlement on error
   }
-
+}
   /**
    * Get leave type balances (breakdown by leave type)
    * @param employeeId Employee ID

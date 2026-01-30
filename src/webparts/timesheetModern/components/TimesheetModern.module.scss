@@ -325,6 +325,9 @@
   animation: fadeIn 0.3s ease-out;
   width: 100%;
   max-width: 100%;
+   overflow-x: hidden; // ✅ Prevent horizontal scroll
+  overflow-y: auto; // ✅ Only vertical scroll at page level
+  max-height: calc(100vh - 48px); // ✅ Account for top nav
 }
 
 @keyframes fadeIn {
@@ -610,6 +613,10 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+   // ✅ ADDED: Prevent calendar from causing scroll
+  min-height: auto;
+  max-height: none;
+  overflow: visible; // ✅ Let parent handle scrolling naturally
 }
 
 .calendarDayHeader {
@@ -1077,8 +1084,8 @@
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   border: 1px solid var(--border);
-  max-height: calc(100vh - 180px);
-  overflow-y: auto;
+  // max-height: calc(100vh - 180px);
+  // overflow-y: auto;
 }
 
 .timesheetHeader {

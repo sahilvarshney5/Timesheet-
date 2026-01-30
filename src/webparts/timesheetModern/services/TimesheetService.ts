@@ -221,7 +221,7 @@ export class TimesheetService {
       );
       return completeItem!;
     }
-        return createdItem as ITimesheetLines;
+        return createdItem;
 
       // PLACEHOLDER: Return mock data until implemented
       // console.log(`[TimesheetService] createTimesheetLine`, timesheetLine);

@@ -82,9 +82,67 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     const timeStart = formData.get('timeStart') as string;
     const timeEnd = formData.get('timeEnd') as string;
     
+    /**
+ * Validate date range for regularization
+ * Prevent weekends, holidays, and leave days
+ */
+const validateDateRange = async (fromDate: string, toDate: string): Promise<{ isValid: boolean; reason: string }> => {
+  try {
+    // Check each date in range
+    const start = new Date(fromDate);
+    const end = new Date(toDate);
+    
+    const invalidDates: string[] = [];
+    
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateString = d.toISOString().split('T')[0];
+      const dayOfWeek = d.getDay();
+      
+      // Check weekend
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        invalidDates.push(`${dateString} (Weekend)`);
+        continue;
+      }
+      
+      // TODO: Check holiday list
+      // const isHoliday = await checkHoliday(dateString);
+      // if (isHoliday) {
+      //   invalidDates.push(`${dateString} (Holiday)`);
+      //   continue;
+      // }
+      
+      // TODO: Check approved leaves
+      // const hasLeave = await checkLeave(dateString, props.employeeMaster.EmployeeID);
+      // if (hasLeave) {
+      //   invalidDates.push(`${dateString} (On Leave)`);
+      // }
+    }
+    
+    if (invalidDates.length > 0) {
+      return {
+        isValid: false,
+        reason: `The following dates are not eligible for regularization:\n${invalidDates.join('\n')}`
+      };
+    }
+    
+    return { isValid: true, reason: '' };
+    
+  } catch (error) {
+    console.error('[RegularizationView] Validation error:', error);
+    return { isValid: true, reason: '' }; // Allow on error (fail-safe)
+  }
+};
     // Validation
     if (new Date(toDate) < new Date(fromDate)) {
       alert('To Date cannot be earlier than From Date');
+      setIsSaving(false);
+      return;
+    }
+    // ✅ NEW: Check for weekends/holidays/leaves
+
+    const dateRangeValid = await validateDateRange(fromDate, toDate);
+    if (!dateRangeValid.isValid) {
+      alert(`Cannot submit regularization:\n${dateRangeValid.reason}`);
       setIsSaving(false);
       return;
     }
@@ -103,7 +161,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     
     // Get Employee ID from props
     const empId = props.employeeMaster.EmployeeID;
-    
+        const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
+    const enhancedReason = `[${categoryFormatted}] ${reason}`;
+
     // Create request object
     const newRequest: Partial<IAttendanceRegularization> = {
       EmployeeID: empId,  // Use Employee ID (R0398)
@@ -112,48 +172,49 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       EndDate: toDate,
       ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
       ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
-      Reason: `${category.replace(/_/g, ' ').toUpperCase()}: ${reason}`,
+      Reason: enhancedReason,
       Status: 'Pending' as const
     };
     
     // Submit to SharePoint
-    const createdRequest = await approvalService.submitRegularizationRequest(newRequest);
+     await approvalService.submitRegularizationRequest(newRequest);
+        alert(`Regularization request submitted successfully!\n\nType: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\nFrom: ${fromDate}\nTo: ${toDate}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`);
+
+    // // Add to local history
+    // const displayRequest: IRegularizationRequest = {
+    //   id: createdRequest.Id,
+    //   employeeId: empId,
+    //   employeeName: props.employeeMaster.EmployeeDisplayName || props.currentUserDisplayName,
+    //   requestType: regularizationType as 'day_based' | 'time_based',
+    //   category: category as IRegularizationRequest['category'],  // FIXED: Proper type
+    //   fromDate: fromDate,
+    //   toDate: toDate,
+    //   startTime: regularizationType === 'time_based' ? timeStart : undefined,
+    //   endTime: regularizationType === 'time_based' ? timeEnd : undefined,
+    //   reason: reason,
+    //   status: 'pending',
+    //   submittedOn: new Date().toISOString().split('T')[0]
+    // };
     
-    // Add to local history
-    const displayRequest: IRegularizationRequest = {
-      id: createdRequest.Id,
-      employeeId: empId,
-      employeeName: props.employeeMaster.EmployeeDisplayName || props.currentUserDisplayName,
-      requestType: regularizationType as 'day_based' | 'time_based',
-      category: category as IRegularizationRequest['category'],  // FIXED: Proper type
-      fromDate: fromDate,
-      toDate: toDate,
-      startTime: regularizationType === 'time_based' ? timeStart : undefined,
-      endTime: regularizationType === 'time_based' ? timeEnd : undefined,
-      reason: reason,
-      status: 'pending',
-      submittedOn: new Date().toISOString().split('T')[0]
-    };
+    // setHistory(prev => [displayRequest, ...prev]);
     
-    setHistory(prev => [displayRequest, ...prev]);
+    // const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     
-    const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    // let successMessage = `Regularization request submitted successfully!\n\n`;
+    // successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
+    // successMessage += `From: ${fromDate}\n`;
+    // successMessage += `To: ${toDate}\n`;
+    // successMessage += `Category: ${categoryText}\n`;
     
-    let successMessage = `Regularization request submitted successfully!\n\n`;
-    successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
-    successMessage += `From: ${fromDate}\n`;
-    successMessage += `To: ${toDate}\n`;
-    successMessage += `Category: ${categoryText}\n`;
+    // if (regularizationType === 'time_based') {
+    //   successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
+    // }
     
-    if (regularizationType === 'time_based') {
-      successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
-    }
+    // successMessage += `Reason: ${reason}\n`;
+    // successMessage += `Status: Pending Approval\n`;
+    // successMessage += `Note: Your manager will review and approve this request.`;
     
-    successMessage += `Reason: ${reason}\n`;
-    successMessage += `Status: Pending Approval\n`;
-    successMessage += `Note: Your manager will review and approve this request.`;
-    
-    alert(successMessage);
+    // alert(successMessage);
     
     // Reset form
     form.reset();

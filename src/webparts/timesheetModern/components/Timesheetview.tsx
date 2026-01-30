@@ -189,9 +189,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     setIsModalOpen(false);
     setEditingEntry(null);
     // FIXED: Handle promise properly
-    loadTimesheetData().catch(err => {
-      console.error('[TimesheetView] Error refreshing after close:', err);
-    });
+    // loadTimesheetData().catch(err => {
+    //   console.error('[TimesheetView] Error refreshing after close:', err);
+    // });
     setFormData({
       date: '',
       project: '',
