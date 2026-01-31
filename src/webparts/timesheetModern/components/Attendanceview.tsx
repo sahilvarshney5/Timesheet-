@@ -28,6 +28,44 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
+ 
+
+
+  // ADD new state for monthly counts
+const [monthlyCounts, setMonthlyCounts] = React.useState({
+  present: 0,
+  leave: 0,
+  absent: 0,
+  weekend: 0,
+  holiday: 0
+});
+
+// ADD function to calculate monthly counts
+const calculateMonthlyCounts = React.useCallback((): void => {
+  const counts = {
+    present: 0,
+    leave: 0,
+    absent: 0,
+    weekend: 0,
+    holiday: 0
+  };
+
+  calendarDays.forEach(day => {
+    if (day.status === 'present') counts.present++;
+    else if (day.status === 'leave') counts.leave++;
+    else if (day.status === 'absent') counts.absent++;
+    else if (day.status === 'weekend') counts.weekend++;
+    else if (day.status === 'holiday') counts.holiday++;
+  });
+
+  setMonthlyCounts(counts);
+}, [calendarDays]);
+
+// Call it when calendar data loads
+React.useEffect(() => {
+  calculateMonthlyCounts();
+}, [calendarDays]);
+
 
   // ============================================================================
   // HELPER FUNCTIONS - DEFINED FIRST BEFORE USAGE
@@ -242,6 +280,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     }
 
     if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
+      
       message += `\n Would you like to fill timesheet for this day?`;
       
       if (confirm(message)) {
@@ -425,32 +464,35 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             </button>
           </div>
         </div>
-        
-        <div className={styles.calendarGrid}>
-          {generateCalendarGrid()}
+          <div className={styles.calendarLegend} style={{ marginBottom: '1rem', marginTop: 0 }}>
+           <div className={styles.legendItem}>
+          <div className={`${styles.legendColor} ${getLegendColorClass('present')}`}>
+            <span className={styles.legendCount}>{monthlyCounts.present}</span>
+          </div>
+          <span>Present</span>
         </div>
-        
-        <div className={styles.calendarLegend}>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('present')}`} />
-            <span>Present</span>
+          <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`}>
+            <span className={styles.legendCount}>{monthlyCounts.absent}</span>
           </div>
-          <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`} />
-            <span>Absent</span>
-          </div>
+          <span>Absent</span>
+        </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`} />
             <span>Holiday</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`} />
-            <span>On Leave</span>
+          <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`}>
+            <span className={styles.legendCount}>{monthlyCounts.leave}</span>
           </div>
-          <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`} />
-            <span>Weekend</span>
+          <span>On Leave</span>
+        </div>
+           <div className={styles.legendItem}>
+          <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`}>
+            <span className={styles.legendCount}>{monthlyCounts.weekend}</span>
           </div>
+          <span>Weekend</span>
+        </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`} />
             <span>Timesheet: Filled</span>
@@ -464,7 +506,14 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             <span>Timesheet: Not Filled</span>
           </div>
         </div>
+        <div className={styles.calendarGrid}>
+          {generateCalendarGrid()}
+        </div>
+        
+      
       </div>
+
+
     </div>
   );
 };

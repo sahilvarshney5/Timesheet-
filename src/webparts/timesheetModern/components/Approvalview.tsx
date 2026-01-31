@@ -31,8 +31,15 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
   const [isProcessing, setIsProcessing] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
   const [isManager, setIsManager] = React.useState<boolean>(false);
+ // ADD new state for view modal
+const [viewModalOpen, setViewModalOpen] = React.useState<boolean>(false);
+const [viewingRequest, setViewingRequest] = React.useState<IRegularizationRequest | null>(null);
 
- 
+ // ADD new states
+ const [approveModalOpen, setApproveModalOpen] = React.useState<boolean>(false);
+ const [rejectModalOpen, setRejectModalOpen] = React.useState<boolean>(false);
+ const [actioningRequest, setActioningRequest] = React.useState<IRegularizationRequest | null>(null);
+ const [rejectComment, setRejectComment] = React.useState<string>('');
   const loadPendingRequests = React.useCallback(async (): Promise<void> => {
   try {
     // Get pending approvals (filtered by manager if needed)
@@ -109,23 +116,30 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
     setActiveTab(tabName);
   };
 
-  const handleApprove = async (requestId: number): Promise<void> => {
-  if (!confirm('Are you sure you want to approve this regularization request?')) {
-    return;
-  }
+ // REPLACE handleApprove
+const handleApprove = (request: IRegularizationRequest): void => {
+  setActioningRequest(request);
+  setApproveModalOpen(true);
+};
 
+// ADD confirm approve handler
+const confirmApprove = async (): Promise<void> => {
+  if (!actioningRequest) return;
+  
   try {
     setIsProcessing(true);
 
-    await approvalService.approveRequest(requestId);
+    await approvalService.approveRequest(actioningRequest.id!);
 
-    // ✅ Reload BOTH tabs
     await Promise.all([
       loadPendingRequests(),
       loadApprovalHistory()
     ]);
 
-    alert('Request approved successfully.');
+    setApproveModalOpen(false);
+    setActioningRequest(null);
+    
+    alert(`✓ Request approved successfully!\n\nEmployee: ${actioningRequest.employeeName}\nDate: ${formatDateRange(actioningRequest.fromDate, actioningRequest.toDate)}`);
 
   } catch (err) {
     console.error('[ApprovalView] Error approving request:', err);
@@ -135,93 +149,52 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
   }
 };
 
-  const handleReject = async (requestId: number): Promise<void> => {
-    const comment = prompt('Please provide a reason for rejection (optional):');
-    
-    if (comment === null) {
-      return; // User cancelled
-    }
 
-    try {
-      setIsProcessing(true);
+// REPLACE handleReject
+const handleReject = (request: IRegularizationRequest): void => {
+  setActioningRequest(request);
+  setRejectComment('');
+  setRejectModalOpen(true);
+};
 
-      // Reject in SharePoint
-      await approvalService.rejectRequest(requestId, comment || undefined);
+ // REPLACE handleView function
+const handleView = (request: IRegularizationRequest): void => {
+  setViewingRequest(request);
+  setViewModalOpen(true);
+};
+// ADD confirm reject handler
+const confirmReject = async (): Promise<void> => {
+  if (!actioningRequest) return;
+  
+  if (!rejectComment.trim()) {
+    alert('Please provide a reason for rejection');
+    return;
+  }
+  
+  try {
+    setIsProcessing(true);
 
-      // Remove from pending list
-      const rejectedRequest = pendingRequests.find(req => req.id === requestId);
-      setPendingRequests(prev => prev.filter(req => req.id !== requestId));
+    await approvalService.rejectRequest(actioningRequest.id!, rejectComment);
 
-      // Add to history
-      if (rejectedRequest) {
-        const historyItem: IRegularizationRequest = {
-          ...rejectedRequest,
-          status: 'rejected',
-          approvedBy: 'Current Manager',
-          approvedOn: new Date().toISOString().split('T')[0],
-          managerComment: comment || undefined
-        };
-        setApprovalHistory(prev => [historyItem, ...prev]);
-      }
+    await Promise.all([
+      loadPendingRequests(),
+      loadApprovalHistory()
+    ]);
 
-      alert('Request rejected successfully.');
+    setRejectModalOpen(false);
+    setActioningRequest(null);
+    setRejectComment('');
+    
+    alert(`✓ Request rejected successfully!\n\nEmployee: ${actioningRequest.employeeName}\nReason: ${rejectComment}`);
 
-    } catch (err) {
-      console.error('[ApprovalView] Error rejecting request:', err);
-      alert('Failed to reject request. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  } catch (err) {
+    console.error('[ApprovalView] Error rejecting request:', err);
+    alert('Failed to reject request. Please try again.');
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
-  const handleView = (request: IRegularizationRequest): void => {
-    const fromDate = new Date(request.fromDate);
-    const toDate = new Date(request.toDate);
-    const submittedDate = new Date(request.submittedOn);
-    
-    let message = `Regularization Request for Approval:\n\n`;
-    message += `Employee: ${request.employeeName} (${request.employeeId})\n`;
-    message += `Type: ${request.requestType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
-    message += `Date Range: ${fromDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
-    
-    if (request.fromDate !== request.toDate) {
-      message += ` to ${toDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-    } else {
-      message += '\n';
-    }
-    
-    const categoryText = request.category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    
-    message += `Category: ${categoryText}\n`;
-    message += `Submitted On: ${submittedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-    
-    if (request.requestType === 'time_based' && request.startTime && request.endTime) {
-      message += `Time: ${request.startTime} to ${request.endTime}\n`;
-    }
-    
-    if (request.reason) {
-      message += `Reason: ${request.reason}\n`;
-    }
-    
-    if (request.status !== 'pending') {
-      message += `\nStatus: ${request.status.charAt(0).toUpperCase() + request.status.slice(1)}\n`;
-      
-      if (request.approvedBy) {
-        message += `Actioned By: ${request.approvedBy}\n`;
-      }
-      
-      if (request.approvedOn) {
-        const actionDate = new Date(request.approvedOn);
-        message += `Actioned On: ${actionDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-      }
-      
-      if (request.managerComment) {
-        message += `Manager Comment: ${request.managerComment}\n`;
-      }
-    }
-    
-    alert(message);
-  };
 
   const handleRefresh = async (): Promise<void> => {
     if (activeTab === 'pending') {
@@ -331,28 +304,28 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
                     </td>
                     <td>
                       <div className={styles.actionButtons}>
-                        <button 
-                          className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`}
-                          onClick={() => handleApprove(request.id!)}
-                          disabled={isProcessing}
-                        >
-                          ✓ Approve
-                        </button>
-                        <button 
-                          className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                          onClick={() => handleReject(request.id!)}
-                          disabled={isProcessing}
-                        >
-                          ✗ Reject
-                        </button>
-                        <button 
-                          className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
-                          onClick={() => handleView(request)}
-                          disabled={isProcessing}
-                        >
-                          View
-                        </button>
-                      </div>
+  <button 
+    className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`}
+    onClick={() => handleApprove(request)}
+    disabled={isProcessing}
+  >
+    ✓ Approve
+  </button>
+  <button 
+    className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
+    onClick={() => handleReject(request)}
+    disabled={isProcessing}
+  >
+    ✗ Reject
+  </button>
+  <button 
+    className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
+    onClick={() => handleView(request)}
+    disabled={isProcessing}
+  >
+    View
+  </button>
+</div>
                     </td>
                   </tr>
                 ))
@@ -419,6 +392,248 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
           </table>
         </div>
       </div>
+            {/* // ADD JSX for custom modal (at end of component, before closing tag) */}
+{/* View Request Modal */}
+{viewModalOpen && viewingRequest && (
+  <div className={styles.modal} style={{ display: 'flex' }}>
+    <div className={styles.modalContent}>
+      <div className={styles.modalHeader}>
+        <h3>Regularization Request Details</h3>
+        <button className={styles.closeBtn} onClick={() => setViewModalOpen(false)}>×</button>
+      </div>
+      
+      <div className={styles.modalBody}>
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Employee:</div>
+          <div className={styles.detailValue}>
+            {viewingRequest.employeeName} ({viewingRequest.employeeId})
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Type:</div>
+          <div className={styles.detailValue}>
+            {viewingRequest.requestType === 'time_based' ? 'Time-based' : 'Day-based'}
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Date Range:</div>
+          <div className={styles.detailValue}>
+            {formatDateRange(viewingRequest.fromDate, viewingRequest.toDate)}
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Category:</div>
+          <div className={styles.detailValue}>
+            {formatCategoryText(viewingRequest.category)}
+          </div>
+        </div>
+        
+        {viewingRequest.requestType === 'time_based' && viewingRequest.startTime && viewingRequest.endTime && (
+          <div className={styles.detailRow}>
+            <div className={styles.detailLabel}>Time:</div>
+            <div className={styles.detailValue}>
+              {viewingRequest.startTime} to {viewingRequest.endTime}
+            </div>
+          </div>
+        )}
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Reason:</div>
+          <div className={styles.detailValue}>
+            {viewingRequest.reason}
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Status:</div>
+          <div className={styles.detailValue}>
+            <span className={`${styles.statusBadge} ${
+              viewingRequest.status === 'pending' ? styles.statusPending :
+              viewingRequest.status === 'approved' ? styles.statusApproved :
+              styles.statusRejected
+            }`}>
+              {viewingRequest.status.charAt(0).toUpperCase() + viewingRequest.status.slice(1)}
+            </span>
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Submitted On:</div>
+          <div className={styles.detailValue}>
+            {new Date(viewingRequest.submittedOn).toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}
+          </div>
+        </div>
+        
+        {viewingRequest.status !== 'pending' && (
+          <>
+            {viewingRequest.approvedBy && (
+              <div className={styles.detailRow}>
+                <div className={styles.detailLabel}>Actioned By:</div>
+                <div className={styles.detailValue}>{viewingRequest.approvedBy}</div>
+              </div>
+            )}
+            
+            {viewingRequest.approvedOn && (
+              <div className={styles.detailRow}>
+                <div className={styles.detailLabel}>Actioned On:</div>
+                <div className={styles.detailValue}>
+                  {new Date(viewingRequest.approvedOn).toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {viewingRequest.managerComment && (
+              <div className={styles.detailRow}>
+                <div className={styles.detailLabel}>Manager Comment:</div>
+                <div className={styles.detailValue}>{viewingRequest.managerComment}</div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      
+      <div className={styles.modalFooter}>
+        <button 
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          onClick={() => setViewModalOpen(false)}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+// ADD modals JSX (at end)
+{/* Approve Confirmation Modal */}
+{approveModalOpen && actioningRequest && (
+  <div className={styles.modal} style={{ display: 'flex' }}>
+    <div className={styles.modalContent}>
+      <div className={styles.modalHeader}>
+        <h3>Approve Regularization Request</h3>
+        <button className={styles.closeBtn} onClick={() => setApproveModalOpen(false)}>×</button>
+      </div>
+      
+      <div className={styles.modalBody}>
+        <p style={{ marginBottom: '1rem' }}>
+          Are you sure you want to approve this regularization request?
+        </p>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Employee:</div>
+          <div className={styles.detailValue}>
+            {actioningRequest.employeeName} ({actioningRequest.employeeId})
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Date Range:</div>
+          <div className={styles.detailValue}>
+            {formatDateRange(actioningRequest.fromDate, actioningRequest.toDate)}
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Category:</div>
+          <div className={styles.detailValue}>
+            {formatCategoryText(actioningRequest.category)}
+          </div>
+        </div>
+      </div>
+      
+      <div className={styles.modalFooter}>
+        <button 
+          className={`${styles.btn} ${styles.btnOutline}`}
+          onClick={() => setApproveModalOpen(false)}
+          disabled={isProcessing}
+        >
+          Cancel
+        </button>
+        <button 
+          className={`${styles.btn} ${styles.btnSuccess}`}
+          onClick={() => { confirmApprove().catch(console.error); }}
+          disabled={isProcessing}
+        >
+          {isProcessing ? 'Approving...' : '✓ Confirm Approval'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Reject Modal with Comments */}
+{rejectModalOpen && actioningRequest && (
+  <div className={styles.modal} style={{ display: 'flex' }}>
+    <div className={styles.modalContent}>
+      <div className={styles.modalHeader}>
+        <h3>Reject Regularization Request</h3>
+        <button className={styles.closeBtn} onClick={() => setRejectModalOpen(false)}>×</button>
+      </div>
+      
+      <div className={styles.modalBody}>
+        <p style={{ marginBottom: '1rem' }}>
+          Please provide a reason for rejecting this request:
+        </p>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Employee:</div>
+          <div className={styles.detailValue}>
+            {actioningRequest.employeeName} ({actioningRequest.employeeId})
+          </div>
+        </div>
+        
+        <div className={styles.detailRow}>
+          <div className={styles.detailLabel}>Date Range:</div>
+          <div className={styles.detailValue}>
+            {formatDateRange(actioningRequest.fromDate, actioningRequest.toDate)}
+          </div>
+        </div>
+        
+        <div className={styles.formGroup} style={{ marginTop: '1rem' }}>
+          <label className={styles.formLabel}>Reason for Rejection *</label>
+          <textarea 
+            className={styles.formTextarea}
+            placeholder="Enter reason for rejection..."
+            value={rejectComment}
+            onChange={(e) => setRejectComment(e.target.value)}
+            rows={4}
+            required
+          />
+        </div>
+      </div>
+      
+      <div className={styles.modalFooter}>
+        <button 
+          className={`${styles.btn} ${styles.btnOutline}`}
+          onClick={() => setRejectModalOpen(false)}
+          disabled={isProcessing}
+        >
+          Cancel
+        </button>
+        <button 
+          className={`${styles.btn} ${styles.btnDanger}`}
+          onClick={() => { confirmReject().catch(console.error); }}
+          disabled={isProcessing || !rejectComment.trim()}
+        >
+          {isProcessing ? 'Rejecting...' : '✗ Confirm Rejection'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };

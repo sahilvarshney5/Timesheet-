@@ -123,10 +123,10 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
               <div className={styles.welcomeStatValue}>{stats.hoursThisWeek}</div>
               <div className={styles.welcomeStatLabel}>Hours This Week</div>
             </div>
-            <div className={styles.welcomeStat}>
+            {/* <div className={styles.welcomeStat}>
               <div className={styles.welcomeStatValue}>{stats.leaveDaysLeft}</div>
               <div className={styles.welcomeStatLabel}>Leave Days Left</div>
-            </div>
+            </div> */}
             {(userRole === 'Admin' || userRole === 'Manager') && (
               <div className={styles.welcomeStat}>
                 <div className={styles.welcomeStatValue}>{stats.pendingApprovals}</div>

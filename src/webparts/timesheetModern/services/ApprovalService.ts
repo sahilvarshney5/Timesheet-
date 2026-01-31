@@ -32,6 +32,31 @@ export class ApprovalService {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
 
+
+
+/**
+ * Recall a regularization request (move back to Pending)
+ * @param requestId Request ID
+ */
+public async recallRegularization(requestId: number): Promise<void> {
+  try {
+    const listName = getListInternalName('attendanceRegularization');
+    
+    const itemData: any = {
+      [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Pending',
+      [getColumnInternalName('AttendanceRegularization', 'ManagerComment')]: '' // Clear comment
+    };
+    
+    await this.httpService.updateListItem(listName, requestId, itemData);
+    
+    console.log(`[ApprovalService] Recalled request ${requestId} to Pending status`);
+    
+  } catch (error) {
+    console.error('[ApprovalService] Error recalling request:', error);
+    throw error;
+  }
+}
+
   /**
    * Get pending regularization requests for approval
    * @param managerId Manager ID (optional, for filtering by manager)

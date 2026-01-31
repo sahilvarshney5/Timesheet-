@@ -276,24 +276,38 @@ const validateDateRange = async (fromDate: string, toDate: string): Promise<{ is
   }, []);
 
   const handleRecall = React.useCallback(async (requestId: number): Promise<void> => {
-    if (!confirm('Are you sure you want to recall this pending regularization request?')) {
-      return;
-    }
+      const request = history.find(r => r.id === requestId);
+if (!request) return;
 
+     const confirmMessage = request.status === 'approved' 
+    ? 'Are you sure you want to recall this approved regularization request? It will be moved back to Pending status.'
+    : 'Are you sure you want to recall this pending regularization request? It will be moved back to Pending status.';
+  
+  if (!confirm(confirmMessage)) {
+    return;
+  }
     try {
-      // TODO: Implement recall/delete functionality in SharePoint
-      // For now, just remove from local state
-      setHistory(prev => prev.filter(req => req.id !== requestId));
-      alert('Regularization request recalled successfully.');
-      
-      // In production, you would call:
-      await approvalService.deleteRegularizationRequest(requestId);
+          setIsLoading(true);
+    await approvalService.recallRegularization(requestId);
 
+      // Update local state
+    setHistory(prev => prev.map(req => 
+      req.id === requestId 
+        ? { ...req, status: 'pending' as const }
+        : req
+    ));
+    
+    alert('Regularization request recalled successfully and moved to Pending status.');
+    
+    // Reload to get fresh data
+    await loadRegularizationHistory();
     } catch (err) {
       console.error('[RegularizationView] Error recalling request:', err);
       alert('Failed to recall regularization request. Please try again.');
-    }
-    }, []);
+    }finally {
+    setIsLoading(false);
+  }
+}, [history, approvalService, loadRegularizationHistory]);
 
 
   const handleCancel = async (requestId: number): Promise<void> => {
@@ -543,47 +557,22 @@ const validateDateRange = async (fromDate: string, toDate: string): Promise<{ is
                   </td>
                   <td>{new Date(request.submittedOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
                   <td>
-                    {request.status === 'pending' && (
-                      <>
-                        <button 
-                          className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
-                          onClick={() => handleView(request)}
-                        >
-                          View
-                        </button>
-                        <button 
-                          className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                          onClick={() => handleRecall(request.id!)}
-                        >
-                          Recall
-                        </button>
-                      </>
-                    )}
-                    {request.status === 'approved' && (
-                      <>
-                        <button 
-                          className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
-                          onClick={() => handleView(request)}
-                        >
-                          View
-                        </button>
-                        <button 
-                          className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                          onClick={() => handleCancel(request.id!)}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    )}
-                    {request.status === 'rejected' && (
-                      <button 
-                        className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
-                        onClick={() => handleView(request)}
-                      >
-                        View
-                      </button>
-                    )}
-                  </td>
+          <button 
+            className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
+            onClick={() => handleView(request)}
+          >
+            View
+          </button>
+          {/* ✅ Show Recall for both Pending AND Approved */}
+          {(request.status === 'pending' || request.status === 'approved') && (
+            <button 
+              className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
+              onClick={() => handleRecall(request.id!)}
+            >
+              Recall
+            </button>
+          )}
+        </td>
                 </tr>
               ))
             )}

@@ -32,10 +32,13 @@ export interface ITimesheetViewProps {
   currentUserDisplayName: string;
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
+    navigationData?: { selectedDate?: string }; // NEW
+
 }
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { spHttpClient, siteUrl } = props;
+
 
   // Services
   const timesheetService = React.useMemo(
@@ -49,7 +52,8 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const [editingEntry, setEditingEntry] = React.useState<ITimesheetEntry | null>(null);
   const [currentWeekOffset, setCurrentWeekOffset] = React.useState<number>(0);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  
+  const [clipboard, setClipboard] = React.useState<ITimesheetEntry | null>(null);
+
   // Form state
   const [formData, setFormData] = React.useState({
     date: '',
@@ -59,6 +63,76 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     description: ''
   });
 
+  // ADD copy handler
+const handleCopyEntry = (entry: ITimesheetEntry): void => {
+  setClipboard(entry);
+  alert(`Entry copied: ${entry.hours}h for ${entry.project}\n\nClick "Paste" on any day to create a copy.`);
+};
+
+// ADD paste handler
+const handlePasteEntry = async (targetDate: string): Promise<void> => {
+  if (!clipboard) {
+    alert('No entry copied. Please copy an entry first.');
+    return;
+  }
+  
+  const normalizedDate = normalizeDateToString(targetDate);
+  
+  // Validate target date
+  const validation = await validateTimesheetDate(normalizedDate);
+  
+  if (!validation.isValid) {
+    alert(`Cannot paste to this date:\n${validation.message}`);
+    return;
+  }
+  
+  try {
+    setIsLoading(true);
+    
+    const empId = props.employeeMaster.EmployeeID;
+    const weekDays = getCurrentWeekDays();
+    const startDate = weekDays[0];
+    
+    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+    
+    if (!timesheetHeader) {
+      timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
+    }
+    
+    // Create new entry with copied data
+    await timesheetService.createTimesheetLine({
+      TimesheetID: timesheetHeader.Id,
+      WorkDate: normalizedDate,
+      ProjectNo: clipboard.project,
+      TaskNo: '',
+      HoursBooked: clipboard.hours,
+      Description: clipboard.description
+    });
+    
+    alert(`Entry pasted successfully!\n${clipboard.hours}h for ${clipboard.project} on ${formatDateDisplay(normalizedDate)}`);
+    
+    await loadTimesheetData();
+    
+  } catch (error) {
+    console.error('[TimesheetView] Error pasting entry:', error);
+    alert('Error pasting entry. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  // Calculate initial week offset based on selected date
+React.useEffect(() => {
+  if (props.navigationData?.selectedDate) {
+    const selectedDate = new Date(props.navigationData.selectedDate);
+    const today = new Date();
+    const diffTime = selectedDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const weekOffset = Math.floor(diffDays / 7);
+    
+    setCurrentWeekOffset(weekOffset);
+  }
+}, [props.navigationData]);
   // ✅ FIXED: Get current week days based on offset with normalized dates
   const getCurrentWeekDays = React.useCallback((): string[] => {
     const today = new Date();
@@ -151,13 +225,75 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     setCurrentWeekOffset(prev => prev + direction);
   };
 
+  // ADD new validation function at the top
+const validateTimesheetDate = async (date: string): Promise<{ isValid: boolean; message: string }> => {
+  const normalizedDate = normalizeDateToString(date);
+  
+  // Check if weekend
+  if (isWeekend(normalizedDate)) {
+    return {
+      isValid: false,
+      message: 'Cannot add timesheet entry for weekends (Saturday/Sunday)'
+    };
+  }
+  
+  // Check attendance status
+  const empId = props.employeeMaster.EmployeeID;
+  const yearMonth = normalizedDate.substring(0, 7); // YYYY-MM
+  const year = parseInt(yearMonth.substring(0, 4));
+  const month = parseInt(yearMonth.substring(5, 7));
+  
+  // Get attendance service (add to props or create instance)
+  const attendanceService = new AttendanceService(props.spHttpClient, props.siteUrl);
+  const calendar = await attendanceService.buildCalendarForMonth(empId, year, month);
+  
+  const dayData = calendar.find(day => day.date === normalizedDate);
+  
+  if (!dayData) {
+    return { isValid: true, message: '' };
+  }
+  
+  if (dayData.status === 'absent') {
+    return {
+      isValid: false,
+      message: 'You are absent, you cannot fill timesheet for this day'
+    };
+  }
+  
+  if (dayData.status === 'leave') {
+    return {
+      isValid: false,
+      message: 'You are on leave for this day, timesheet entry not allowed'
+    };
+  }
+  
+  if (dayData.status === 'holiday') {
+    return {
+      isValid: false,
+      message: 'Cannot add timesheet entry for holidays'
+    };
+  }
+  
+  return { isValid: true, message: '' };
+};
+
+
   // Open modal for new entry
-  const handleAddEntry = (date?: string): void => {
-    setEditingEntry(null);
+  const handleAddEntry = async (date?: string): Promise<void> => {
+    // setEditingEntry(null);
     
     // ✅ FIXED: Normalize date parameter
     const weekDays = getCurrentWeekDays();
     const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
+
+
+  // ✅ NEW: Validate before opening modal
+  const validation = await validateTimesheetDate(normalizedDate);
+  
+  if (!validation.isValid) {
+    alert(validation.message);
+    return;
+  }
     
     setFormData({
       date: normalizedDate,
@@ -213,7 +349,14 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       
       // ✅ CRITICAL: Normalize date before saving
       const normalizedDate = normalizeDateToString(formData.date);
-      
+       // ✅ NEW: Validate before saving
+    const validation = await validateTimesheetDate(normalizedDate);
+    
+    if (!validation.isValid) {
+      alert(validation.message);
+      setIsLoading(false);
+      return;
+    }
       const empId = props.employeeMaster.EmployeeID;
       
       // Get or create timesheet header
@@ -235,7 +378,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
           Description: formData.description
         });
         
-        alert(`Timesheet entry updated: ${formData.hours} hours for ${formData.project}`);
+      alert(`✓ Entry updated successfully!\n${formData.hours}h for ${formData.project}\n\nYou can continue adding more entries or close this window.`);
       } else {
         // Create new entry in SharePoint with normalized date
         await timesheetService.createTimesheetLine({
@@ -247,11 +390,20 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
           Description: formData.description
         });
         
-        alert(`Timesheet entry added: ${formData.hours} hours for ${formData.project}`);
+      alert(`✓ Entry added successfully!\n${formData.hours}h for ${formData.project}\n\nYou can continue adding more entries or close this window.`);
       }
       
       await loadTimesheetData();
-      handleCloseModal();
+      // handleCloseModal();
+
+      setEditingEntry(null);
+    setFormData({
+      date: normalizedDate, // Keep same date for convenience
+      project: '',
+      hours: 0,
+      taskType: 'Development',
+      description: ''
+    });
       
     } catch (error) {
       console.error('[TimesheetView] Error saving entry:', error);
@@ -420,11 +572,19 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
               const dateEntries = getEntriesForDate(date);
               const dateTotalHours = getTotalHoursForDate(date);
               const isTodayDate = isToday(date);
+
+               // ✅ NEW: Check if day allows timesheet
+  const isWeekendDate = isWeekend(date);
+  const dayStatus = getDayStatus(date); // Create helper function
+  const canAddTimesheet = !isWeekendDate && 
+                         dayStatus !== 'absent' && 
+                         dayStatus !== 'leave' && 
+                         dayStatus !== 'holiday';
               
               return (
                 <div 
                   key={date}
-                  className={`${styles.timesheetDay} ${isTodayDate ? styles.todayHighlight : ''}`}
+      className={`${styles.timesheetDay} ${isTodayDate ? styles.todayHighlight : ''} ${!canAddTimesheet ? styles.disabledDay : ''}`}
                 >
                   <div className={styles.timesheetDayHeader}>
                     <div className={styles.dayInfo}>
@@ -451,6 +611,12 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                           {entry.description}
                         </div>
                         <div className={styles.entryActions}>
+                           <button 
+    className={`${styles.entryActionBtn} ${styles.copyBtn}`}
+    onClick={() => handleCopyEntry(entry)}
+  >
+    <span>📋</span> Copy
+  </button>
                           <button 
                             className={`${styles.entryActionBtn} ${styles.editBtn}`}
                             onClick={() => handleEditEntry(entry)}
@@ -464,16 +630,35 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                             <span>🗑️</span> Delete
                           </button>
                         </div>
+
+// ADD paste button to day header (only if clipboard has data)
+{clipboard && canAddTimesheet && (
+  <button 
+    className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
+    onClick={() => { handlePasteEntry(date).catch(console.error); }}
+    style={{ marginLeft: '0.5rem' }}
+  >
+    📋 Paste
+  </button>
+)}
                       </div>
                     ))}
                   </div>
-                  
+                  {canAddTimesheet ? (
                   <button 
                     className={styles.addEntryBtn}
                     onClick={() => handleAddEntry(date)}
                   >
                     + Add Entry for {formatDateDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
                   </button>
+                  ): (
+        <div className={styles.disabledMessage}>
+          {isWeekendDate && 'Week Off - No timesheet entry allowed'}
+          {dayStatus === 'absent' && 'You are absent, you cannot fill timesheet'}
+          {dayStatus === 'leave' && 'You are on leave for this day'}
+          {dayStatus === 'holiday' && 'Holiday - No timesheet entry allowed'}
+        </div>
+      )}
                 </div>
               );
             })}

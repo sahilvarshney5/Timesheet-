@@ -198,10 +198,12 @@ React.useEffect(() => {
   // ============================================================================
   // EVENT HANDLERS
   // ============================================================================
-  const handleViewChange = React.useCallback((viewName: string): void => {
+  const handleViewChange = React.useCallback((viewName: string, data?: any): void => {
     setState(prev => ({
       ...prev,
       activeView: viewName
+          navigationData: data // NEW: Store navigation data
+
     }));
     
     // Scroll to top when changing views
