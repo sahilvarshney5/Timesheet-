@@ -1,5 +1,5 @@
 // Timesheetview.tsx
-// FIXED: Added date normalization to handle ISO format dates
+// FIXED: Replaced Array.includes() with ES5-compatible indexOf()
 // All date comparisons now use normalized YYYY-MM-DD format
 
 import * as React from 'react';
@@ -288,7 +288,8 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // Submit timesheet
   const handleSubmitTimesheet = async (): Promise<void> => {
     const weekDays = getCurrentWeekDays();
-    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    // ✅ FIXED: Replace Array.includes() with ES5-compatible indexOf()
+    const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
     
     if (weekEntries.length === 0) {
       alert('Please add at least one timesheet entry before submitting.');
@@ -328,8 +329,8 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // Calculate totals for current week
   const calculateWeekTotals = (): { totalHours: number; daysWithEntries: number; totalDays: number } => {
     const weekDays = getCurrentWeekDays();
-    // ✅ FIXED: Date comparison now works because both are normalized
-    const weekEntries = entries.filter(entry => weekDays.includes(entry.date));
+    // ✅ FIXED: Replace Array.includes() with ES5-compatible indexOf()
+    const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
     
     const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
     const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;

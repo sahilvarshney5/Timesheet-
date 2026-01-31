@@ -287,7 +287,7 @@ const validateDateRange = async (fromDate: string, toDate: string): Promise<{ is
       alert('Regularization request recalled successfully.');
       
       // In production, you would call:
-      // await approvalService.deleteRegularizationRequest(requestId);
+      await approvalService.deleteRegularizationRequest(requestId);
 
     } catch (err) {
       console.error('[RegularizationView] Error recalling request:', err);
