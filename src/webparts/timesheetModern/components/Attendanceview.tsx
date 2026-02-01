@@ -1,16 +1,68 @@
+// Attendanceview.tsx - FIXED VERSION
+// ✅ Fixes timezone issues causing Jan 31 to show as "today" instead of Feb 1
+// ✅ Uses local date creation throughout
+// ✅ Normalizes all dates to local midnight
+
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
 import { IEmployeeMaster, ITimesheetDay } from '../models';
-// ADD this new import
-import { 
-  createLocalDate, 
-  getTodayLocal, 
-  isSameDay, 
-  isTodayDate,
-  formatDateForDisplay
-} from '../utils/DateUtils';
+
+// ============================================================================
+// TIMEZONE-SAFE DATE UTILITIES (INLINE)
+// ============================================================================
+
+/**
+ * Create a date at LOCAL midnight (no timezone shift)
+ * ✅ USE THIS instead of new Date(dateString)
+ */
+const createLocalDate = (year: number, month: number, day: number): Date => {
+  return new Date(year, month, day, 0, 0, 0, 0);
+};
+
+/**
+ * Get today at LOCAL midnight
+ */
+const getTodayLocal = (): Date => {
+  const now = new Date();
+  return createLocalDate(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
+/**
+ * Check if two dates are the same day (local time, ignoring hours)
+ */
+const isSameDay = (date1: Date, date2: Date): boolean => {
+  return (
+    date1.getDate() === date2.getDate() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getFullYear() === date2.getFullYear()
+  );
+};
+
+/**
+ * Check if a date is today
+ */
+const isTodayDate = (date: Date): boolean => {
+  return isSameDay(date, getTodayLocal());
+};
+
+/**
+ * Format date for display
+ */
+const formatDateForDisplay = (date: Date, options?: Intl.DateTimeFormatOptions): string => {
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...options
+  };
+  return date.toLocaleDateString('en-US', defaultOptions);
+};
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
 export interface IAttendanceViewProps {
   onViewChange: (viewName: string) => void;
@@ -37,7 +89,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = React.useState<boolean>(true);
-const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
 
   // Monthly counts state
   const [monthlyCounts, setMonthlyCounts] = React.useState({
@@ -46,13 +98,13 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
     absent: 0,
     weekend: 0,
     holiday: 0,
-    timesheetFilled: 0, // NEW
-    timesheetPartial: 0, // NEW
-    timesheetNotFilled: 0 // NEW
+    timesheetFilled: 0,
+    timesheetPartial: 0,
+    timesheetNotFilled: 0
   });
 
   // ============================================================================
-  // HELPER FUNCTIONS - DEFINED FIRST BEFORE USAGE
+  // HELPER FUNCTIONS
   // ============================================================================
 
   const getMonthName = (month: number): string => {
@@ -164,9 +216,9 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
       absent: 0,
       weekend: 0,
       holiday: 0,
-      timesheetFilled: 0, // NEW
-      timesheetPartial: 0, // NEW
-      timesheetNotFilled: 0 // NEW
+      timesheetFilled: 0,
+      timesheetPartial: 0,
+      timesheetNotFilled: 0
     };
 
     calendarDays.forEach(day => {
@@ -176,7 +228,6 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
       else if (day.status === 'weekend') counts.weekend++;
       else if (day.status === 'holiday') counts.holiday++;
 
-      // NEW: Timesheet progress counts (only for working days)
       if (day.status === 'present' && day.availableHours > 0) {
         if (day.timesheetProgress.status === 'completed') {
           counts.timesheetFilled++;
@@ -197,11 +248,11 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
 
   const loadCalendarData = React.useCallback(async (isRefresh = false): Promise<void> => {
     try {
-       if (isRefresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsInitialLoad(true);
-    }
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsInitialLoad(true);
+      }
       setIsLoading(true);
       setError(null);
 
@@ -222,9 +273,10 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
       console.error('[AttendanceView] Error loading calendar data:', err);
       setError('Failed to load calendar data. Please try again.');
     } finally {
-  setIsInitialLoad(false);
-    setIsRefreshing(false);  
-  setIsLoading(false);  }
+      setIsInitialLoad(false);
+      setIsRefreshing(false);
+      setIsLoading(false);
+    }
   }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth]);
 
   const handleDownloadReport = async (): Promise<void> => {
@@ -270,14 +322,19 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
   const handleDayClick = (day: ITimesheetDay): void => {
     if (day.status === 'empty') return;
 
-    const date = new Date(day.date);
-   // ✅ NEW CODE - Already using formatDateForDisplay
-const formattedDate = formatDateForDisplay(new Date(day.date), {
-  weekday: 'long',
-  year: 'numeric',
-  month: 'long',
-  day: 'numeric'
-});
+    // ✅ FIXED: Use local date parsing
+    const dayDate = createLocalDate(
+      parseInt(day.date.split('-')[0]),
+      parseInt(day.date.split('-')[1]) - 1,
+      parseInt(day.date.split('-')[2])
+    );
+
+    const formattedDate = formatDateForDisplay(dayDate, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
 
     let message = `Details for ${formattedDate}:\n\n`;
     message += `Status: ${getStatusText(day.status || '')}\n`;
@@ -305,12 +362,10 @@ const formattedDate = formatDateForDisplay(new Date(day.date), {
       message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
     }
 
-    // Only prompt for timesheet if present and not completed
     if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
       message += `\nWould you like to fill timesheet for this day?`;
 
       if (confirm(message)) {
-        // Navigate to timesheet view (simple navigation without data passing)
         onViewChange('timesheet');
       }
     } else {
@@ -319,12 +374,13 @@ const formattedDate = formatDateForDisplay(new Date(day.date), {
   };
 
   // ============================================================================
-  // CALENDAR GRID GENERATOR
+  // CALENDAR GRID GENERATOR - FIXED
   // ============================================================================
 
   const generateCalendarGrid = (): JSX.Element[] => {
     const grid: JSX.Element[] = [];
 
+    // Day headers
     ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(day => {
       grid.push(
         <div key={`header-${day}`} className={styles.calendarDayHeader}>
@@ -333,12 +389,17 @@ const formattedDate = formatDateForDisplay(new Date(day.date), {
       );
     });
 
+    // ✅ FIXED: Use local date creation for first day
     if (calendarDays.length > 0) {
-      const firstDay = new Date(calendarDays[0].date);
+      const firstDayString = calendarDays[0].date;
+      const [year, month, day] = firstDayString.split('-').map(Number);
+      const firstDay = createLocalDate(year, month - 1, day);
+      
       let startDay = firstDay.getDay();
-      // Fix: Monday = 0, Sunday = 6
+      // Convert Sunday=0 to Sunday=6 (for Mon-Sun week)
       startDay = startDay === 0 ? 6 : startDay - 1;
 
+      // Add empty cells before first day
       for (let i = 0; i < startDay; i++) {
         grid.push(
           <div
@@ -349,13 +410,22 @@ const formattedDate = formatDateForDisplay(new Date(day.date), {
       }
     }
 
+    // ✅ FIXED: Today detection using local dates
+    const todayLocal = getTodayLocal();
+
     calendarDays.forEach((day, index) => {
-      const dayNumber = new Date(day.date).getDate();
+      // ✅ Parse day.date safely to local date
+      const [year, month, dayNum] = day.date.split('-').map(Number);
+      const dayDate = createLocalDate(year, month - 1, dayNum);
+      const dayNumber = dayDate.getDate();
+
+      // ✅ FIXED: Use timezone-safe comparison
+      const isTodayCheck = isTodayDate(dayDate);
 
       grid.push(
         <div
           key={`day-${index}`}
-          className={`${styles.calendarDay} ${getDayStatusClass(day.status)} ${day.isToday ? styles.today : ''}`}
+          className={`${styles.calendarDay} ${getDayStatusClass(day.status)} ${isTodayCheck ? styles.today : ''}`}
           onClick={() => handleDayClick(day)}
         >
           <div className={styles.dayTopSection}>
@@ -414,11 +484,10 @@ const formattedDate = formatDateForDisplay(new Date(day.date), {
     });
   }, [currentMonth, currentYear]);
 
-  // Refresh button
-const handleRefresh = async (): Promise<void> => {
-  await loadCalendarData(true);
-};
-  // Calculate counts when calendar changes
+  const handleRefresh = async (): Promise<void> => {
+    await loadCalendarData(true);
+  };
+
   React.useEffect(() => {
     calculateMonthlyCounts();
   }, [calendarDays, calculateMonthlyCounts]);
@@ -462,8 +531,7 @@ const handleRefresh = async (): Promise<void> => {
         <h1>My Attendance</h1>
         <p>Track your daily attendance and biometric records</p>
       </div>
-          {isRefreshing && <div>Refreshing...</div>}
-
+      {isRefreshing && <div>Refreshing...</div>}
 
       <div className={styles.calendarContainer}>
         <div className={styles.calendarHeader}>
@@ -504,7 +572,7 @@ const handleRefresh = async (): Promise<void> => {
           </div>
         </div>
 
-        {/* Legend with counts at top */}
+        {/* Legend with counts */}
         <div className={styles.calendarLegend} style={{ marginBottom: '1rem', marginTop: 0 }}>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('present')}`}>
@@ -519,7 +587,7 @@ const handleRefresh = async (): Promise<void> => {
             <span>Absent</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`} >
+            <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`}>
               <span className={styles.legendCount}>{monthlyCounts.holiday}</span>
             </div>
             <span>Holiday</span>
@@ -537,20 +605,19 @@ const handleRefresh = async (): Promise<void> => {
             <span>Weekend</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`} >
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`}>
               <span className={styles.legendCount}>{monthlyCounts.timesheetFilled}</span>
             </div>
             <span>Timesheet: Filled</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`} >
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`}>
               <span className={styles.legendCount}>{monthlyCounts.timesheetPartial}</span>
             </div>
-
             <span>Timesheet: Partial</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`} >
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`}>
               <span className={styles.legendCount}>{monthlyCounts.timesheetNotFilled}</span>
             </div>
             <span>Timesheet: Not Filled</span>
