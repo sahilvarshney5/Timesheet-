@@ -3,6 +3,73 @@
 // Fixes ISO date format inconsistencies from SharePoint
 import { isWeekendDay as configIsWeekend } from '../config/WorkWeekConfig';
 
+
+// ============================================================================
+// ADDITIONAL UTILITIES FOR CALENDAR DATE HANDLING
+// Add these to the END of the existing DateUtils.ts file
+// ============================================================================
+
+/**
+ * Create a local date at midnight (no timezone shift)
+ * Use this for calendar date creation instead of new Date(dateString)
+ * @param year Full year (e.g., 2026)
+ * @param month Month (0-11, where 0=January)
+ * @param day Day of month (1-31)
+ */
+export function createLocalDate(year: number, month: number, day: number): Date {
+  return new Date(year, month, day, 0, 0, 0, 0);
+}
+
+/**
+ * Parse YYYY-MM-DD string safely to local midnight
+ * Use this when parsing date strings from SharePoint
+ * @param dateString Date in YYYY-MM-DD format
+ */
+export function parseLocalDate(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return createLocalDate(year, month - 1, day); // month-1 because string is 1-based
+}
+
+/**
+ * Get today at local midnight (for comparison)
+ * Better alternative to getTodayString() when working with Date objects
+ */
+export function getTodayLocal(): Date {
+  const now = new Date();
+  return createLocalDate(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/**
+ * Check if two dates are the same day (ignoring time)
+ * More reliable than comparing date strings
+ */
+export function isSameDay(date1: Date, date2: Date): boolean {
+  return (
+    date1.getDate() === date2.getDate() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getFullYear() === date2.getFullYear()
+  );
+}
+
+/**
+ * Check if date is today (Date object version)
+ * Complements the existing isToday() which uses strings
+ */
+export function isTodayDate(date: Date): boolean {
+  return isSameDay(date, getTodayLocal());
+}
+
+/**
+ * Convert SharePoint ISO date to local date
+ * SharePoint returns: "2026-02-01T00:00:00Z" or "2026-02-01T00:00:00"
+ */
+export function convertSharePointDate(isoString: string | null | undefined): Date | null {
+  if (!isoString) return null;
+  
+  // Extract date part only to avoid timezone issues
+  const dateOnly = isoString.split('T')[0]; // "2026-02-01"
+  return parseLocalDate(dateOnly);
+}
 /**
  * Normalize any date input to YYYY-MM-DD format
  * Handles:

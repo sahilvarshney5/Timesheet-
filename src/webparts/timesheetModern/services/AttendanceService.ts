@@ -7,7 +7,8 @@ import { HttpClientService } from './HttpClientService';
 import { SharePointConfig, getListInternalName, getColumnInternalName, ODataHelpers } from '../config/SharePointConfig';
 import { IPunchData, ILeaveData, ICalendarDay, ITimesheetDay } from '../models';
 import { isWeekendDay as configIsWeekend } from '../config/WorkWeekConfig';
-
+// Should already have this (verify):
+import { normalizeDateToString, formatDateForDisplay, isToday as checkIsToday ,createLocalDate,getTodayLocal,isSameDay,convertSharePointDate } from '../utils/DateUtils';
 export class AttendanceService {
   private httpService: HttpClientService;
 
@@ -238,9 +239,13 @@ private mapToPunchData(spItem: any): IPunchData {
       const daysInMonth = new Date(year, month, 0).getDate();
       
       for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month - 1, day);
+  const date = createLocalDate(currentYear, currentMonth, day); // ✅ Use utility
         const dateString = date.toISOString().split('T')[0];
         const dayOfWeek = date.getDay();
+  const dayNumber = new Date(day.date).getDate();
+
+          const isTodayCheck = isTodayDate(date);
+
         
         // Determine status
         let status: 'present' | 'absent' | 'holiday' | 'leave' | 'weekend' | 'empty' = 'absent';

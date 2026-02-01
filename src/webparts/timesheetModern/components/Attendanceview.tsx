@@ -3,6 +3,14 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
 import { IEmployeeMaster, ITimesheetDay } from '../models';
+// ADD this new import
+import { 
+  createLocalDate, 
+  getTodayLocal, 
+  isSameDay, 
+  isTodayDate,
+  formatDateForDisplay
+} from '../utils/DateUtils';
 
 export interface IAttendanceViewProps {
   onViewChange: (viewName: string) => void;
@@ -263,12 +271,13 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
     if (day.status === 'empty') return;
 
     const date = new Date(day.date);
-    const formattedDate = date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+   // ✅ NEW CODE - Already using formatDateForDisplay
+const formattedDate = formatDateForDisplay(new Date(day.date), {
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
 
     let message = `Details for ${formattedDate}:\n\n`;
     message += `Status: ${getStatusText(day.status || '')}\n`;
