@@ -517,7 +517,6 @@ const confirmReject = async (): Promise<void> => {
   </div>
 )}
 
-// ADD modals JSX (at end)
 {/* Approve Confirmation Modal */}
 {approveModalOpen && actioningRequest && (
   <div className={styles.modal} style={{ display: 'flex' }}>

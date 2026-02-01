@@ -32,6 +32,8 @@ export interface ITimesheetViewProps {
   currentUserDisplayName: string;
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
+    navigationData?: any; // Optional navigation context for passing data between views
+
 }
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
