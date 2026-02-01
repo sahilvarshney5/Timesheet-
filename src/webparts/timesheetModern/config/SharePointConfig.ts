@@ -69,7 +69,7 @@ export const SharePointConfig: ISharePointConfig = {
     },
     projectTaskMaster: {
       displayName: 'Project Task Master',
-      internalName: 'ProjectTaskMaster'
+      internalName: 'Project%20Task%20Master'
     }
   },
   columns: {

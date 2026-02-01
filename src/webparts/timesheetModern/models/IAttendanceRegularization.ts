@@ -19,6 +19,8 @@ export interface IAttendanceRegularization extends IBaseModel {
   RequestType?: string; // Timesheet / Regularization
   StartDate?: string;
   EndDate?: string;
+  SubmittedDate?: string;
+  ApprovedDate?: string;
   ExpectedIn?: string;
   ExpectedOut?: string;
 

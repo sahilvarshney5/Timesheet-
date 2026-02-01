@@ -106,8 +106,8 @@ public async recallRegularization(requestId: number): Promise<void> {
       // Transform to approval queue items with proper field mapping
       const approvalItems: IApprovalQueueItem[] = items.map(item => {
         // Format date range
-        const fromDate = item.StartDate || '';
-        const toDate = item.EndDate || fromDate;
+        const fromDate = item.SubmittedDate || '';
+        const toDate = item.ApprovedDate || fromDate;
         const dateRange = this.formatDateRange(fromDate, toDate);
         
         return {
@@ -258,8 +258,8 @@ public async recallRegularization(requestId: number): Promise<void> {
         employeeName: 'Current User', // TODO: Get from context
         requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
         category: this.mapCategoryFromReason(item.Reason || ''),
-        fromDate: item.StartDate || '',
-        toDate: item.EndDate || item.StartDate || '',
+        fromDate: item.SubmittedDate || '',
+        toDate: item.ApprovedDate || item.SubmittedDate || '',
         startTime: item.ExpectedIn,
         endTime: item.ExpectedOut,
         reason: item.Reason || '',

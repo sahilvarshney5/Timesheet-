@@ -40,8 +40,8 @@ export class ProjectTaskService {
       // Build filter: IsActive=true AND ResourceID=user AND date within range
       const filterQuery = `$filter=${getColumnInternalName('ProjectTaskMaster', 'ResourceID')} eq '${resourceId}' ` +
                          `and ${getColumnInternalName('ProjectTaskMaster', 'BookingEnabled')} eq 1 ` +
-                         `and ${getColumnInternalName('ProjectTaskMaster', 'ValidFrom')} le '${today}' ` +
-                         `and ${getColumnInternalName('ProjectTaskMaster', 'ValidTo')} ge '${today}'`;
+                         `and ${getColumnInternalName('ProjectTaskMaster', 'ValidFrom')} ge '${today}' `;
+                        //  `and ${getColumnInternalName('ProjectTaskMaster', 'ValidTo')} ge '${today}'`;
       
       const selectFields = [
         'Id',
