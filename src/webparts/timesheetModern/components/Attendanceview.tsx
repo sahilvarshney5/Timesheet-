@@ -223,12 +223,19 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         const isFuture = isDateAfter(dayDate, todayLocal);
         const isPast = isDateBefore(dayDate, todayLocal);
 
-        if (isFuture && finalStatus !== 'weekend' && finalStatus !== 'holiday') {
-          finalStatus = 'future';
-        }
-
-        if (isPast && finalStatus !== 'present' && finalStatus !== 'leave' && finalStatus !== 'weekend' && finalStatus !== 'holiday') {
+        if (day.status === 'leave') {
+          finalStatus = 'leave';
+          finalLeaveType = day.leaveType;
+        } else if (day.status === 'weekend') {
+          finalStatus = 'weekend';
+        } else if (day.status === 'holiday' || holiday) {
+          finalStatus = 'holiday';
+        } else if (day.status === 'present') {
+          finalStatus = 'present';
+        } else if (isPast) {
           finalStatus = 'absent';
+        } else if (isFuture) {
+          finalStatus = 'future';
         }
 
         const timesheetHours = timesheetEntries.get(day.date) || 0;
