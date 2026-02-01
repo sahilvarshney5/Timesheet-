@@ -386,17 +386,19 @@
 
 // Dashboard Header
 .dashboardHeader {
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.75rem;
 
   h1 {
     font-size: var(--font-xl);
     font-weight: 700;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.15rem;
   }
 
   p {
     color: var(--text-secondary);
     font-size: var(--font-sm);
+        margin-bottom: 0; // REMOVED margin
+
   }
 }
 
@@ -598,10 +600,15 @@
 .calendarContainer {
   background: white;
   border-radius: var(--radius-lg);
-  padding: 1rem;
+  padding: 0.75rem;
   border: 1px solid var(--border);
    max-height: none; // ✅ Remove height limit
   overflow: visible; // ✅ Remove scroll
+}
+// Reduce loader container height (if using custom loader)
+.loadingContainer {
+  padding: 1rem; // REDUCED from 2rem
+  text-align: center;
 }
 
 .calendarHeader {

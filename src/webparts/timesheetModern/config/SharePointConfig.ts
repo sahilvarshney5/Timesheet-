@@ -305,34 +305,58 @@ export const SharePointConfig: ISharePointConfig = {
     },
     // ProjectTaskMaster columns
     ProjectTaskMaster: {
-      ProjectNo: {
-        displayName: 'Project No',
-        internalName: 'ProjectNo'
-      },
-      ProjectName: {
-        displayName: 'Project Name',
-        internalName: 'ProjectName'
-      },
-      TaskNo: {
-        displayName: 'Task No',
-        internalName: 'TaskNo'
-      },
-      TaskName: {
-        displayName: 'Task Name',
-        internalName: 'TaskName'
-      },
-      ResourceID: {
-        displayName: 'Resource ID',
-        internalName: 'ResourceID'
-      },
-      TaskStatus: {
-        displayName: 'Task Status',
-        internalName: 'TaskStatus'
-      },
-      BookingEnabled: {
-        displayName: 'Booking Enabled',
-        internalName: 'BookingEnabled'
-      }
+     ResourceID: {
+    displayName: 'Resource ID',
+    internalName: 'Title'
+  },
+  ProjectNo: {
+    displayName: 'Project Number',
+    internalName: 'ProjectNumber'
+  },
+  ProjectName: {
+    displayName: 'Project Name',
+    internalName: 'ProjectName'
+  },
+  TaskNo: {
+    displayName: 'Task Number',
+    internalName: 'TaskNumber'
+  },
+  TaskName: {
+    displayName: 'Task Name',
+    internalName: 'TaskName'
+  },
+  ValidFrom: {
+    displayName: 'Valid From',
+    internalName: 'ValidFrom'
+  },
+  ValidTo: {
+    displayName: 'Valid To',
+    internalName: 'ValidTo'
+  },
+  BookingEnabled: {
+    displayName: 'Booking Enabled',
+    internalName: 'IsActive'
+  },
+  BCResourceNo: {
+    displayName: 'BC Resource No',
+    internalName: 'BCResourceNo'
+  },
+  TaskStatus: {
+    displayName: 'Task Status',
+    internalName: 'TaskStatus'
+  },
+  Description: {
+    displayName: 'Description',
+    internalName: 'Description'
+  },
+  ProjectID: {
+    displayName: 'ProjectID',
+    internalName: 'ProjectID'
+  },
+  JobTaskType: {
+    displayName: 'Job Task Type',
+    internalName: 'JobTaskType'
+  }
     }
   },
   groups: {

@@ -1,6 +1,7 @@
 // utils/DateUtils.ts
 // Centralized date utility functions for consistent date handling
 // Fixes ISO date format inconsistencies from SharePoint
+import { isWeekendDay as configIsWeekend } from '../config/WorkWeekConfig';
 
 /**
  * Normalize any date input to YYYY-MM-DD format
@@ -51,6 +52,18 @@ export function normalizeDateToString(dateInput: string | Date | null | undefine
     console.error('[DateUtils] Error normalizing date:', dateInput, error);
     return '';
   }
+}
+/**
+ * Check if date is weekend (Saturday or Sunday)
+ * Uses configurable WorkWeekConfig
+ */
+export function isWeekend(dateInput: string | Date | null | undefined): boolean {
+  if (!dateInput) return false;
+  
+  const normalized = normalizeDateToString(dateInput);
+  if (!normalized) return false;
+  
+  return configIsWeekend(normalized); // Use config
 }
 
 /**

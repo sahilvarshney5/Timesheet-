@@ -6,6 +6,8 @@ import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { TimesheetService } from '../services/TimesheetService';
+import { ProjectTaskService,IProjectTask } from '../services/ProjectTaskService';
+
 import { AttendanceService } from '../services/AttendanceService'; // FIXED: Import added
 import { IEmployeeMaster } from '../models';
 import { 
@@ -38,6 +40,8 @@ export interface ITimesheetViewProps {
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { spHttpClient, siteUrl } = props;
+  const MAX_DAILY_HOURS = 9;
+const MAX_WEEKLY_HOURS = 45; // Configurable
 
   // Services
   const timesheetService = React.useMemo(
@@ -50,7 +54,13 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     () => new AttendanceService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
+// Add service and state
+const projectTaskService = React.useMemo(
+  () => new ProjectTaskService(spHttpClient, siteUrl),
+  [spHttpClient, siteUrl]
+);
 
+const [activeProjects, setActiveProjects] = React.useState<IProjectTask[]>([]);
   // State management
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false);
   const [entries, setEntries] = React.useState<ITimesheetEntry[]>([]);
@@ -58,7 +68,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const [currentWeekOffset, setCurrentWeekOffset] = React.useState<number>(0);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
   const [clipboard, setClipboard] = React.useState<ITimesheetEntry | null>(null);
+// In Timesheetview.tsx
 
+const [timesheetStatus, setTimesheetStatus] = React.useState<'Draft' | 'Submitted' | 'Approved'>('Draft');
   // Form state
   const [formData, setFormData] = React.useState({
     date: '',
@@ -67,6 +79,22 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     taskType: 'Development',
     description: ''
   });
+
+  // Load projects on mount
+React.useEffect(() => {
+  const loadProjects = async (): Promise<void> => {
+    try {
+      const projects = await projectTaskService.getActiveProjects(
+        props.employeeMaster.EmployeeID
+      );
+      setActiveProjects(projects);
+    } catch (error) {
+      console.error('[TimesheetView] Error loading projects:', error);
+    }
+  };
+  
+  loadProjects().catch(console.error);
+}, [props.employeeMaster.EmployeeID]);
 
   // ============================================================================
   // HELPER FUNCTIONS - DEFINED FIRST
@@ -109,7 +137,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate}`);
       
       let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
-      
+      if (timesheetHeader) {
+  setTimesheetStatus(timesheetHeader.Status as 'Draft' | 'Submitted' | 'Approved');
+}
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
         console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
@@ -165,6 +195,10 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     
     return weekText;
   };
+  // Helper function
+const isReadOnly = (): boolean => {
+  return timesheetStatus === 'Submitted' || timesheetStatus === 'Approved';
+};
 
   const handleChangeWeek = (direction: number): void => {
     setCurrentWeekOffset(prev => prev + direction);
@@ -400,7 +434,18 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
       setIsLoading(false);
     }
   };
+// In Timesheetview.tsx, add clear clipboard function
 
+const handleClearPaste = (): void => {
+  if (clipboard) {
+    if (confirm('Clear copied entry? This will stop paste operations.')) {
+      setClipboard(null);
+      alert('Clipboard cleared successfully.');
+    }
+  } else {
+    alert('No entry copied to clipboard.');
+  }
+};
   const handleSubmitTimesheet = async (): Promise<void> => {
     const weekDays = getCurrentWeekDays();
     const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
@@ -440,14 +485,32 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     }
   };
 
-  const calculateWeekTotals = (): { totalHours: number; daysWithEntries: number; totalDays: number } => {
+  const calculateWeekTotals = (): { 
+    totalHours: number;
+    availableHours: number;
+    daysWithEntries: number;
+    totalDays: number 
+  } => {
     const weekDays = getCurrentWeekDays();
     const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
     
     const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
     const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
+
+    // Calculate available hours (working days only)
+  const workingDays = weekDays.filter(date => {
+    const dayStatus = getDayStatus(date);
+    return dayStatus === 'present'; // Only count present days
+  });
+    const availableHours = workingDays.length * MAX_DAILY_HOURS;
+
     
-    return { totalHours, daysWithEntries, totalDays: weekDays.length };
+return { 
+    totalHours, 
+    availableHours,
+    daysWithEntries, 
+    totalDays: weekDays.length 
+  };
   };
 
   const getEntriesForDate = React.useCallback((date: string): ITimesheetEntry[] => {
@@ -498,8 +561,8 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
           </div>
           <div className={styles.timesheetActions}>
             <div className={styles.availableHoursDisplay}>
-              <span>Available Hours:</span>
-              <span>9</span>/9
+              <span>Weekly Hours:</span>
+  <span>{totalHours.toFixed(1)}</span> / {availableHours} hours
             </div>
             <button 
               className={`${styles.btn} ${styles.btnPurple}`}
@@ -507,6 +570,15 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
             >
               + Add Entry
             </button>
+            {/* Add after "Add Entry" button */}
+{clipboard && (
+  <button 
+    className={`${styles.btn} ${styles.btnDanger}`}
+    onClick={handleClearPaste}
+  >
+    🗑️ Clear Paste
+  </button>
+)}
           </div>
         </div>
         
@@ -566,12 +638,16 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                           <button 
                             className={`${styles.entryActionBtn} ${styles.editBtn}`}
                             onClick={() => handleEditEntry(entry)}
+                              disabled={isReadOnly()} // DISABLE if submitted
+
                           >
                             <span>✏️</span> Edit
                           </button>
                           <button 
                             className={`${styles.entryActionBtn} ${styles.deleteBtn}`}
                             onClick={() => { handleDeleteEntry(entry.id).catch(console.error); }}
+                              disabled={isReadOnly()} // DISABLE if submitted
+
                           >
                             <span>🗑️</span> Delete
                           </button>
@@ -594,6 +670,8 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                     <button 
                       className={styles.addEntryBtn}
                       onClick={() => { handleAddEntry(date).catch(console.error); }}
+                        disabled={isReadOnly()} // DISABLE if submitted
+
                     >
                       + Add Entry for {formatDateForDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
                     </button>
@@ -614,9 +692,9 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
         <button 
           className={styles.submitTimesheetBtn}
           onClick={() => { handleSubmitTimesheet().catch(console.error); }}
-          disabled={isLoading}
+  disabled={isReadOnly()} // DISABLE if already submitted
         >
-          <span>✓</span> Submit Timesheet
+           {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'}
         </button>
       </div>
       
@@ -658,18 +736,21 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Project *</label>
                 <select 
-                  className={styles.formSelect}
-                  value={formData.project}
-                  onChange={(e) => handleInputChange('project', e.target.value)}
-                  required
-                >
-                  <option value="">Select Project...</option>
-                  <option value="Project Alpha">Project Alpha</option>
-                  <option value="Project Beta">Project Beta</option>
-                  <option value="Project Gamma">Project Gamma</option>
-                  <option value="Project Delta">Project Delta</option>
-                  <option value="Internal">Internal</option>
-                </select>
+  className={styles.formSelect}
+  value={formData.project}
+  onChange={(e) => handleInputChange('project', e.target.value)}
+  required
+>
+  <option value="">Select Project...</option>
+  {activeProjects.map(proj => (
+    <option 
+      key={proj.Id} 
+      value={proj.ProjectNumber}
+    >
+      {proj.ProjectName} ({proj.ProjectNumber})
+    </option>
+  ))}
+</select>
               </div>
               
               <div className={styles.formRow}>

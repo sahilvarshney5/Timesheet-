@@ -28,6 +28,8 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = React.useState<boolean>(true);
+const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
 
   // Monthly counts state
   const [monthlyCounts, setMonthlyCounts] = React.useState({
@@ -35,7 +37,10 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     leave: 0,
     absent: 0,
     weekend: 0,
-    holiday: 0
+    holiday: 0,
+    timesheetFilled: 0, // NEW
+    timesheetPartial: 0, // NEW
+    timesheetNotFilled: 0 // NEW
   });
 
   // ============================================================================
@@ -81,13 +86,13 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
 
   const formatTime = (timeString: string): string => {
     if (!timeString) return '';
-    
+
     try {
       const date = new Date(timeString);
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: false 
+        hour12: false
       });
     } catch {
       return timeString;
@@ -96,7 +101,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
 
   const getDayStatusClass = (status: string | undefined): string => {
     if (!status) return '';
-    
+
     const statusMap: { [key: string]: string } = {
       'present': styles.present,
       'absent': styles.absent,
@@ -150,7 +155,10 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       leave: 0,
       absent: 0,
       weekend: 0,
-      holiday: 0
+      holiday: 0,
+      timesheetFilled: 0, // NEW
+      timesheetPartial: 0, // NEW
+      timesheetNotFilled: 0 // NEW
     };
 
     calendarDays.forEach(day => {
@@ -159,6 +167,17 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       else if (day.status === 'absent') counts.absent++;
       else if (day.status === 'weekend') counts.weekend++;
       else if (day.status === 'holiday') counts.holiday++;
+
+      // NEW: Timesheet progress counts (only for working days)
+      if (day.status === 'present' && day.availableHours > 0) {
+        if (day.timesheetProgress.status === 'completed') {
+          counts.timesheetFilled++;
+        } else if (day.timesheetProgress.status === 'partial') {
+          counts.timesheetPartial++;
+        } else if (day.timesheetProgress.status === 'notFilled') {
+          counts.timesheetNotFilled++;
+        }
+      }
     });
 
     setMonthlyCounts(counts);
@@ -168,13 +187,18 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   // DATA LOADING FUNCTIONS
   // ============================================================================
 
-  const loadCalendarData = React.useCallback(async (): Promise<void> => {
+  const loadCalendarData = React.useCallback(async (isRefresh = false): Promise<void> => {
     try {
-      setIsLoading(true);
+       if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsInitialLoad(true);
+    }
+      // setIsLoading(true);
       setError(null);
 
       const empId = props.employeeMaster.EmployeeID;
-      
+
       console.log(`[AttendanceView] Loading calendar for Employee ID: ${empId}`);
 
       const calendar = await attendanceService.buildCalendarForMonth(
@@ -190,22 +214,22 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       console.error('[AttendanceView] Error loading calendar data:', err);
       setError('Failed to load calendar data. Please try again.');
     } finally {
-      setIsLoading(false);
-    }
+  setIsInitialLoad(false);
+    setIsRefreshing(false);    }
   }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth]);
 
   const handleDownloadReport = async (): Promise<void> => {
     try {
       setIsLoading(true);
-      
+
       await attendanceService.downloadAttendanceReport(
         props.employeeMaster.EmployeeID,
         currentYear,
         currentMonth + 1
       );
-      
+
       alert('Attendance report downloaded successfully!');
-      
+
     } catch (err) {
       console.error('[AttendanceView] Error downloading report:', err);
       alert('Failed to download attendance report. Please try again.');
@@ -238,11 +262,11 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     if (day.status === 'empty') return;
 
     const date = new Date(day.date);
-    const formattedDate = date.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    const formattedDate = date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
 
     let message = `Details for ${formattedDate}:\n\n`;
@@ -266,7 +290,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
 
     const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
     message += `\nTimesheet Status: ${timesheetStatus}\n`;
-    
+
     if (day.timesheetHours > 0) {
       message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
     }
@@ -274,7 +298,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     // Only prompt for timesheet if present and not completed
     if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
       message += `\nWould you like to fill timesheet for this day?`;
-      
+
       if (confirm(message)) {
         // Navigate to timesheet view (simple navigation without data passing)
         onViewChange('timesheet');
@@ -290,7 +314,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
 
   const generateCalendarGrid = (): JSX.Element[] => {
     const grid: JSX.Element[] = [];
-    
+
     ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(day => {
       grid.push(
         <div key={`header-${day}`} className={styles.calendarDayHeader}>
@@ -304,11 +328,11 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       let startDay = firstDay.getDay();
       // Fix: Monday = 0, Sunday = 6
       startDay = startDay === 0 ? 6 : startDay - 1;
-      
+
       for (let i = 0; i < startDay; i++) {
         grid.push(
-          <div 
-            key={`empty-${i}`} 
+          <div
+            key={`empty-${i}`}
             className={`${styles.calendarDay} ${getDayStatusClass('empty')}`}
           />
         );
@@ -317,9 +341,9 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
 
     calendarDays.forEach((day, index) => {
       const dayNumber = new Date(day.date).getDate();
-      
+
       grid.push(
-        <div 
+        <div
           key={`day-${index}`}
           className={`${styles.calendarDay} ${getDayStatusClass(day.status)} ${day.isToday ? styles.today : ''}`}
           onClick={() => handleDayClick(day)}
@@ -334,28 +358,28 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
               {day.status === 'weekend' && 'W'}
             </div>
           </div>
-          
+
           {day.status === 'present' && day.availableHours > 0 && (
             <div className={styles.dayTotalHours}>
               {day.timesheetHours.toFixed(1)}h / {day.availableHours.toFixed(1)}h
             </div>
           )}
-          
+
           {day.firstPunchIn && day.lastPunchOut && (
             <div className={styles.dayTime}>
               {formatTime(day.firstPunchIn)}-{formatTime(day.lastPunchOut)}
             </div>
           )}
-          
+
           {day.status === 'present' && day.availableHours > 0 && (
             <div className={styles.timesheetProgressBar}>
-              <div 
+              <div
                 className={`${styles.timesheetProgressFill} ${getProgressClass(day.timesheetProgress.status)}`}
                 style={{ width: `${day.timesheetProgress.percentage}%` }}
               />
             </div>
           )}
-          
+
           {day.leaveType && !day.isWeekend && (
             <div className={`${styles.leaveIndicator} ${getLeaveIndicatorClass(day.leaveType)}`}>
               {day.leaveType === 'sick' && 'Sick'}
@@ -378,8 +402,12 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     loadCalendarData().catch(err => {
       console.error('[AttendanceView] Effect error:', err);
     });
-  }, [currentMonth, currentYear, loadCalendarData]);
+  }, [currentMonth, currentYear]);
 
+  // Refresh button
+const handleRefresh = async (): Promise<void> => {
+  await loadCalendarData(true);
+};
   // Calculate counts when calendar changes
   React.useEffect(() => {
     calculateMonthlyCounts();
@@ -389,12 +417,12 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   // RENDER
   // ============================================================================
 
-  if (isLoading) {
+  if (isInitialLoad) {
     return (
       <div className={styles.viewContainer}>
         <div className={styles.dashboardHeader}>
           <h1>My Attendance</h1>
-          <p>Loading calendar data...</p>
+          <p>Loading ...</p>
         </div>
       </div>
     );
@@ -406,7 +434,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         <div className={styles.dashboardHeader}>
           <h1>My Attendance</h1>
           <p style={{ color: 'var(--danger)' }}>{error}</p>
-          <button 
+          <button
             className={`${styles.btn} ${styles.btnPrimary}`}
             onClick={() => { loadCalendarData().catch(console.error); }}
             style={{ marginTop: '1rem' }}
@@ -424,11 +452,13 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         <h1>My Attendance</h1>
         <p>Track your daily attendance and biometric records</p>
       </div>
-      
+          {isRefreshing && <div>Refreshing...</div>}
+
+
       <div className={styles.calendarContainer}>
         <div className={styles.calendarHeader}>
           <div className={styles.calendarNav}>
-            <button 
+            <button
               className={styles.navBtn}
               onClick={() => handleMonthChange(-1)}
               disabled={isLoading}
@@ -438,7 +468,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             <div className={styles.calendarMonth}>
               {getMonthName(currentMonth)} {currentYear}
             </div>
-            <button 
+            <button
               className={styles.navBtn}
               onClick={() => handleMonthChange(1)}
               disabled={isLoading}
@@ -447,14 +477,14 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             </button>
           </div>
           <div className={styles.calendarActions}>
-            <button 
+            <button
               className={`${styles.btn} ${styles.btnOutline}`}
               onClick={() => { handleDownloadReport().catch(console.error); }}
               disabled={isLoading}
             >
               Download Report
             </button>
-            <button 
+            <button
               className={`${styles.btn} ${styles.btnPrimary}`}
               onClick={() => onViewChange('regularize')}
               disabled={isLoading}
@@ -463,7 +493,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             </button>
           </div>
         </div>
-        
+
         {/* Legend with counts at top */}
         <div className={styles.calendarLegend} style={{ marginBottom: '1rem', marginTop: 0 }}>
           <div className={styles.legendItem}>
@@ -479,7 +509,9 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             <span>Absent</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`} />
+            <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`} >
+              <span className={styles.legendCount}>{monthlyCounts.holiday}</span>
+            </div>
             <span>Holiday</span>
           </div>
           <div className={styles.legendItem}>
@@ -495,15 +527,22 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             <span>Weekend</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`} />
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`} >
+              <span className={styles.legendCount}>{monthlyCounts.timesheetFilled}</span>
+            </div>
             <span>Timesheet: Filled</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`} />
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`} >
+              <span className={styles.legendCount}>{monthlyCounts.timesheetPartial}</span>
+            </div>
+
             <span>Timesheet: Partial</span>
           </div>
           <div className={styles.legendItem}>
-            <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`} />
+            <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`} >
+              <span className={styles.legendCount}>{monthlyCounts.timesheetNotFilled}</span>
+            </div>
             <span>Timesheet: Not Filled</span>
           </div>
         </div>
