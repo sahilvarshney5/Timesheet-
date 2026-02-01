@@ -121,7 +121,16 @@ const handleApprove = (request: IRegularizationRequest): void => {
   setActioningRequest(request);
   setApproveModalOpen(true);
 };
-
+const formatDateRange = (fromDate: string, toDate: string): string => {
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+    
+    if (fromDate === toDate) {
+      return from.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    
+    return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  };
 // ADD confirm approve handler
 const confirmApprove = async (): Promise<void> => {
   if (!actioningRequest) return;
@@ -208,16 +217,7 @@ const confirmReject = async (): Promise<void> => {
     return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const formatDateRange = (fromDate: string, toDate: string): string => {
-    const from = new Date(fromDate);
-    const to = new Date(toDate);
-    
-    if (fromDate === toDate) {
-      return from.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
-    
-    return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
+  
 
   if (isLoading) {
     return (
