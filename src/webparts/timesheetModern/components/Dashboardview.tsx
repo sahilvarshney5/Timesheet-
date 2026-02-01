@@ -1,7 +1,7 @@
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { DashboardService, IDashboardStats } from '../services/DashboardService';
-import { UserService, IUserPermissions } from '../services/UserService';
+import { ApprovalService } from '../services/ApprovalService';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { IEmployeeMaster } from '../models';
 
@@ -10,14 +10,13 @@ export interface IDashboardViewProps {
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
-  employeeMaster: IEmployeeMaster;  // NEW
-  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
+  employeeMaster: IEmployeeMaster;
+  userRole: 'Admin' | 'Manager' | 'Member';
 }
 
 const DashboardView: React.FC<IDashboardViewProps> = (props) => {
   const { onViewChange, spHttpClient, siteUrl, currentUserDisplayName } = props;
 
-  // State
   const [stats, setStats] = React.useState<IDashboardStats>({
     daysPresent: 0,
     hoursThisWeek: 0,
@@ -27,50 +26,69 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
     pendingRegularizations: 0
   });
   
+  const [regularizationStats, setRegularizationStats] = React.useState({
+    totalThisMonth: 0,
+    pendingCount: 0,
+    approvedCount: 0
+  });
+
   const [userRole, setUserRole] = React.useState<'Admin' | 'Manager' | 'Member'>('Member');
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Services
   const dashboardService = React.useMemo(
     () => new DashboardService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
 
-  const userService = React.useMemo(
-    () => new UserService(spHttpClient, siteUrl),
+  const approvalService = React.useMemo(
+    () => new ApprovalService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
-   const loadDashboardData = async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-    setError(null);
 
-    // Use Employee ID from props
-    const empId = props.employeeMaster.EmployeeID;
-    const userRole = props.userRole;
+  const loadDashboardData = React.useCallback(async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    console.log(`[DashboardView] Loading dashboard for Employee ID: ${empId}, Role: ${userRole}`);
+      const empId = props.employeeMaster.EmployeeID;
+      const currentUserRole = props.userRole;
 
-    // Load dashboard stats
-    const dashboardStats = await dashboardService.getDashboardStats();
+      const dashboardStats = await dashboardService.getDashboardStats();
 
-    setUserRole(userRole);
-    setStats(dashboardStats);
+      const regularizations = await approvalService.getEmployeeRegularizations(empId);
+      
+      const currentDate = new Date();
+      const currentMonth = currentDate.getMonth();
+      const currentYear = currentDate.getFullYear();
+      
+      const thisMonthRegularizations = regularizations.filter(reg => {
+        const submittedDate = new Date(reg.submittedOn);
+        return submittedDate.getMonth() === currentMonth && submittedDate.getFullYear() === currentYear;
+      });
+      
+      const pendingRegularizations = regularizations.filter(reg => reg.status === 'pending');
+      const approvedRegularizations = regularizations.filter(reg => reg.status === 'approved');
 
-  } catch (err) {
-    console.error('[DashboardView] Error loading dashboard data:', err);
-    setError('Failed to load dashboard data. Please refresh the page.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+      setUserRole(currentUserRole);
+      setStats(dashboardStats);
+      setRegularizationStats({
+        totalThisMonth: thisMonthRegularizations.length,
+        pendingCount: pendingRegularizations.length,
+        approvedCount: approvedRegularizations.length
+      });
 
-  // Load dashboard data on mount
+    } catch (err) {
+      console.error('[DashboardView] Error loading dashboard data:', err);
+      setError('Failed to load dashboard data. Please refresh the page.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [props.employeeMaster.EmployeeID, props.userRole, dashboardService, approvalService]);
+
   React.useEffect(() => {
-  void  loadDashboardData();
-  }, []);
-
+    void loadDashboardData();
+  }, [loadDashboardData]);
 
   if (isLoading) {
     return (
@@ -94,7 +112,7 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
             <p>{error}</p>
             <button 
               className={`${styles.btn} ${styles.btnPrimary}`}
-              onClick={loadDashboardData}
+              onClick={() => { loadDashboardData().catch(console.error); }}
               style={{ marginTop: '1rem' }}
             >
               Retry
@@ -123,10 +141,10 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
               <div className={styles.welcomeStatValue}>{stats.hoursThisWeek}</div>
               <div className={styles.welcomeStatLabel}>Hours This Week</div>
             </div>
-            {/* <div className={styles.welcomeStat}>
-              <div className={styles.welcomeStatValue}>{stats.leaveDaysLeft}</div>
-              <div className={styles.welcomeStatLabel}>Leave Days Left</div>
-            </div> */}
+            <div className={styles.welcomeStat}>
+              <div className={styles.welcomeStatValue}>{regularizationStats.totalThisMonth}</div>
+              <div className={styles.welcomeStatLabel}>Regularization This Month</div>
+            </div>
             {(userRole === 'Admin' || userRole === 'Manager') && (
               <div className={styles.welcomeStat}>
                 <div className={styles.welcomeStatValue}>{stats.pendingApprovals}</div>
@@ -137,7 +155,6 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
         </div>
 
         <div className={styles.actionGrid}>
-          {/* Attendance Card */}
           <div className={`${styles.actionCard} ${styles.attendance}`} onClick={() => onViewChange('attendance')}>
             <div className={styles.actionIcon}>📅</div>
             <div className={styles.actionTitle}>Attendance</div>
@@ -148,13 +165,12 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
                 <div className={styles.actionStatLabel}>Days Present</div>
               </div>
               <div className={styles.actionStat}>
-                <div className={styles.actionStatValue}>{stats.pendingRegularizations}</div>
+                <div className={styles.actionStatValue}>{regularizationStats.pendingCount}</div>
                 <div className={styles.actionStatLabel}>Pending AR</div>
               </div>
             </div>
           </div>
 
-          {/* Timesheet Card */}
           <div className={`${styles.actionCard} ${styles.timesheet}`} onClick={() => onViewChange('timesheet')}>
             <div className={styles.actionIcon}>⏱️</div>
             <div className={styles.actionTitle}>Timesheet Entries</div>
@@ -171,24 +187,22 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
             </div>
           </div>
 
-          {/* Regularization Card */}
           <div className={`${styles.actionCard} ${styles.rationalize}`} onClick={() => onViewChange('regularize')}>
             <div className={styles.actionIcon}>📝</div>
             <div className={styles.actionTitle}>Attendance Regularization</div>
             <div className={styles.actionDesc}>Submit requests to regularize missing or incorrect attendance</div>
             <div className={styles.actionStats}>
               <div className={styles.actionStat}>
-                <div className={styles.actionStatValue}>{stats.pendingRegularizations}</div>
+                <div className={styles.actionStatValue}>{regularizationStats.totalThisMonth}</div>
                 <div className={styles.actionStatLabel}>This Month</div>
               </div>
               <div className={styles.actionStat}>
-                <div className={styles.actionStatValue}>{stats.pendingRegularizations}</div>
+                <div className={styles.actionStatValue}>{regularizationStats.pendingCount}</div>
                 <div className={styles.actionStatLabel}>Pending</div>
               </div>
             </div>
           </div>
 
-          {/* Approval Card - Only show for Managers/Admins */}
           {(userRole === 'Admin' || userRole === 'Manager') && (
             <div className={`${styles.actionCard} ${styles.approval}`} onClick={() => onViewChange('approval')}>
               <div className={styles.actionIcon}>✓</div>
