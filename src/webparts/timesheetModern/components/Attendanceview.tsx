@@ -28,44 +28,15 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
- 
 
-
-  // ADD new state for monthly counts
-const [monthlyCounts, setMonthlyCounts] = React.useState({
-  present: 0,
-  leave: 0,
-  absent: 0,
-  weekend: 0,
-  holiday: 0
-});
-
-// ADD function to calculate monthly counts
-const calculateMonthlyCounts = React.useCallback((): void => {
-  const counts = {
+  // Monthly counts state
+  const [monthlyCounts, setMonthlyCounts] = React.useState({
     present: 0,
     leave: 0,
     absent: 0,
     weekend: 0,
     holiday: 0
-  };
-
-  calendarDays.forEach(day => {
-    if (day.status === 'present') counts.present++;
-    else if (day.status === 'leave') counts.leave++;
-    else if (day.status === 'absent') counts.absent++;
-    else if (day.status === 'weekend') counts.weekend++;
-    else if (day.status === 'holiday') counts.holiday++;
   });
-
-  setMonthlyCounts(counts);
-}, [calendarDays]);
-
-// Call it when calendar data loads
-React.useEffect(() => {
-  calculateMonthlyCounts();
-}, [calendarDays]);
-
 
   // ============================================================================
   // HELPER FUNCTIONS - DEFINED FIRST BEFORE USAGE
@@ -171,6 +142,27 @@ React.useEffect(() => {
     };
     return legendMap[type] || '';
   };
+
+  // Calculate monthly counts
+  const calculateMonthlyCounts = React.useCallback((): void => {
+    const counts = {
+      present: 0,
+      leave: 0,
+      absent: 0,
+      weekend: 0,
+      holiday: 0
+    };
+
+    calendarDays.forEach(day => {
+      if (day.status === 'present') counts.present++;
+      else if (day.status === 'leave') counts.leave++;
+      else if (day.status === 'absent') counts.absent++;
+      else if (day.status === 'weekend') counts.weekend++;
+      else if (day.status === 'holiday') counts.holiday++;
+    });
+
+    setMonthlyCounts(counts);
+  }, [calendarDays]);
 
   // ============================================================================
   // DATA LOADING FUNCTIONS
@@ -279,11 +271,12 @@ React.useEffect(() => {
       message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
     }
 
+    // Only prompt for timesheet if present and not completed
     if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
-      
-      message += `\n Would you like to fill timesheet for this day?`;
+      message += `\nWould you like to fill timesheet for this day?`;
       
       if (confirm(message)) {
+        // Navigate to timesheet view (simple navigation without data passing)
         onViewChange('timesheet');
       }
     } else {
@@ -309,6 +302,7 @@ React.useEffect(() => {
     if (calendarDays.length > 0) {
       const firstDay = new Date(calendarDays[0].date);
       let startDay = firstDay.getDay();
+      // Fix: Monday = 0, Sunday = 6
       startDay = startDay === 0 ? 6 : startDay - 1;
       
       for (let i = 0; i < startDay; i++) {
@@ -385,6 +379,11 @@ React.useEffect(() => {
       console.error('[AttendanceView] Effect error:', err);
     });
   }, [currentMonth, currentYear, loadCalendarData]);
+
+  // Calculate counts when calendar changes
+  React.useEffect(() => {
+    calculateMonthlyCounts();
+  }, [calendarDays, calculateMonthlyCounts]);
 
   // ============================================================================
   // RENDER
@@ -464,35 +463,37 @@ React.useEffect(() => {
             </button>
           </div>
         </div>
-          <div className={styles.calendarLegend} style={{ marginBottom: '1rem', marginTop: 0 }}>
-           <div className={styles.legendItem}>
-          <div className={`${styles.legendColor} ${getLegendColorClass('present')}`}>
-            <span className={styles.legendCount}>{monthlyCounts.present}</span>
-          </div>
-          <span>Present</span>
-        </div>
+        
+        {/* Legend with counts at top */}
+        <div className={styles.calendarLegend} style={{ marginBottom: '1rem', marginTop: 0 }}>
           <div className={styles.legendItem}>
-          <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`}>
-            <span className={styles.legendCount}>{monthlyCounts.absent}</span>
+            <div className={`${styles.legendColor} ${getLegendColorClass('present')}`}>
+              <span className={styles.legendCount}>{monthlyCounts.present}</span>
+            </div>
+            <span>Present</span>
           </div>
-          <span>Absent</span>
-        </div>
+          <div className={styles.legendItem}>
+            <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`}>
+              <span className={styles.legendCount}>{monthlyCounts.absent}</span>
+            </div>
+            <span>Absent</span>
+          </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`} />
             <span>Holiday</span>
           </div>
           <div className={styles.legendItem}>
-          <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`}>
-            <span className={styles.legendCount}>{monthlyCounts.leave}</span>
+            <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`}>
+              <span className={styles.legendCount}>{monthlyCounts.leave}</span>
+            </div>
+            <span>On Leave</span>
           </div>
-          <span>On Leave</span>
-        </div>
-           <div className={styles.legendItem}>
-          <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`}>
-            <span className={styles.legendCount}>{monthlyCounts.weekend}</span>
+          <div className={styles.legendItem}>
+            <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`}>
+              <span className={styles.legendCount}>{monthlyCounts.weekend}</span>
+            </div>
+            <span>Weekend</span>
           </div>
-          <span>Weekend</span>
-        </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`} />
             <span>Timesheet: Filled</span>
@@ -506,14 +507,12 @@ React.useEffect(() => {
             <span>Timesheet: Not Filled</span>
           </div>
         </div>
+
+        {/* Calendar Grid */}
         <div className={styles.calendarGrid}>
           {generateCalendarGrid()}
         </div>
-        
-      
       </div>
-
-
     </div>
   );
 };

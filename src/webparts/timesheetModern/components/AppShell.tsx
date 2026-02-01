@@ -18,6 +18,7 @@ export interface IAppShellState {
   isLoading: boolean;
   error: string | null;
   userRole: 'Admin' | 'Manager' | 'Member';
+  navigationData?: any; // Optional navigation context for passing data between views
 }
 
 /**
@@ -76,7 +77,8 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     employeeMaster: null,
     isLoading: true,
     error: null,
-    userRole: 'Member'
+    userRole: 'Member',
+    navigationData: undefined
   });
 
   // Employee Service
@@ -95,50 +97,52 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
       // Don't block app initialization on URL enforcement errors
     });
   }, []); // Run only once on mount
-// ============================================================================
-// GLOBAL CSS OVERRIDE - Remove SharePoint Chrome
-// ============================================================================
-React.useEffect(() => {
-  // Inject global CSS to remove SharePoint chrome
-  const styleId = 'spfx-chrome-remover';
-  
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.innerHTML = `
-      #SuiteNavWrapper,
-      #suiteBarLeft,
-      #suiteBar,
-      .ms-HubNav,
-      div[data-automation-id="pageHeader"],
-      .ms-CommandBar,
-      #DeltaPlaceHolderPageTitleInTitleArea,
-      footer,
-      .ms-footer {
-        display: none !important;
-        height: 0 !important;
-        visibility: hidden !important;
-      }
-      
-      #workbenchPageContent,
-      .SPPageChrome,
-      .SPCanvas,
-      .CanvasZone,
-      .CanvasSection,
-      div[data-automation-id="CanvasControl"],
-      div[data-sp-webpart] {
-        padding: 0 !important;
-        margin: 0 !important;
-      }
-      
-      html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-}, []); // Run once on mount
+
+  // ============================================================================
+  // GLOBAL CSS OVERRIDE - Remove SharePoint Chrome
+  // ============================================================================
+  React.useEffect(() => {
+    // Inject global CSS to remove SharePoint chrome
+    const styleId = 'spfx-chrome-remover';
+    
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.innerHTML = `
+        #SuiteNavWrapper,
+        #suiteBarLeft,
+        #suiteBar,
+        .ms-HubNav,
+        div[data-automation-id="pageHeader"],
+        .ms-CommandBar,
+        #DeltaPlaceHolderPageTitleInTitleArea,
+        footer,
+        .ms-footer {
+          display: none !important;
+          height: 0 !important;
+          visibility: hidden !important;
+        }
+        
+        #workbenchPageContent,
+        .SPPageChrome,
+        .SPCanvas,
+        .CanvasZone,
+        .CanvasSection,
+        div[data-automation-id="CanvasControl"],
+        div[data-sp-webpart] {
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []); // Run once on mount
+
   // ============================================================================
   // EMPLOYEE MASTER LOADING
   // ============================================================================
@@ -193,7 +197,7 @@ React.useEffect(() => {
   // Load employee master on mount - THIS IS CRITICAL
   React.useEffect(() => {
     void loadEmployeeMaster();
-  }, []);
+  }, [loadEmployeeMaster]);
 
   // ============================================================================
   // EVENT HANDLERS
@@ -201,9 +205,8 @@ React.useEffect(() => {
   const handleViewChange = React.useCallback((viewName: string, data?: any): void => {
     setState(prev => ({
       ...prev,
-      activeView: viewName
-          navigationData: data // NEW: Store navigation data
-
+      activeView: viewName,
+      navigationData: data // Store navigation data for passing context between views
     }));
     
     // Scroll to top when changing views
@@ -244,7 +247,7 @@ React.useEffect(() => {
       case 'attendance':
         return <AttendanceView {...viewProps} />;
       case 'timesheet':
-        return <TimesheetView {...viewProps} />;
+        return <TimesheetView {...viewProps} navigationData={state.navigationData} />;
       case 'regularize':
         return <RegularizationView {...viewProps} />;
       case 'approval':
