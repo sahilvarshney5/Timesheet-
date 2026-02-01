@@ -194,7 +194,7 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
     } else {
       setIsInitialLoad(true);
     }
-      // setIsLoading(true);
+      setIsLoading(true);
       setError(null);
 
       const empId = props.employeeMaster.EmployeeID;
@@ -215,7 +215,8 @@ const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
       setError('Failed to load calendar data. Please try again.');
     } finally {
   setIsInitialLoad(false);
-    setIsRefreshing(false);    }
+    setIsRefreshing(false);  
+  setIsLoading(false);  }
   }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth]);
 
   const handleDownloadReport = async (): Promise<void> => {

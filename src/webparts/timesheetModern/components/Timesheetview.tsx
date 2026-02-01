@@ -526,7 +526,7 @@ return {
     return checkIsToday(dateString);
   };
 
-  const { totalHours, daysWithEntries, totalDays } = calculateWeekTotals();
+const { totalHours, availableHours, daysWithEntries, totalDays } = calculateWeekTotals();
   const weekDays = getCurrentWeekDays();
   const weekRangeText = getWeekRangeText();
 
@@ -632,6 +632,8 @@ return {
                           <button 
                             className={`${styles.entryActionBtn} ${styles.copyBtn}`}
                             onClick={() => handleCopyEntry(entry)}
+                                                          disabled={isReadOnly()} // DISABLE if submitted
+
                           >
                             <span>📋</span> Copy
                           </button>

@@ -187,22 +187,22 @@ export function getWeekDays(dateInput: string | Date): string[] {
   return days;
 }
 
-/**
- * Check if date is weekend (Saturday or Sunday)
- * @param dateInput Date to check
- * @returns True if weekend
- */
-export function isWeekend(dateInput: string | Date | null | undefined): boolean {
-  if (!dateInput) return false;
+// /**
+//  * Check if date is weekend (Saturday or Sunday)
+//  * @param dateInput Date to check
+//  * @returns True if weekend
+//  */
+// export function isWeekend(dateInput: string | Date | null | undefined): boolean {
+//   if (!dateInput) return false;
   
-  const normalized = normalizeDateToString(dateInput);
-  if (!normalized) return false;
+//   const normalized = normalizeDateToString(dateInput);
+//   if (!normalized) return false;
   
-  const date = new Date(normalized + 'T00:00:00');
-  const dayOfWeek = date.getDay();
+//   const date = new Date(normalized + 'T00:00:00');
+//   const dayOfWeek = date.getDay();
   
-  return dayOfWeek === 0 || dayOfWeek === 6;
-}
+//   return dayOfWeek === 0 || dayOfWeek === 6;
+// }
 
 /**
  * Add days to a date

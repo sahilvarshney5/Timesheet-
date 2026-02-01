@@ -6,7 +6,7 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
 import { SharePointConfig, getListInternalName, getColumnInternalName, ODataHelpers } from '../config/SharePointConfig';
 import { IPunchData, ILeaveData, ICalendarDay, ITimesheetDay } from '../models';
-import { isWeekendDay } from '../config/WorkWeekConfig';
+import { isWeekendDay as configIsWeekend } from '../config/WorkWeekConfig';
 
 export class AttendanceService {
   private httpService: HttpClientService;
@@ -247,7 +247,7 @@ private mapToPunchData(spItem: any): IPunchData {
         let leaveType: 'sick' | 'casual' | 'earned' | undefined = undefined;
         
         // Check if weekend
-        const isWeekendDay = isWeekendDay(date);
+const isWeekendDay = configIsWeekend(date); // ✅ Use imported function
         if (isWeekendDay) {
           status = 'weekend';
         }
