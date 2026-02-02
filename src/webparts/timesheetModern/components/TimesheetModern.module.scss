@@ -1835,3 +1835,112 @@
     margin-bottom: 1rem;
   }
 }
+
+// ============================================================================
+// MISSING CSS STYLES - ADD TO TimesheetModern.module.scss
+// ============================================================================
+// Add these styles to fix the TypeScript errors in Attendanceview.tsx
+// Location: src/webparts/timesheetModern/components/TimesheetModern.module.scss
+// ============================================================================
+
+// ✅ ADD THIS SECTION AFTER THE EXISTING .calendarDay STYLES
+
+.calendarDay {
+  // ... existing styles ...
+  
+  // ✅ NEW: Regularized status style
+  &.regularized {
+    background: #E3F2FD; // Light blue background
+    border-color: #2196F3; // Blue border
+    position: relative;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: #2196F3;
+      border-radius: 4px 4px 0 0;
+    }
+  }
+  
+  // ✅ ENHANCED: Present with regularized combination
+  &.present.regularized {
+    background: linear-gradient(135deg, #E3F2FD 0%, #F0F9F0 100%);
+    border-color: #2196F3;
+    
+    .dayStatus {
+      color: #2196F3;
+      font-weight: 700;
+    }
+  }
+}
+
+// ✅ ADD THIS TO LEGEND SECTION
+
+.legendColor {
+  // ... existing styles ...
+  
+  // ✅ NEW: Regularized legend color
+  &.regularized {
+    background: #E3F2FD;
+    border-color: #2196F3;
+  }
+}
+
+// ============================================================================
+// ALTERNATIVE: If you want a more distinct regularized appearance
+// ============================================================================
+
+/* 
+// Option 2: Striped pattern for regularized days
+.calendarDay.regularized {
+  background: repeating-linear-gradient(
+    45deg,
+    #E3F2FD,
+    #E3F2FD 10px,
+    #BBDEFB 10px,
+    #BBDEFB 20px
+  );
+  border: 2px solid #2196F3;
+}
+*/
+
+/* 
+// Option 3: Badge/indicator for regularized
+.calendarDay.regularized::after {
+  content: 'R';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: #2196F3;
+  color: white;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+*/
+
+// ============================================================================
+// SUMMARY OF CHANGES
+// ============================================================================
+/*
+1. Added .regularized class for calendar days that have regularization raised
+2. Added .present.regularized combination for days that are both present and regularized
+3. Added .legendColor.regularized for the legend indicator
+4. Added visual indicators (border, background color) to distinguish regularized days
+5. Optional badge/stripe patterns provided as alternatives
+
+These styles will:
+- Fix TypeScript error: Property 'regularized' does not exist
+- Provide clear visual distinction for regularized attendance days
+- Match the existing design system (colors, spacing, etc.)
+*/

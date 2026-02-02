@@ -10,8 +10,8 @@ export interface IRegularizationViewProps {
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
-   employeeMaster: IEmployeeMaster;  // NEW
-  userRole: 'Admin' | 'Manager' | 'Member';  // NEW
+  employeeMaster: IEmployeeMaster;
+  userRole: 'Admin' | 'Manager' | 'Member';
 }
 
 const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
@@ -30,208 +30,196 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  
+  // ✅ NEW: Calculate max allowed date (yesterday)
+  const getMaxAllowedDate = (): string => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  };
 
- const loadRegularizationHistory = React.useCallback(async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-    setError(null);
+  const loadRegularizationHistory = React.useCallback(async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    // Get Employee ID from props
-    const empId = props.employeeMaster.EmployeeID;
+      const empId = props.employeeMaster.EmployeeID;
 
-    console.log(`[RegularizationView] Loading history for Employee ID: ${empId}`);
+      console.log(`[RegularizationView] Loading history for Employee ID: ${empId}`);
 
-    // Load regularization history from SharePoint
-    const requests = await approvalService.getEmployeeRegularizations(empId);
-    
-    setHistory(requests);
-    console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
+      const requests = await approvalService.getEmployeeRegularizations(empId);
+      
+      setHistory(requests);
+      console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
 
-  } catch (err) {
-    console.error('[RegularizationView] Error loading regularization history:', err);
-    setError('Failed to load regularization history. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
+    } catch (err) {
+      console.error('[RegularizationView] Error loading regularization history:', err);
+      setError('Failed to load regularization history. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [props.employeeMaster.EmployeeID, approvalService]);
-// Load data on mount
+
   React.useEffect(() => {
-   void loadRegularizationHistory();
+    void loadRegularizationHistory();
   }, []);
+
   const handleTypeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRegularizationType(event.target.value);
   };
 
- const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
-  event.preventDefault();
-  
-  if (isSaving) return;
-  
-  try {
-    setIsSaving(true);
-    setError(null);
-
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    
-    const fromDate = formData.get('fromDate') as string;
-    const toDate = formData.get('toDate') as string;
-    const category = formData.get('category') as string;
-    const reason = formData.get('reason') as string;
-    const timeStart = formData.get('timeStart') as string;
-    const timeEnd = formData.get('timeEnd') as string;
-    
-    /**
- * Validate date range for regularization
- * Prevent weekends, holidays, and leave days
- */
-const validateDateRange = async (fromDate: string, toDate: string): Promise<{ isValid: boolean; reason: string }> => {
-  try {
-    // Check each date in range
-    const start = new Date(fromDate);
-    const end = new Date(toDate);
-    
-    const invalidDates: string[] = [];
-    
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dateString = d.toISOString().split('T')[0];
-      const dayOfWeek = d.getDay();
+  /**
+   * ✅ ENHANCED: Validate date range for regularization
+   * Prevent weekends, holidays, leave days, FUTURE dates, and TODAY
+   */
+  const validateDateRange = async (fromDate: string, toDate: string): Promise<{ isValid: boolean; reason: string }> => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       
-      // Check weekend
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        invalidDates.push(`${dateString} (Weekend)`);
-        continue;
+      const start = new Date(fromDate);
+      start.setHours(0, 0, 0, 0);
+      
+      const end = new Date(toDate);
+      end.setHours(0, 0, 0, 0);
+      
+      const invalidDates: string[] = [];
+      
+      // ✅ CHECK 1: Prevent FUTURE dates
+      if (start >= today) {
+        return {
+          isValid: false,
+          reason: `Cannot raise regularization for today or future dates.\n\nFrom Date: ${fromDate}\n\nRegularization can only be raised for past dates (yesterday and earlier).`
+        };
       }
       
-      // TODO: Check holiday list
-      // const isHoliday = await checkHoliday(dateString);
-      // if (isHoliday) {
-      //   invalidDates.push(`${dateString} (Holiday)`);
-      //   continue;
-      // }
+      if (end >= today) {
+        return {
+          isValid: false,
+          reason: `Cannot raise regularization for today or future dates.\n\nTo Date: ${toDate}\n\nRegularization can only be raised for past dates (yesterday and earlier).`
+        };
+      }
       
-      // TODO: Check approved leaves
-      // const hasLeave = await checkLeave(dateString, props.employeeMaster.EmployeeID);
-      // if (hasLeave) {
-      //   invalidDates.push(`${dateString} (On Leave)`);
-      // }
+      // ✅ CHECK 2: Loop through date range for other validations
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dateString = d.toISOString().split('T')[0];
+        const dayOfWeek = d.getDay();
+        
+        // Check weekend
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          invalidDates.push(`${dateString} (Weekend)`);
+          continue;
+        }
+        
+        // TODO: Check holiday list
+        // const isHoliday = await checkHoliday(dateString);
+        // if (isHoliday) {
+        //   invalidDates.push(`${dateString} (Holiday)`);
+        //   continue;
+        // }
+        
+        // TODO: Check approved leaves
+        // const hasLeave = await checkLeave(dateString, props.employeeMaster.EmployeeID);
+        // if (hasLeave) {
+        //   invalidDates.push(`${dateString} (On Leave)`);
+        // }
+      }
+      
+      if (invalidDates.length > 0) {
+        return {
+          isValid: false,
+          reason: `The following dates are not eligible for regularization:\n${invalidDates.join('\n')}`
+        };
+      }
+      
+      return { isValid: true, reason: '' };
+      
+    } catch (error) {
+      console.error('[RegularizationView] Validation error:', error);
+      return { isValid: true, reason: '' }; // Allow on error (fail-safe)
     }
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
     
-    if (invalidDates.length > 0) {
-      return {
-        isValid: false,
-        reason: `The following dates are not eligible for regularization:\n${invalidDates.join('\n')}`
+    if (isSaving) return;
+    
+    try {
+      setIsSaving(true);
+      setError(null);
+
+      const form = event.currentTarget;
+      const formData = new FormData(form);
+      
+      const fromDate = formData.get('fromDate') as string;
+      const toDate = formData.get('toDate') as string;
+      const category = formData.get('category') as string;
+      const reason = formData.get('reason') as string;
+      const timeStart = formData.get('timeStart') as string;
+      const timeEnd = formData.get('timeEnd') as string;
+      
+      // ✅ VALIDATION 1: Date range check
+      if (new Date(toDate) < new Date(fromDate)) {
+        alert('To Date cannot be earlier than From Date');
+        setIsSaving(false);
+        return;
+      }
+      
+      // ✅ VALIDATION 2: Check for weekends/holidays/leaves/FUTURE/TODAY
+      const dateRangeValid = await validateDateRange(fromDate, toDate);
+      if (!dateRangeValid.isValid) {
+        alert(`Cannot submit regularization:\n\n${dateRangeValid.reason}`);
+        setIsSaving(false);
+        return;
+      }
+      
+      // ✅ VALIDATION 3: Time-based checks
+      if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
+        alert('Please fill in all time-based fields.');
+        setIsSaving(false);
+        return;
+      }
+      
+      if (regularizationType === 'time_based' && timeStart >= timeEnd) {
+        alert('End Time must be after Start Time.');
+        setIsSaving(false);
+        return;
+      }
+      
+      const empId = props.employeeMaster.EmployeeID;
+      const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
+      const enhancedReason = `[${categoryFormatted}] ${reason}`;
+
+      const newRequest: Partial<IAttendanceRegularization> = {
+        EmployeeID: empId,
+        RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
+        StartDate: fromDate,
+        EndDate: toDate,
+        ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
+        ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
+        Reason: enhancedReason,
+        Status: 'Pending' as const
       };
-    }
-    
-    return { isValid: true, reason: '' };
-    
-  } catch (error) {
-    console.error('[RegularizationView] Validation error:', error);
-    return { isValid: true, reason: '' }; // Allow on error (fail-safe)
-  }
-};
-    // Validation
-    if (new Date(toDate) < new Date(fromDate)) {
-      alert('To Date cannot be earlier than From Date');
-      setIsSaving(false);
-      return;
-    }
-    // ✅ NEW: Check for weekends/holidays/leaves
+      
+      await approvalService.submitRegularizationRequest(newRequest);
+      
+      alert(`Regularization request submitted successfully!\n\nType: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\nFrom: ${fromDate}\nTo: ${toDate}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`);
 
-    const dateRangeValid = await validateDateRange(fromDate, toDate);
-    if (!dateRangeValid.isValid) {
-      alert(`Cannot submit regularization:\n${dateRangeValid.reason}`);
-      setIsSaving(false);
-      return;
-    }
-    
-    if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
-      alert('Please fill in all time-based fields.');
-      setIsSaving(false);
-      return;
-    }
-    
-    if (regularizationType === 'time_based' && timeStart >= timeEnd) {
-      alert('End Time must be after Start Time.');
-      setIsSaving(false);
-      return;
-    }
-    
-    // Get Employee ID from props
-    const empId = props.employeeMaster.EmployeeID;
-        const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
-    const enhancedReason = `[${categoryFormatted}] ${reason}`;
-
-    // Create request object
-    const newRequest: Partial<IAttendanceRegularization> = {
-      EmployeeID: empId,  // Use Employee ID (R0398)
-      RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
-      StartDate: fromDate,
-      EndDate: toDate,
-      ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
-      ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
-      Reason: enhancedReason,
-      Status: 'Pending' as const
-    };
-    
-    // Submit to SharePoint
-     await approvalService.submitRegularizationRequest(newRequest);
-        alert(`Regularization request submitted successfully!\n\nType: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\nFrom: ${fromDate}\nTo: ${toDate}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`);
-
-    // // Add to local history
-    // const displayRequest: IRegularizationRequest = {
-    //   id: createdRequest.Id,
-    //   employeeId: empId,
-    //   employeeName: props.employeeMaster.EmployeeDisplayName || props.currentUserDisplayName,
-    //   requestType: regularizationType as 'day_based' | 'time_based',
-    //   category: category as IRegularizationRequest['category'],  // FIXED: Proper type
-    //   fromDate: fromDate,
-    //   toDate: toDate,
-    //   startTime: regularizationType === 'time_based' ? timeStart : undefined,
-    //   endTime: regularizationType === 'time_based' ? timeEnd : undefined,
-    //   reason: reason,
-    //   status: 'pending',
-    //   submittedOn: new Date().toISOString().split('T')[0]
-    // };
-    
-    // setHistory(prev => [displayRequest, ...prev]);
-    
-    // const categoryText = category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    
-    // let successMessage = `Regularization request submitted successfully!\n\n`;
-    // successMessage += `Type: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
-    // successMessage += `From: ${fromDate}\n`;
-    // successMessage += `To: ${toDate}\n`;
-    // successMessage += `Category: ${categoryText}\n`;
-    
-    // if (regularizationType === 'time_based') {
-    //   successMessage += `Time: ${timeStart} to ${timeEnd}\n`;
-    // }
-    
-    // successMessage += `Reason: ${reason}\n`;
-    // successMessage += `Status: Pending Approval\n`;
-    // successMessage += `Note: Your manager will review and approve this request.`;
-    
-    // alert(successMessage);
-    
-    // Reset form
-    form.reset();
-    setRegularizationType('day_based');
-      // ✅ Reload history after successful submission
-    await loadRegularizationHistory();
-    // Navigate to dashboard
-    onViewChange('dashboard');
+      form.reset();
+      setRegularizationType('day_based');
+      
+      await loadRegularizationHistory();
+      
+      onViewChange('dashboard');
    
-
-  } catch (err) {
-    console.error('[RegularizationView] Error submitting regularization:', err);
-    alert('Failed to submit regularization request. Please try again.');
-  } finally {
-    setIsSaving(false);
-  }
-};
+    } catch (err) {
+      console.error('[RegularizationView] Error submitting regularization:', err);
+      alert('Failed to submit regularization request. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleView = React.useCallback((request: IRegularizationRequest): void => {
     const fromDate = new Date(request.fromDate);
@@ -276,39 +264,37 @@ const validateDateRange = async (fromDate: string, toDate: string): Promise<{ is
   }, []);
 
   const handleRecall = React.useCallback(async (requestId: number): Promise<void> => {
-      const request = history.find(r => r.id === requestId);
-if (!request) return;
+    const request = history.find(r => r.id === requestId);
+    if (!request) return;
 
-     const confirmMessage = request.status === 'approved' 
-    ? 'Are you sure you want to recall this approved regularization request? It will be moved back to Pending status.'
-    : 'Are you sure you want to recall this pending regularization request? It will be moved back to Pending status.';
-  
-  if (!confirm(confirmMessage)) {
-    return;
-  }
+    const confirmMessage = request.status === 'approved' 
+      ? 'Are you sure you want to recall this approved regularization request? It will be moved back to Pending status.'
+      : 'Are you sure you want to recall this pending regularization request? It will be moved back to Pending status.';
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
     try {
-          setIsLoading(true);
-    await approvalService.recallRegularization(requestId);
+      setIsLoading(true);
+      await approvalService.recallRegularization(requestId);
 
-      // Update local state
-    setHistory(prev => prev.map(req => 
-      req.id === requestId 
-        ? { ...req, status: 'pending' as const }
-        : req
-    ));
-    
-    alert('Regularization request recalled successfully and moved to Pending status.');
-    
-    // Reload to get fresh data
-    await loadRegularizationHistory();
+      setHistory(prev => prev.map(req => 
+        req.id === requestId 
+          ? { ...req, status: 'pending' as const }
+          : req
+      ));
+      
+      alert('Regularization request recalled successfully and moved to Pending status.');
+      
+      await loadRegularizationHistory();
     } catch (err) {
       console.error('[RegularizationView] Error recalling request:', err);
       alert('Failed to recall regularization request. Please try again.');
-    }finally {
-    setIsLoading(false);
-  }
-}, [history, approvalService, loadRegularizationHistory]);
-
+    } finally {
+      setIsLoading(false);
+    }
+  }, [history, approvalService, loadRegularizationHistory]);
 
   const handleCancel = async (requestId: number): Promise<void> => {
     if (!confirm('Are you sure you want to cancel this approved regularization request?')) {
@@ -316,7 +302,6 @@ if (!request) return;
     }
 
     try {
-      // TODO: Implement cancel functionality
       setHistory(prev => prev.map(req => 
         req.id === requestId 
           ? { ...req, status: 'rejected' as const }
@@ -332,7 +317,7 @@ if (!request) return;
 
   const handleRefresh = React.useCallback((): void => {
     void loadRegularizationHistory();
-  },[loadRegularizationHistory]);
+  }, [loadRegularizationHistory]);
 
   const formatCategoryText = (category: string): string => {
     return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -378,11 +363,14 @@ if (!request) return;
     );
   }
 
+  // ✅ Calculate max date (yesterday)
+  const maxDate = getMaxAllowedDate();
+
   return (
     <div className={styles.viewContainer}>
       <div className={styles.dashboardHeader}>
         <h1>Attendance Regularization</h1>
-        <p>Submit requests to regularize your attendance</p>
+        <p>Submit requests to regularize your attendance (past dates only)</p>
       </div>
       
       <div className={styles.formContainer}>
@@ -413,6 +401,19 @@ if (!request) return;
             </label>
           </div>
           
+          {/* ✅ WARNING MESSAGE */}
+          <div style={{ 
+            background: '#FFF3E0', 
+            border: '1px solid #FFA726', 
+            borderRadius: '6px', 
+            padding: '0.75rem', 
+            marginBottom: '1rem',
+            fontSize: 'var(--font-sm)',
+            color: '#E65100'
+          }}>
+            <strong>⚠️ Important:</strong> Regularization can only be raised for <strong>past dates</strong> (yesterday and earlier). You cannot raise regularization for today or future dates.
+          </div>
+          
           <div className={styles.formRow3}>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>From Date *</label>
@@ -420,7 +421,7 @@ if (!request) return;
                 type="date" 
                 name="fromDate"
                 className={styles.formInput} 
-                defaultValue={new Date().toISOString().split('T')[0]}
+                max={maxDate}
                 disabled={isSaving}
                 required  
               />
@@ -431,7 +432,7 @@ if (!request) return;
                 type="date" 
                 name="toDate"
                 className={styles.formInput} 
-                defaultValue={new Date().toISOString().split('T')[0]}
+                max={maxDate}
                 disabled={isSaving}
                 required  
               />
@@ -557,22 +558,21 @@ if (!request) return;
                   </td>
                   <td>{new Date(request.submittedOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
                   <td>
-          <button 
-            className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
-            onClick={() => handleView(request)}
-          >
-            View
-          </button>
-          {/* ✅ Show Recall for both Pending AND Approved */}
-          {(request.status === 'pending' || request.status === 'approved') && (
-            <button 
-              className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-              onClick={() => handleRecall(request.id!)}
-            >
-              Recall
-            </button>
-          )}
-        </td>
+                    <button 
+                      className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
+                      onClick={() => handleView(request)}
+                    >
+                      View
+                    </button>
+                    {(request.status === 'pending' || request.status === 'approved') && (
+                      <button 
+                        className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
+                        onClick={() => handleRecall(request.id!)}
+                      >
+                        Recall
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
