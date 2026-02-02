@@ -3,6 +3,7 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
 import { TimesheetService } from '../services/TimesheetService';
+import { ApprovalService } from '../services/ApprovalService';
 import { IEmployeeMaster, ITimesheetDay } from '../models';
 
 export interface IAttendanceViewProps {
@@ -99,7 +100,8 @@ const getStatusText = (status: string): string => {
     'holiday': 'Holiday',
     'leave': 'On Leave',
     'weekend': 'Weekend',
-    'future': 'Future Date'
+    'future': 'Future Date',
+    'regularized': 'Regularized'
   };
   return statusMap[status] || status;
 };
@@ -135,9 +137,15 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     [spHttpClient, siteUrl]
   );
 
+  const approvalService = React.useMemo(
+    () => new ApprovalService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
+
   const [currentMonth, setCurrentMonth] = React.useState<number>(new Date().getMonth());
   const [currentYear, setCurrentYear] = React.useState<number>(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
+  const [regularizedDates, setRegularizedDates] = React.useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = React.useState<boolean>(true);
@@ -150,6 +158,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     weekend: 0,
     holiday: 0,
     future: 0,
+    regularized: 0,
     timesheetFilled: 0,
     timesheetPartial: 0,
     timesheetNotFilled: 0
@@ -191,6 +200,33 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     }
   }, [props.employeeMaster.EmployeeID, timesheetService]);
 
+  const getRegularizedDatesForMonth = React.useCallback(async (): Promise<Set<string>> => {
+    try {
+      const empId = props.employeeMaster.EmployeeID;
+      const regularizations = await approvalService.getEmployeeRegularizations(empId);
+      
+      const approvedDates = new Set<string>();
+      regularizations.forEach(reg => {
+        if (reg.status === 'approved' || reg.status === 'pending') {
+          const fromDate = new Date(reg.fromDate);
+          const toDate = new Date(reg.toDate);
+          
+          const currentDate = new Date(fromDate);
+          while (currentDate <= toDate) {
+            const dateStr = currentDate.toISOString().split('T')[0];
+            approvedDates.add(dateStr);
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+        }
+      });
+      
+      return approvedDates;
+    } catch (error) {
+      console.error('[AttendanceView] Error getting regularized dates:', error);
+      return new Set();
+    }
+  }, [props.employeeMaster.EmployeeID, approvalService]);
+
   const loadCalendarData = React.useCallback(async (isRefresh = false): Promise<void> => {
     try {
       if (isRefresh) {
@@ -202,8 +238,13 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       setError(null);
 
       const empId = props.employeeMaster.EmployeeID;
-      const calendar = await attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1);
-      const timesheetEntries = await getTimesheetEntriesForMonth(currentYear, currentMonth);
+      const [calendar, timesheetEntries, regularizedDatesSet] = await Promise.all([
+        attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
+        getTimesheetEntriesForMonth(currentYear, currentMonth),
+        getRegularizedDatesForMonth()
+      ]);
+
+      setRegularizedDates(regularizedDatesSet);
 
       const todayLocal = getTodayLocal();
 
@@ -215,22 +256,24 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         let finalLeaveType = day.leaveType;
 
         const holiday = isHoliday(day.date);
+        const isRegularized = regularizedDatesSet.has(day.date);
+        const isFuture = isDateAfter(dayDate, todayLocal);
+        const isPast = isDateBefore(dayDate, todayLocal);
+        const isCurrentDay = isTodayDate(dayDate);
+
         if (holiday) {
           finalStatus = 'holiday';
           finalLeaveType = undefined;
-        }
-
-        const isFuture = isDateAfter(dayDate, todayLocal);
-        const isPast = isDateBefore(dayDate, todayLocal);
-
-        if (day.status === 'leave') {
-          finalStatus = 'leave';
-          finalLeaveType = day.leaveType;
         } else if (day.status === 'weekend') {
           finalStatus = 'weekend';
-        } else if (day.status === 'holiday' || holiday) {
-          finalStatus = 'holiday';
+        } else if (day.status === 'leave') {
+          finalStatus = 'leave';
+          finalLeaveType = day.leaveType;
+        } else if (isRegularized) {
+          finalStatus = 'regularized';
         } else if (day.status === 'present') {
+          finalStatus = 'present';
+        } else if (isCurrentDay) {
           finalStatus = 'present';
         } else if (isPast) {
           finalStatus = 'absent';
@@ -244,7 +287,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         let timesheetStatus: 'notFilled' | 'partial' | 'completed' = 'notFilled';
         let timesheetPercentage = 0;
 
-        if (finalStatus === 'present' && availableHours > 0) {
+        if ((finalStatus === 'present' || finalStatus === 'regularized') && availableHours > 0) {
           if (timesheetHours >= availableHours) {
             timesheetStatus = 'completed';
             timesheetPercentage = 100;
@@ -279,7 +322,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       setIsRefreshing(false);
       setIsLoading(false);
     }
-  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetEntriesForMonth, isHoliday]);
+  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetEntriesForMonth, getRegularizedDatesForMonth, isHoliday]);
 
   const calculateMonthlyCounts = React.useCallback((): void => {
     const counts = {
@@ -289,6 +332,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       weekend: 0,
       holiday: 0,
       future: 0,
+      regularized: 0,
       timesheetFilled: 0,
       timesheetPartial: 0,
       timesheetNotFilled: 0
@@ -301,8 +345,9 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       else if (day.status === 'weekend') counts.weekend++;
       else if (day.status === 'holiday') counts.holiday++;
       else if (day.status === 'future') counts.future++;
+      else if (day.status === 'regularized') counts.regularized++;
 
-      if (day.status === 'present' && day.availableHours > 0) {
+      if ((day.status === 'present' || day.status === 'regularized') && day.availableHours > 0) {
         if (day.timesheetProgress.status === 'completed') {
           counts.timesheetFilled++;
         } else if (day.timesheetProgress.status === 'partial') {
@@ -349,6 +394,13 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     await loadCalendarData(true);
   }, [loadCalendarData]);
 
+  const canRegularize = React.useCallback((dateString: string): boolean => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = createLocalDate(year, month - 1, day);
+    const today = getTodayLocal();
+    return isDateBefore(date, today);
+  }, []);
+
   const handleDayClick = React.useCallback((day: ITimesheetDay): void => {
     if (day.status === 'empty' || day.status === 'future') return;
 
@@ -366,6 +418,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     });
 
     const holiday = isHoliday(day.date);
+    const isRegularized = regularizedDates.has(day.date);
 
     let message = `Details for ${formattedDate}:\n\n`;
     
@@ -374,6 +427,10 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     }
     
     message += `Status: ${getStatusText(day.status || '')}\n`;
+
+    if (isRegularized) {
+      message += `Regularization: Raised\n`;
+    }
 
     if (day.firstPunchIn) {
       message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
@@ -398,7 +455,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
     }
 
-    if (day.status === 'present' && day.timesheetProgress.status !== 'completed') {
+    if ((day.status === 'present' || day.status === 'regularized') && day.timesheetProgress.status !== 'completed') {
       message += `\nWould you like to fill timesheet for this day?`;
 
       if (confirm(message)) {
@@ -407,10 +464,14 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     } else {
       alert(message);
     }
-  }, [onViewChange, isHoliday]);
+  }, [onViewChange, isHoliday, regularizedDates]);
 
-  const getDayStatusClass = React.useCallback((status: string | undefined, timesheetStatus?: string): string => {
+  const getDayStatusClass = React.useCallback((status: string | undefined, timesheetStatus?: string, isRegularized?: boolean): string => {
     if (!status) return '';
+
+    if (status === 'regularized') {
+      return `${styles.present} ${styles.regularized}`;
+    }
 
     if (status === 'present') {
       if (timesheetStatus === 'completed') {
@@ -458,6 +519,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       'holiday': styles.holiday,
       'leave': styles.leave,
       'weekend': styles.weekend,
+      'regularized': styles.regularized,
       'sickLeave': styles.sickLeave,
       'casualLeave': styles.casualLeave,
       'earnedLeave': styles.earnedLeave,
@@ -505,18 +567,20 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       const dayNumber = dayDate.getDate();
       const isTodayCheck = isTodayDate(dayDate);
       const holiday = isHoliday(day.date);
+      const isRegularized = regularizedDates.has(day.date);
 
       grid.push(
         <div
           key={`day-${index}`}
-          className={`${styles.calendarDay} ${getDayStatusClass(day.status, day.timesheetProgress.status)} ${isTodayCheck ? styles.today : ''}`}
+          className={`${styles.calendarDay} ${getDayStatusClass(day.status, day.timesheetProgress.status, isRegularized)} ${isTodayCheck ? styles.today : ''}`}
           onClick={() => handleDayClick(day)}
           title={holiday ? holiday.name : ''}
         >
           <div className={styles.dayTopSection}>
             <div className={styles.dayNumber}>{dayNumber}</div>
             <div className={styles.dayStatus}>
-              {day.status === 'present' && 'P'}
+              {day.status === 'present' && !isRegularized && 'P'}
+              {day.status === 'regularized' && 'R'}
               {day.status === 'absent' && 'A'}
               {day.status === 'holiday' && 'H'}
               {day.status === 'leave' && 'L'}
@@ -525,7 +589,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             </div>
           </div>
 
-          {day.status === 'present' && day.availableHours > 0 && (
+          {(day.status === 'present' || day.status === 'regularized') && day.availableHours > 0 && (
             <div className={styles.dayTotalHours}>
               {day.timesheetHours.toFixed(1)}h / {day.availableHours.toFixed(1)}h
             </div>
@@ -537,7 +601,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
             </div>
           )}
 
-          {day.status === 'present' && day.availableHours > 0 && (
+          {(day.status === 'present' || day.status === 'regularized') && day.availableHours > 0 && (
             <div className={styles.timesheetProgressBar}>
               <div
                 className={`${styles.timesheetProgressFill} ${getProgressClass(day.timesheetProgress.status)}`}
@@ -558,7 +622,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     });
 
     return grid;
-  }, [calendarDays, isHoliday, getDayStatusClass, handleDayClick, getProgressClass, getLeaveIndicatorClass]);
+  }, [calendarDays, isHoliday, regularizedDates, getDayStatusClass, handleDayClick, getProgressClass, getLeaveIndicatorClass]);
 
   React.useEffect(() => {
     loadCalendarData().catch(err => {
@@ -652,6 +716,12 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
               <span className={styles.legendCount}>{monthlyCounts.present}</span>
             </div>
             <span>Present</span>
+          </div>
+          <div className={styles.legendItem}>
+            <div className={`${styles.legendColor} ${getLegendColorClass('regularized')}`}>
+              <span className={styles.legendCount}>{monthlyCounts.regularized}</span>
+            </div>
+            <span>Regularized</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`}>
