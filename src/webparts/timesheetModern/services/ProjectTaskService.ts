@@ -36,12 +36,16 @@ export class ProjectTaskService {
     try {
       const listName = getListInternalName('projectTaskMaster');
       const today = new Date().toISOString().split('T')[0];
-      
-      // Build filter: IsActive=true AND ResourceID=user AND date within range
-      const filterQuery = `$filter=${getColumnInternalName('ProjectTaskMaster', 'ResourceID')} eq '${resourceId}' ` +
-                         `and ${getColumnInternalName('ProjectTaskMaster', 'BookingEnabled')} eq 1 ` +
-                         `and ${getColumnInternalName('ProjectTaskMaster', 'ValidFrom')} ge '${today}' `;
-                        //  `and ${getColumnInternalName('ProjectTaskMaster', 'ValidTo')} ge '${today}'`;
+
+      // Build filter: Active + resource match + started + not ended (or open-ended)
+      const filterQuery =
+        `$filter=${getColumnInternalName('ProjectTaskMaster', 'ResourceID')} eq '${resourceId}' ` +
+        `and ${getColumnInternalName('ProjectTaskMaster', 'BookingEnabled')} eq 1 ` +
+        `and ${getColumnInternalName('ProjectTaskMaster', 'ValidFrom')} le '${today}' ` +
+        `and (` +
+        `${getColumnInternalName('ProjectTaskMaster', 'ValidTo')} ge '${today}' ` +
+        `or ${getColumnInternalName('ProjectTaskMaster', 'ValidTo')} eq null` +
+        `)`;
       
       const selectFields = [
         'Id',
