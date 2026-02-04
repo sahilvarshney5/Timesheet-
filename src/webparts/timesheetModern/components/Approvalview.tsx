@@ -40,6 +40,8 @@ const [viewingRequest, setViewingRequest] = React.useState<IRegularizationReques
  const [rejectModalOpen, setRejectModalOpen] = React.useState<boolean>(false);
  const [actioningRequest, setActioningRequest] = React.useState<IRegularizationRequest | null>(null);
  const [rejectComment, setRejectComment] = React.useState<string>('');
+ const [approveComment, setApproveComment] = React.useState<string>('');
+
   const loadPendingRequests = React.useCallback(async (): Promise<void> => {
   try {
     // Get pending approvals (filtered by manager if needed)
@@ -134,7 +136,11 @@ const formatDateRange = (fromDate: string, toDate: string): string => {
 // ADD confirm approve handler
 const confirmApprove = async (): Promise<void> => {
   if (!actioningRequest) return;
-  
+    // ✅ FIX: Make remarks mandatory
+  if (!approveComment.trim()) {
+    alert('Please provide remarks for approval');
+    return;
+  }
   try {
     setIsProcessing(true);
 
@@ -147,7 +153,7 @@ const confirmApprove = async (): Promise<void> => {
 
     setApproveModalOpen(false);
     setActioningRequest(null);
-    
+    setApproveComment('');
     alert(`✓ Request approved successfully!\n\nEmployee: ${actioningRequest.employeeName}\nDate: ${formatDateRange(actioningRequest.fromDate, actioningRequest.toDate)}`);
 
   } catch (err) {
@@ -552,6 +558,17 @@ const confirmReject = async (): Promise<void> => {
           </div>
         </div>
       </div>
+      <div className={styles.formGroup} style={{ marginTop: '1rem' }}>
+  <label className={styles.formLabel}>Approval Remarks *</label>
+  <textarea 
+    className={styles.formTextarea}
+    placeholder="Enter remarks for approval..."
+    value={approveComment}
+    onChange={(e) => setApproveComment(e.target.value)}
+    rows={3}
+    required
+  />
+</div>
       
       <div className={styles.modalFooter}>
         <button 

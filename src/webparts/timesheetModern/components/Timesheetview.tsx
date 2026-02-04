@@ -245,6 +245,12 @@ const isReadOnly = (): boolean => {
     const weekDays = getCurrentWeekDays();
     const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
 
+     // ✅ FIX: Block future dates
+  const today = getTodayString();
+  if (normalizedDate > today) {
+    alert('Cannot add timesheet entries for future dates.\n\nTimesheet can only be filled for past and present dates.');
+    return;
+  }
     const validation = await validateTimesheetDate(normalizedDate);
     
     if (!validation.isValid) {
@@ -387,53 +393,83 @@ const isReadOnly = (): boolean => {
     alert(`Entry copied: ${entry.hours}h for ${entry.project}\n\nClick "Paste" on any day to create a copy.`);
   };
 
-  const handlePasteEntry = async (targetDate: string): Promise<void> => {
-    if (!clipboard) {
-      alert('No entry copied. Please copy an entry first.');
-      return;
+const handlePasteEntry = async (targetDate: string): Promise<void> => {
+  if (!clipboard) {
+    alert('No entry copied. Please copy an entry first.');
+    return;
+  }
+  
+  const normalizedDate = normalizeDateToString(targetDate);
+  const validation = await validateTimesheetDate(normalizedDate);
+  
+  if (!validation.isValid) {
+    alert(`Cannot paste to this date:\n${validation.message}`);
+    return;
+  }
+
+  // ✅ FIX: Check if paste would exceed available hours
+  const existingEntries = entries.filter(e => e.date === normalizedDate);
+  const existingHours = existingEntries.reduce((sum, e) => sum + e.hours, 0);
+  const newTotalHours = existingHours + clipboard.hours;
+  
+  // ✅ FIX: Get available hours from punch data via service
+  let availableHours = 0;
+  try {
+    const empId = props.employeeMaster.EmployeeID;
+    const punchData = await attendanceService.getPunchData(empId, normalizedDate, normalizedDate);
+    availableHours = punchData.length > 0 ? (punchData[0].TotalHours || 0) : 0;
+  } catch (error) {
+    console.error(`[TimesheetView] Error getting punch data for ${normalizedDate}:`, error);
+    availableHours = MAX_DAILY_HOURS; // Fallback to max daily hours
+  }
+  
+  // ✅ FIX: Block paste if exceeds
+  if (newTotalHours > availableHours && availableHours > 0) {
+    alert(
+      `Cannot paste entry!\n\n` +
+      `Current hours: ${existingHours.toFixed(1)}h\n` +
+      `Paste hours: ${clipboard.hours.toFixed(1)}h\n` +
+      `Total would be: ${newTotalHours.toFixed(1)}h\n\n` +
+      `Available hours: ${availableHours.toFixed(1)}h\n\n` +
+      `Exceeds limit by ${(newTotalHours - availableHours).toFixed(1)}h`
+    );
+    return;
+  }
+  
+  try {
+    setIsLoading(true);
+    
+    const empId = props.employeeMaster.EmployeeID;
+    const weekDays = getCurrentWeekDays();
+    const startDate = weekDays[0];
+    
+    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+    
+    if (!timesheetHeader) {
+      timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
     }
     
-    const normalizedDate = normalizeDateToString(targetDate);
-    const validation = await validateTimesheetDate(normalizedDate);
+    await timesheetService.createTimesheetLine({
+      TimesheetID: timesheetHeader.Id,
+      WorkDate: normalizedDate,
+      ProjectNo: clipboard.project,
+      TaskNo: '',
+      HoursBooked: clipboard.hours,
+      Description: clipboard.description
+    });
     
-    if (!validation.isValid) {
-      alert(`Cannot paste to this date:\n${validation.message}`);
-      return;
-    }
+    alert(`Entry pasted successfully!\n${clipboard.hours}h for ${clipboard.project} on ${formatDateForDisplay(normalizedDate)}`);
     
-    try {
-      setIsLoading(true);
-      
-      const empId = props.employeeMaster.EmployeeID;
-      const weekDays = getCurrentWeekDays();
-      const startDate = weekDays[0];
-      
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
-      
-      if (!timesheetHeader) {
-        timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
-      }
-      
-      await timesheetService.createTimesheetLine({
-        TimesheetID: timesheetHeader.Id,
-        WorkDate: normalizedDate,
-        ProjectNo: clipboard.project,
-        TaskNo: '',
-        HoursBooked: clipboard.hours,
-        Description: clipboard.description
-      });
-      
-      alert(`Entry pasted successfully!\n${clipboard.hours}h for ${clipboard.project} on ${formatDateForDisplay(normalizedDate)}`);
-      
-      await loadTimesheetData();
-      
-    } catch (error) {
-      console.error('[TimesheetView] Error pasting entry:', error);
-      alert('Error pasting entry. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    await loadTimesheetData();
+    
+  } catch (error) {
+    console.error('[TimesheetView] Error pasting entry:', error);
+    alert('Error pasting entry. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 // In Timesheetview.tsx, add clear clipboard function
 
 const handleClearPaste = (): void => {
@@ -446,44 +482,90 @@ const handleClearPaste = (): void => {
     alert('No entry copied to clipboard.');
   }
 };
-  const handleSubmitTimesheet = async (): Promise<void> => {
-    const weekDays = getCurrentWeekDays();
-    const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
+const handleSubmitTimesheet = async (): Promise<void> => {
+  const weekDays = getCurrentWeekDays();
+  const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
+  
+  if (weekEntries.length === 0) {
+    alert('Please add at least one timesheet entry before submitting.');
+    return;
+  }
+
+  // ✅ FIX: Validate all working days have full hours
+  const validationErrors: string[] = [];
+  
+  for (const date of weekDays) {
+    const dateObj = new Date(date);
+    const dayOfWeek = dateObj.getDay();
     
-    if (weekEntries.length === 0) {
-      alert('Please add at least one timesheet entry before submitting.');
-      return;
-    }
+    // Skip weekends
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
     
-    const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
+    const dayStatus = getDayStatus(date);
     
-    if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet will be sent for approval.`)) {
-      try {
-        setIsLoading(true);
-        
-        const empId = props.employeeMaster.EmployeeID;
-        const startDate = weekDays[0];
-        
-        const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
-        
-        if (!timesheetHeader) {
-          throw new Error('Timesheet header not found');
-        }
-        
-        await timesheetService.submitTimesheet(timesheetHeader.Id!);
-        
-        alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}`);
-        
-        await loadTimesheetData();
-        
-      } catch (error) {
-        console.error('[TimesheetView] Error submitting timesheet:', error);
-        alert('Error submitting timesheet. Please try again.');
-      } finally {
-        setIsLoading(false);
+    // Skip non-working days
+    if (dayStatus === 'leave' || dayStatus === 'absent' || dayStatus === 'holiday') continue;
+    
+    const dayEntries = entries.filter(e => e.date === date);
+    const loggedHours = dayEntries.reduce((sum, e) => sum + e.hours, 0);
+    
+    // ✅ FIX: Get available hours from punch data via service
+    try {
+      const empId = props.employeeMaster.EmployeeID;
+      const punchData = await attendanceService.getPunchData(empId, date, date);
+      const availableHours = punchData.length > 0 ? (punchData[0].TotalHours || 0) : 0;
+      
+      if (availableHours > 0 && loggedHours < availableHours) {
+        validationErrors.push(
+          `${formatDateForDisplay(date)}: ${loggedHours.toFixed(1)}h / ${availableHours.toFixed(1)}h (incomplete)`
+        );
       }
+    } catch (error) {
+      console.error(`[TimesheetView] Error getting punch data for ${date}:`, error);
+      // Continue validation for other days
     }
-  };
+  }
+  
+  // ✅ FIX: Block submit if validation fails
+  if (validationErrors.length > 0) {
+    alert(
+      `Cannot submit timesheet. The following days are incomplete:\n\n` +
+      validationErrors.join('\n') +
+      `\n\nPlease fill all working days with available hours before submitting.`
+    );
+    return;
+  }
+
+  // Existing submit logic...
+  const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
+  
+  if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet will be sent for approval.`)) {
+    try {
+      setIsLoading(true);
+      
+      const empId = props.employeeMaster.EmployeeID;
+      const startDate = weekDays[0];
+      
+      const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      
+      if (!timesheetHeader) {
+        throw new Error('Timesheet header not found');
+      }
+      
+      await timesheetService.submitTimesheet(timesheetHeader.Id!);
+      
+      alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}`);
+      
+      await loadTimesheetData();
+      
+    } catch (error) {
+      console.error('[TimesheetView] Error submitting timesheet:', error);
+      alert('Error submitting timesheet. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+};
 
   const calculateWeekTotals = (): { 
     totalHours: number;

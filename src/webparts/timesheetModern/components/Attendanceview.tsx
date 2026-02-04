@@ -7,7 +7,7 @@ import { ApprovalService } from '../services/ApprovalService';
 import { IEmployeeMaster, ITimesheetDay } from '../models';
 
 export interface IAttendanceViewProps {
-  onViewChange: (viewName: string) => void;
+  onViewChange: (viewName: string, data?: any) => void; // ✅ FIXED: Added optional data parameter
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;

@@ -2,7 +2,6 @@ import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
-import { UserService } from '../services/UserService';
 import { IRegularizationRequest, IAttendanceRegularization, IEmployeeMaster } from '../models';
 
 export interface IRegularizationViewProps {
@@ -17,20 +16,34 @@ export interface IRegularizationViewProps {
 const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const { onViewChange, spHttpClient, siteUrl } = props;
   
-  // Services
+  // ✅ FIX: Add ALL missing state variables
+  const [regularizationType, setRegularizationType] = React.useState<string>('day_based');
+  const [regularizationHistory, setRegularizationHistory] = React.useState<IRegularizationRequest[]>([]);
+  const [isLoading, setIsLoading] = React.useState<boolean>(true);
+  const [isSaving, setIsSaving] = React.useState<boolean>(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [duration, setDuration] = React.useState<number>(0);
+
+  // ✅ FIX: Initialize approvalService from props
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
 
-  // State
-  const [regularizationType, setRegularizationType] = React.useState<string>('day_based');
-  const [history, setHistory] = React.useState<IRegularizationRequest[]>([]);
-  const [isLoading, setIsLoading] = React.useState<boolean>(true);
-  const [isSaving, setIsSaving] = React.useState<boolean>(false);
-  const [error, setError] = React.useState<string | null>(null);
+  // ✅ FIX: Move calculateDuration INSIDE component BEFORE it's used
+  const calculateDuration = (from: string, to: string): number => {
+    if (!from || !to) return 0;
+    
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    
+    const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    return diffDays;
+  };
 
-  // ✅ NEW: Calculate max allowed date (yesterday)
+  // ✅ Calculate max allowed date (yesterday)
   const getMaxAllowedDate = (): string => {
     const today = new Date();
     const yesterday = new Date(today);
@@ -49,7 +62,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
       const requests = await approvalService.getEmployeeRegularizations(empId);
       
-      setHistory(requests);
+      setRegularizationHistory(requests);
       console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
 
     } catch (err) {
@@ -62,7 +75,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
   React.useEffect(() => {
     void loadRegularizationHistory();
-  }, []);
+  }, [loadRegularizationHistory]);
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setRegularizationType(event.target.value);
@@ -110,19 +123,6 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
           invalidDates.push(`${dateString} (Weekend)`);
           continue;
         }
-        
-        // TODO: Check holiday list
-        // const isHoliday = await checkHoliday(dateString);
-        // if (isHoliday) {
-        //   invalidDates.push(`${dateString} (Holiday)`);
-        //   continue;
-        // }
-        
-        // TODO: Check approved leaves
-        // const hasLeave = await checkLeave(dateString, props.employeeMaster.EmployeeID);
-        // if (hasLeave) {
-        //   invalidDates.push(`${dateString} (On Leave)`);
-        // }
       }
       
       if (invalidDates.length > 0) {
@@ -208,6 +208,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
       form.reset();
       setRegularizationType('day_based');
+      setDuration(0);
       
       await loadRegularizationHistory();
       
@@ -264,7 +265,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   }, []);
 
   const handleRecall = React.useCallback(async (requestId: number): Promise<void> => {
-    const request = history.find(r => r.id === requestId);
+    const request = regularizationHistory.find((r: IRegularizationRequest) => r.id === requestId);
     if (!request) return;
 
     const confirmMessage = request.status === 'approved' 
@@ -279,7 +280,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       setIsLoading(true);
       await approvalService.recallRegularization(requestId);
 
-      setHistory(prev => prev.map(req => 
+      setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) => 
         req.id === requestId 
           ? { ...req, status: 'pending' as const }
           : req
@@ -294,7 +295,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     } finally {
       setIsLoading(false);
     }
-  }, [history, approvalService, loadRegularizationHistory]);
+  }, [regularizationHistory, approvalService, loadRegularizationHistory]);
 
   const handleCancel = async (requestId: number): Promise<void> => {
     if (!confirm('Are you sure you want to cancel this approved regularization request?')) {
@@ -302,7 +303,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     }
 
     try {
-      setHistory(prev => prev.map(req => 
+      setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) => 
         req.id === requestId 
           ? { ...req, status: 'rejected' as const }
           : req
@@ -345,7 +346,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     );
   }
 
-  if (error && !history.length) {
+  if (error && !regularizationHistory.length) {
     return (
       <div className={styles.viewContainer}>
         <div className={styles.dashboardHeader}>
@@ -353,7 +354,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
           <p style={{ color: 'var(--danger)' }}>{error}</p>
           <button 
             className={`${styles.btn} ${styles.btnPrimary}`}
-            onClick={loadRegularizationHistory}
+            onClick={() => { loadRegularizationHistory().catch(console.error); }}
             style={{ marginTop: '1rem' }}
           >
             Retry
@@ -423,6 +424,12 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 className={styles.formInput} 
                 max={maxDate}
                 disabled={isSaving}
+                onChange={(e) => {
+                  const toDateInput = document.querySelector('input[name="toDate"]') as HTMLInputElement;
+                  if (toDateInput && toDateInput.value) {
+                    setDuration(calculateDuration(e.target.value, toDateInput.value));
+                  }
+                }}
                 required  
               />
             </div>
@@ -434,6 +441,12 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 className={styles.formInput} 
                 max={maxDate}
                 disabled={isSaving}
+                onChange={(e) => {
+                  const fromDateInput = document.querySelector('input[name="fromDate"]') as HTMLInputElement;
+                  if (fromDateInput && fromDateInput.value) {
+                    setDuration(calculateDuration(fromDateInput.value, e.target.value));
+                  }
+                }}
                 required  
               />
             </div>
@@ -453,6 +466,18 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 <option value="on_duty">On Duty</option>
               </select>
             </div>
+          </div>
+
+          {/* ✅ Duration field */}
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>Duration (Days)</label>
+            <input 
+              type="number" 
+              className={styles.formInput}
+              value={duration}
+              readOnly
+              disabled
+            />
           </div>
           
           {/* Time-based regularization fields */}
@@ -489,7 +514,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               placeholder="Explain why you need attendance regularization..." 
               disabled={isSaving}
               required 
-            ></textarea>
+            />
           </div>
           
           <div className={styles.formActions}>
@@ -536,14 +561,14 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
             </tr>
           </thead>
           <tbody>
-            {history.length === 0 ? (
+            {regularizationHistory.length === 0 ? (
               <tr>
                 <td colSpan={5} className={styles.historyEmpty}>
                   No regularization requests submitted yet.
                 </td>
               </tr>
             ) : (
-              history.map(request => (
+              regularizationHistory.map(request => (
                 <tr key={request.id}>
                   <td>{formatDateRange(request.fromDate, request.toDate)}</td>
                   <td>{formatCategoryText(request.category)}</td>
@@ -567,7 +592,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                     {(request.status === 'pending' || request.status === 'approved') && (
                       <button 
                         className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                        onClick={() => handleRecall(request.id!)}
+                        onClick={() => { handleRecall(request.id!).catch(console.error); }}
                       >
                         Recall
                       </button>
