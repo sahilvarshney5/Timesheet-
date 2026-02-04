@@ -401,37 +401,40 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
     return isDateBefore(date, today);
   }, []);
 
-  const handleDayClick = React.useCallback((day: ITimesheetDay): void => {
-    if (day.status === 'empty' || day.status === 'future') return;
+ const handleDayClick = React.useCallback((day: ITimesheetDay): void => {
+  if (day.status === 'empty' || day.status === 'future') return;
 
-    const dayDate = createLocalDate(
-      parseInt(day.date.split('-')[0]),
-      parseInt(day.date.split('-')[1]) - 1,
-      parseInt(day.date.split('-')[2])
-    );
+  const dayDate = createLocalDate(
+    parseInt(day.date.split('-')[0]),
+    parseInt(day.date.split('-')[1]) - 1,
+    parseInt(day.date.split('-')[2])
+  );
 
-    const formattedDate = formatDateForDisplay(dayDate, {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+  const formattedDate = formatDateForDisplay(dayDate, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
-    const holiday = isHoliday(day.date);
-    const isRegularized = regularizedDates.has(day.date);
+  const holiday = isHoliday(day.date);
+  const isRegularized = regularizedDates.has(day.date);
 
-    let message = `Details for ${formattedDate}:\n\n`;
-    
-    if (holiday) {
-      message += `Holiday: ${holiday.name}\n\n`;
-    }
-    
-    message += `Status: ${getStatusText(day.status || '')}\n`;
+  // ✅ FIX: Build popup message
+  let message = `Details for ${formattedDate}:\n\n`;
+  
+  if (holiday) {
+    message += `Holiday: ${holiday.name}\n\n`;
+  }
+  
+  message += `Status: ${getStatusText(day.status || '')}\n`;
 
-    if (isRegularized) {
-      message += `Regularization: Raised\n`;
-    }
+  if (isRegularized) {
+    message += `Regularization: Raised\n`;
+  }
 
+  // ✅ FIX: Show punch times and available hours for present days
+  if (day.status === 'present' || day.status === 'regularized') {
     if (day.firstPunchIn) {
       message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
     }
@@ -440,31 +443,44 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
     }
 
-    if (day.totalHours && day.totalHours > 0) {
-      message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
+    if (day.availableHours > 0) {
+      message += `Available Hours: ${day.availableHours.toFixed(1)}\n`;
     }
+  }
 
-    if (day.leaveType) {
-      message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
+  if (day.totalHours && day.totalHours > 0) {
+    message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
+  }
+
+  if (day.leaveType) {
+    message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
+  }
+
+  const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
+  message += `\nTimesheet Status: ${timesheetStatus}\n`;
+
+  if (day.timesheetHours > 0) {
+    message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
+  }
+
+  // ✅ FIX: Popup actions for present days
+  if (day.status === 'present' || day.status === 'regularized') {
+    message += `\n\nActions:\n`;
+    message += `1. Create Timesheet Entry\n`;
+    message += `2. Request Regularization\n\n`;
+    message += `What would you like to do?`;
+
+    const action = prompt(message + "\n\nType '1' for Timesheet or '2' for Regularization:");
+    
+    if (action === '1') {
+      onViewChange('timesheet', { date: day.date }); // Pass date context
+    } else if (action === '2') {
+      onViewChange('regularize', { date: day.date });
     }
-
-    const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
-    message += `\nTimesheet Status: ${timesheetStatus}\n`;
-
-    if (day.timesheetHours > 0) {
-      message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
-    }
-
-    if ((day.status === 'present' || day.status === 'regularized') && day.timesheetProgress.status !== 'completed') {
-      message += `\nWould you like to fill timesheet for this day?`;
-
-      if (confirm(message)) {
-        onViewChange('timesheet');
-      }
-    } else {
-      alert(message);
-    }
-  }, [onViewChange, isHoliday, regularizedDates]);
+  } else {
+    alert(message);
+  }
+}, [onViewChange, isHoliday, regularizedDates]);
 
   const getDayStatusClass = React.useCallback((status: string | undefined, timesheetStatus?: string, isRegularized?: boolean): string => {
     if (!status) return '';

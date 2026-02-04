@@ -36,83 +36,102 @@ export class DashboardService {
    * Get dashboard statistics for current user
    */
   public async getDashboardStats(): Promise<IDashboardStats> {
-    try {
-      const user = await this.userService.getCurrentUser();
-      const permissions = await this.userService.getUserPermissions();
-      const employeeId = user.Id.toString() || '';
-      
-      // Get current date ranges
-      const today = new Date();
-      const currentYear = today.getFullYear();
-      const currentMonth = today.getMonth() + 1;
+  try {
+    const user = await this.userService.getCurrentUser();
+    const permissions = await this.userService.getUserPermissions();
+    const employeeId = user.Id.toString() || '';
+    
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
 
-      // Get first day of current month
-      const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString().split('T')[0];
-      const monthEnd = new Date(currentYear, currentMonth, 0).toISOString().split('T')[0];
+    // Get first day of current month
+    const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString().split('T')[0];
+    const monthEnd = new Date(currentYear, currentMonth, 0).toISOString().split('T')[0];
 
-      // Get current week start (Monday)
-      const weekStart = this.getWeekStart(today).toISOString().split('T')[0];
-      const weekEnd = this.getWeekEnd(today).toISOString().split('T')[0];
+    // Get current week start (Monday)
+    const weekStart = this.getWeekStart(today).toISOString().split('T')[0];
+    const weekEnd = this.getWeekEnd(today).toISOString().split('T')[0];
 
-      // Fetch all stats in parallel
-      const [
-        attendanceStats,
-        leaveDaysLeft,
-        pendingApprovals,
-        regularizations
-      ] = await Promise.all([
-        this.attendanceService.getAttendanceStatistics(employeeId, monthStart, monthEnd),
-        this.leaveService.getTotalLeaveDaysLeft(employeeId), // FIXED: Use LeaveService
-        permissions.isManager ? this.approvalService.getPendingApprovals() : Promise.resolve([]),
-        this.approvalService.getEmployeeRegularizations(employeeId)
-      ]);
-
-      // Calculate hours this week
-      const weekPunchData = await this.attendanceService.getPunchData(employeeId, weekStart, weekEnd);
-      const hoursThisWeek = weekPunchData.reduce((sum, punch) => sum + (punch.TotalHours || 0), 0);
-
-      // Count pending regularizations
-      const pendingRegularizations = regularizations.filter(r => r.status === 'pending').length;
-
-      // Count pending timesheet entries (days without timesheet in current week)
-      const weekDays = this.getWeekDays(today);
-      const pendingTimesheetEntries = 0;
-      
-      for (const day of weekDays) {
-        const dayString = day.toISOString().split('T')[0];
-        const dayOfWeek = day.getDay();
-        
-        // Skip weekends
-        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-        
-        // Check if day has timesheet entries
-        // TODO: Implement actual check from TimesheetService
-        // For now, count days without entries
-      }
-
-      return {
-        daysPresent: attendanceStats.daysPresent,
-        hoursThisWeek: Math.round(hoursThisWeek * 10) / 10,
-        leaveDaysLeft: leaveDaysLeft, // FIXED: Use actual leave balance
-        pendingApprovals: pendingApprovals.length,
-        pendingTimesheetEntries: pendingTimesheetEntries,
-        pendingRegularizations: pendingRegularizations
-      };
-
-    } catch (error) {
-      console.error('[DashboardService] Error getting dashboard stats:', error);
-      
-      // Return default stats on error
-      return {
-        daysPresent: 0,
-        hoursThisWeek: 0,
-        leaveDaysLeft: 0,
-        pendingApprovals: 0,
-        pendingTimesheetEntries: 0,
-        pendingRegularizations: 0
-      };
+    // ✅ FIX: Get actual attendance data
+    const attendanceStats = await this.attendanceService.getAttendanceStatistics(employeeId, monthStart, monthEnd);
+    
+    // ✅ FIX: Get actual timesheet hours for current week
+    const weekPunchData = await this.attendanceService.getPunchData(employeeId, weekStart, weekEnd);
+    
+    // ✅ FIX: Calculate actual present days from punch data
+    const daysPresent = weekPunchData.filter(punch => 
+      punch.Status === 'Synced' || punch.FirstPunchIn
+    ).length;
+    
+    // ✅ FIX: Calculate actual hours from timesheet
+    const timesheetHeader = await this.timesheetService.getTimesheetHeader(employeeId, weekStart);
+    let hoursThisWeek = 0;
+    
+    if (timesheetHeader) {
+      const lines = await this.timesheetService.getTimesheetLines(timesheetHeader.Id!);
+      hoursThisWeek = lines.reduce((sum, line) => sum + (line.HoursBooked || line.Hours || 0), 0);
     }
+    
+    // ✅ FIX: Get actual leave balance
+    const leaveDaysLeft = await this.leaveService.getTotalLeaveDaysLeft(employeeId);
+    
+    // ✅ FIX: Get actual pending approvals
+    const pendingApprovals = permissions.isManager 
+      ? await this.approvalService.getPendingApprovals() 
+      : [];
+    
+    // ✅ FIX: Get actual regularizations for current month
+    const regularizations = await this.approvalService.getEmployeeRegularizations(employeeId);
+    const thisMonthRegularizations = regularizations.filter(reg => {
+      const submittedDate = new Date(reg.submittedOn);
+      return submittedDate.getMonth() === (currentMonth - 1) && 
+             submittedDate.getFullYear() === currentYear;
+    });
+    
+    const pendingRegularizations = regularizations.filter(r => r.status === 'pending').length;
+
+    // ✅ FIX: Calculate pending timesheet entries (days without full hours)
+    let pendingTimesheetEntries = 0;
+    for (const punch of weekPunchData) {
+      const dayOfWeek = new Date(punch.AttendanceDate).getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue; // Skip weekends
+      
+      const dayLines = timesheetHeader ? 
+        (await this.timesheetService.getTimesheetLines(timesheetHeader.Id!))
+          .filter(line => line.WorkDate === punch.AttendanceDate || line.EntryDate === punch.AttendanceDate) 
+        : [];
+      
+      const loggedHours = dayLines.reduce((sum, line) => sum + (line.HoursBooked || line.Hours || 0), 0);
+      const availableHours = punch.TotalHours || 0;
+      
+      if (loggedHours < availableHours) {
+        pendingTimesheetEntries++;
+      }
+    }
+
+    return {
+      daysPresent: daysPresent,
+      hoursThisWeek: Math.round(hoursThisWeek * 10) / 10,
+      leaveDaysLeft: leaveDaysLeft,
+      pendingApprovals: pendingApprovals.length,
+      pendingTimesheetEntries: pendingTimesheetEntries,
+      pendingRegularizations: thisMonthRegularizations.length
+    };
+
+  } catch (error) {
+    console.error('[DashboardService] Error getting dashboard stats:', error);
+    
+    return {
+      daysPresent: 0,
+      hoursThisWeek: 0,
+      leaveDaysLeft: 0,
+      pendingApprovals: 0,
+      pendingTimesheetEntries: 0,
+      pendingRegularizations: 0
+    };
   }
+}
 
   /**
    * Get start of week (Monday)
