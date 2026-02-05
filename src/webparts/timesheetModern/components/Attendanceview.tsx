@@ -195,6 +195,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [error, setError] = React.useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = React.useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
+const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]);
 
   const [monthlyCounts, setMonthlyCounts] = React.useState({
     present: 0,
@@ -281,13 +282,26 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       }
       setIsLoading(true);
       setError(null);
+      
 
       const empId = props.employeeMaster.EmployeeID;
+      
       const [calendar, timesheetEntries, regularizedDatesSet] = await Promise.all([
         attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
         getTimesheetEntriesForMonth(currentYear, currentMonth),
         getRegularizedDatesForMonth()
       ]);
+
+       const weekStart = calendar[0]?.date || '';
+    
+    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, weekStart);
+    let lines: ITimesheetLines[] = [];
+    
+    if (timesheetHeader) {
+      lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
+    }
+    
+    setTimesheetLines(lines);
 
       setRegularizedDates(regularizedDatesSet);
 
@@ -386,26 +400,108 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       timesheetNotFilled: 0
     };
 
-    calendarDays.forEach(day => {
-      if (day.status === 'present') counts.present++;
-      else if (day.status === 'leave') counts.leave++;
-      else if (day.status === 'absent') counts.absent++;
-      else if (day.status === 'weekend') counts.weekend++;
-      else if (day.status === 'holiday') counts.holiday++;
-      else if (day.status === 'future') counts.future++;
-      else if (day.status === 'regularized') counts.regularized++;
+    // calendarDays.forEach(day => {
+    //   if (day.status === 'present') counts.present++;
+    //   else if (day.status === 'leave') counts.leave++;
+    //   else if (day.status === 'absent') counts.absent++;
+    //   else if (day.status === 'weekend') counts.weekend++;
+    //   else if (day.status === 'holiday') counts.holiday++;
+    //   else if (day.status === 'future') counts.future++;
+    //   else if (day.status === 'regularized') counts.regularized++;
 
-      if ((day.status === 'present' || day.status === 'regularized') && day.availableHours > 0) {
-        if (day.timesheetProgress.status === 'completed') {
-          counts.timesheetFilled++;
-        } else if (day.timesheetProgress.status === 'partial') {
-          counts.timesheetPartial++;
-        } else if (day.timesheetProgress.status === 'notFilled') {
-          counts.timesheetNotFilled++;
-        }
-      }
-    });
+    //   if ((day.status === 'present' || day.status === 'regularized') && day.availableHours > 0) {
+    //     if (day.timesheetProgress.status === 'completed') {
+    //       counts.timesheetFilled++;
+    //     } else if (day.timesheetProgress.status === 'partial') {
+    //       counts.timesheetPartial++;
+    //     } else if (day.timesheetProgress.status === 'notFilled') {
+    //       counts.timesheetNotFilled++;
+    //     }
+    //   }
+    // });
+// In Attendanceview.tsx - REPLACE the calendar day rendering section
 
+// Inside the generateCalendarGrid callback, REPLACE the day.map section:
+
+calendarDays.forEach((day, index) => {
+  const [year, month, dayNum] = day.date.split('-').map(Number);
+  const dayDate = createLocalDate(year, month - 1, dayNum);
+  const dayNumber = dayDate.getDate();
+  const isTodayCheck = isTodayDate(dayDate);
+  const holiday = isHoliday(day.date);
+  const isRegularized = regularizedDates.has(day.date);
+
+  // ✅ ADD: Calculate fill status HERE (before JSX)
+  const fillStatus = getTimesheetFillStatus(
+    day.date,
+    // ⚠️ REPLACE WITH ACTUAL timesheetLines from state/props
+    timesheetLines, // TODO: Pass actual timesheetLines array
+    day.availableHours || 8
+  );
+
+  // ✅ ADD: Map status to CSS class explicitly
+  let progressClass = styles.notFilled; // Grey default
+  if (fillStatus.status === 'FULL') {
+    progressClass = styles.filled; // Green
+  } else if (fillStatus.status === 'PARTIAL') {
+    progressClass = styles.partial; // Orange
+  }
+
+  grid.push(
+    <div
+      key={`day-${index}`}
+      className={`${styles.calendarDay} ${getDayStatusClass(day.status, day.timesheetProgress.status, isRegularized)} ${isTodayCheck ? styles.today : ''}`}
+      onClick={() => handleDayClick(day)}
+      title={holiday ? holiday.name : ''}
+    >
+      <div className={styles.dayTopSection}>
+        <div className={styles.dayNumber}>{dayNumber}</div>
+        <div className={styles.dayStatus}>
+          {day.status === 'present' && !isRegularized && 'P'}
+          {day.status === 'regularized' && 'R'}
+          {day.status === 'absent' && 'A'}
+          {day.status === 'holiday' && 'H'}
+          {day.status === 'leave' && 'L'}
+          {day.status === 'weekend' && 'W'}
+          {day.status === 'future' && '-'}
+        </div>
+      </div>
+
+      {/* ✅ REPLACE: Hours display using fillStatus */}
+      {fillStatus.expectedDailyHours > 0 && (
+        <div className={styles.dayTotalHours}>
+          {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
+        </div>
+      )}
+
+      {/* ✅ KEEP: Punch times */}
+      {day.firstPunchIn && day.lastPunchOut && (
+        <div className={styles.dayTime}>
+          {formatTime(day.firstPunchIn)}-{formatTime(day.lastPunchOut)}
+        </div>
+      )}
+
+      {/* ✅ REPLACE: Progress bar using fillStatus and progressClass */}
+      {fillStatus.expectedDailyHours > 0 && (
+        <div className={styles.timesheetProgressBar}>
+          <div
+            className={`${styles.timesheetProgressFill} ${progressClass}`}
+            style={{ width: `${fillStatus.percentage}%` }}
+          />
+        </div>
+      )}
+
+      {/* ✅ KEEP: Leave indicator */}
+      {day.leaveType && !day.isWeekend && (
+        <div className={`${styles.leaveIndicator} ${getLeaveIndicatorClass(day.leaveType)}`}>
+          {day.leaveType === 'sick' && 'Sick'}
+          {day.leaveType === 'casual' && 'Casual'}
+          {day.leaveType === 'earned' && 'Earned'}
+        </div>
+      )}
+    </div>
+  );
+});
     setMonthlyCounts(counts);
   }, [calendarDays]);
 
