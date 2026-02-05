@@ -5,7 +5,7 @@
 import { SPHttpClient } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
 import { SharePointConfig, getListInternalName, getColumnInternalName, ODataHelpers } from '../config/SharePointConfig';
-import { IPunchData, ILeaveData, ICalendarDay, ITimesheetDay } from '../models';
+import { IPunchData, ILeaveData, ICalendarDay, ITimesheetDay, ITimesheetLines } from '../models';
 import { isWeekendDay as configIsWeekend } from '../config/WorkWeekConfig';
 // ✅ FIXED: Import required date utilities
 import { 
@@ -17,6 +17,7 @@ import {
   isSameDay,
   convertSharePointDate 
 } from '../utils/DateUtils';
+import { getTimesheetFillStatus } from '../utils/TimesheetStatusUtils';
 
 export class AttendanceService {
   private httpService: HttpClientService;
@@ -25,6 +26,45 @@ export class AttendanceService {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
 
+  // ============================================================================
+// INTEGRATION EXAMPLE IN AttendanceService
+// Location: src/webparts/timesheetModern/services/AttendanceService.ts
+// ============================================================================
+
+// Add method to AttendanceService class
+
+/**
+ * Build calendar with timesheet fill status
+ */
+public async buildCalendarWithTimesheetStatus(
+  employeeId: string, 
+  year: number, 
+  month: number,
+  timesheetLines: ITimesheetLines[]
+): Promise<ITimesheetDay[]> {
+  
+  const calendar = await this.buildCalendarForMonth(employeeId, year, month);
+  
+  // Enhance each day with timesheet fill status
+  return calendar.map(day => {
+    const fillStatus = getTimesheetFillStatus(
+      day.date,
+      timesheetLines,
+      day.availableHours || 8
+    );
+    
+    return {
+      ...day,
+      timesheetHours: fillStatus.totalFilledHours,
+      timesheetProgress: {
+        percentage: fillStatus.percentage,
+        status: fillStatus.status === 'FULL' ? 'completed' 
+              : fillStatus.status === 'PARTIAL' ? 'partial' 
+              : 'notFilled'
+      }
+    };
+  });
+}
   /**
  * Determine attendance status for a given date
  * @param punchData Punch record for the date (or null)

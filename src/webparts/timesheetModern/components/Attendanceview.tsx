@@ -4,7 +4,8 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
 import { TimesheetService } from '../services/TimesheetService';
 import { ApprovalService } from '../services/ApprovalService';
-import { IEmployeeMaster, ITimesheetDay } from '../models';
+import { IEmployeeMaster, ITimesheetDay,ITimesheetLines } from '../models';
+import { getTimesheetFillStatus, getTimesheetProgressClass } from '../utils/TimesheetStatusUtils';
 
 export interface IAttendanceViewProps {
   onViewChange: (viewName: string, data?: any) => void; // ✅ FIXED: Added optional data parameter
@@ -45,6 +46,46 @@ const isSameDay = (date1: Date, date2: Date): boolean => {
   );
 };
 
+// Inside calendar day rendering loop
+const renderCalendarDay = (day: ITimesheetDay, timesheetLines: ITimesheetLines[]): JSX.Element => {
+  
+  // Get available hours from punch data
+  const expectedDailyHours = day.availableHours || 8;
+  
+  // Calculate fill status
+  const fillStatus = getTimesheetFillStatus(
+    day.date, 
+    timesheetLines, 
+    expectedDailyHours
+  );
+  
+  // Get CSS class
+  const progressClass = getTimesheetProgressClass(fillStatus.status);
+  
+  return (
+    <div className={styles.calendarDay}>
+      {/* Day content */}
+      <div className={styles.dayNumber}>{day.dayNumber}</div>
+      
+      {/* Hours display */}
+      {fillStatus.expectedDailyHours > 0 && (
+        <div className={styles.dayTotalHours}>
+          {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
+        </div>
+      )}
+      
+      {/* Progress bar */}
+      {fillStatus.expectedDailyHours > 0 && (
+        <div className={styles.timesheetProgressBar}>
+          <div
+            className={`${styles.timesheetProgressFill} ${styles[progressClass]}`}
+            style={{ width: `${fillStatus.percentage}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
 const isDateBefore = (date1: Date, date2: Date): boolean => {
   const d1 = createLocalDate(date1.getFullYear(), date1.getMonth(), date1.getDate());
   const d2 = createLocalDate(date2.getFullYear(), date2.getMonth(), date2.getDate());
