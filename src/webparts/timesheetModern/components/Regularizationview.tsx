@@ -53,6 +53,72 @@ const [isLoadingStatuses, setIsLoadingStatuses] = React.useState<boolean>(false)
     return yesterday.toISOString().split('T')[0];
   };
 
+  // ✅ ADD THIS FUNCTION inside RegularizationView component:
+/**
+ * Fetch unique Status values from BC Integration Log
+ * Uses spHttpClient (following project rules - no PnPjs)
+ */
+const fetchRegularizationCategories = React.useCallback(async (): Promise<void> => {
+  try {
+    setIsLoadingStatuses(true);
+    
+    // Fetch Status column from BC Integration Log
+    const endpoint = `${siteUrl}/_api/web/lists/getbytitle('BC Integration Log')/items?$select=Title&$top=5000`;
+    // $filter=UserId eq '${props.employeeMaster.UserId}'
+    
+    const response = await spHttpClient.get(
+      endpoint,
+      SPHttpClient.configurations.v1
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch categories: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Extract unique Status values
+    const uniqueStatuses = Array.from(
+      new Set(
+        data.value
+          .map((item: any) => item.Title)
+          .filter((Title: string) => Title && Title.trim() !== '') // Remove null/undefined/empty
+      )
+    ) as string[];
+    
+    // Convert to dropdown options format
+    const options = uniqueStatuses.map(Title => ({
+      key: Title.toLowerCase().replace(/\s+/g, '_'), // Convert to snake_case for key
+      text: Title // Display original text
+    }));
+    
+    setStatusOptions(options);
+    
+    console.log(`[RegularizationView] Loaded ${options.length} unique categories from BC Integration Log`);
+    
+  } catch (err) {
+    console.error('[RegularizationView] Error fetching regularization categories:', err);
+    
+    // Fallback to hardcoded options if API fails
+    setStatusOptions([
+      { key: 'late_coming', text: 'Late Coming' },
+      { key: 'early_going', text: 'Early Going' },
+      { key: 'missed_punch', text: 'Missed Punch' },
+      { key: 'work_from_home', text: 'Work From Home' },
+      { key: 'on_duty', text: 'On Duty' }
+    ]);
+    
+    console.warn('[RegularizationView] Using fallback categories due to error');
+  } finally {
+    setIsLoadingStatuses(false);
+  }
+}, [spHttpClient, siteUrl]);
+
+// ✅ ADD THIS useEffect AFTER existing useEffect for loadRegularizationHistory:
+React.useEffect(() => {
+  void fetchRegularizationCategories();
+}, [fetchRegularizationCategories]);
+
   const loadRegularizationHistory = React.useCallback(async (): Promise<void> => {
     try {
       setIsLoading(true);
@@ -457,15 +523,23 @@ const [isLoadingStatuses, setIsLoadingStatuses] = React.useState<boolean>(false)
               <select 
                 name="category" 
                 className={styles.formSelect}
-                disabled={isSaving}
+                disabled={isSaving || isLoadingStatuses}
                 required
               >
-                <option value="">Choose category...</option>
+                {/* <option value="">Choose category...</option>
                 <option value="late_coming">Late Coming</option>
                 <option value="early_going">Early Going</option>
                 <option value="missed_punch">Missed Punch</option>
                 <option value="work_from_home">Work From Home</option>
-                <option value="on_duty">On Duty</option>
+                <option value="on_duty">On Duty</option> */}
+                <option value="">
+                  {isLoadingStatuses ? 'Loading categories...' : 'Choose category...'}
+                </option>
+                {statusOptions.map(option => (
+                  <option key={option.key} value={option.key}>
+                    {option.text}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
