@@ -33,7 +33,65 @@ export class ApprovalService {
   }
 
 
-
+// ✅ ADD THIS FUNCTION HERE:
+/**
+ * Fetch unique Status values from BC Integration Log
+ * Uses spHttpClient (following project rules - no PnPjs)
+ */
+const fetchRegularizationCategories = React.useCallback(async (): Promise<void> => {
+  try {
+    setIsLoadingStatuses(true);
+    
+    // Fetch Status column from BC Integration Log
+    const endpoint = `${siteUrl}/_api/web/lists/getbytitle('BC Integration Log')/items?$select=Status&$top=5000`;
+    
+    const response = await spHttpClient.get(
+      endpoint,
+      SPHttpClient.configurations.v1
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch categories: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Extract unique Status values
+    const uniqueStatuses = Array.from(
+      new Set(
+        data.value
+          .map((item: any) => item.Status)
+          .filter((status: string) => status && status.trim() !== '') // Remove null/undefined/empty
+      )
+    ) as string[];
+    
+    // Convert to dropdown options format
+    const options = uniqueStatuses.map(status => ({
+      key: status.toLowerCase().replace(/\s+/g, '_'), // Convert to snake_case for key
+      text: status // Display original text
+    }));
+    
+    setStatusOptions(options);
+    
+    console.log(`[RegularizationView] Loaded ${options.length} unique categories from BC Integration Log`);
+    
+  } catch (err) {
+    console.error('[RegularizationView] Error fetching regularization categories:', err);
+    
+    // Fallback to hardcoded options if API fails
+    setStatusOptions([
+      { key: 'late_coming', text: 'Late Coming' },
+      { key: 'early_going', text: 'Early Going' },
+      { key: 'missed_punch', text: 'Missed Punch' },
+      { key: 'work_from_home', text: 'Work From Home' },
+      { key: 'on_duty', text: 'On Duty' }
+    ]);
+    
+    console.warn('[RegularizationView] Using fallback categories due to error');
+  } finally {
+    setIsLoadingStatuses(false);
+  }
+}, [spHttpClient, siteUrl]);
 /**
  * Recall a regularization request (move back to Pending)
  * @param requestId Request ID

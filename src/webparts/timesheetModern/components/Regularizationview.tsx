@@ -23,7 +23,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
   const [duration, setDuration] = React.useState<number>(0);
-
+// ✅ ADD THESE NEW LINES:
+const [statusOptions, setStatusOptions] = React.useState<Array<{ key: string; text: string }>>([]);
+const [isLoadingStatuses, setIsLoadingStatuses] = React.useState<boolean>(false);
   // ✅ FIX: Initialize approvalService from props
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
