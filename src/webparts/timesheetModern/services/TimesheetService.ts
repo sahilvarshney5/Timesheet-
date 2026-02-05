@@ -77,7 +77,7 @@ export class TimesheetService {
       const empIdCol = getColumnInternalName('TimesheetHeader', 'EmployeeID');
       const weekStartCol = getColumnInternalName('TimesheetHeader', 'WeekStartDate');
       
-      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${weekStartCol} eq '${normalizedWeekStart}'`;
+      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${weekStartCol} ge '${normalizedWeekStart}'`;
       
       const selectFields = [
         'Id',

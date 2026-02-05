@@ -1,14 +1,21 @@
+// ============================================================================
+// ATTENDANCEVIEW.TSX - UPDATED WITH TIMESHEET FILL STATUS
+// ============================================================================
+// This file integrates the timesheet fill status calculation into the calendar
+// It fetches timesheet lines and shows color-coded progress bars based on fill percentage
+// ============================================================================
+
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { AttendanceService } from '../services/AttendanceService';
 import { TimesheetService } from '../services/TimesheetService';
 import { ApprovalService } from '../services/ApprovalService';
-import { IEmployeeMaster, ITimesheetDay,ITimesheetLines } from '../models';
-import { getTimesheetFillStatus, getTimesheetProgressClass } from '../utils/TimesheetStatusUtils';
+import { IEmployeeMaster, ITimesheetDay, ITimesheetLines } from '../models';
+import { getTimesheetFillStatus } from '../utils/TimesheetStatusUtils';
 
 export interface IAttendanceViewProps {
-  onViewChange: (viewName: string, data?: any) => void; // ✅ FIXED: Added optional data parameter
+  onViewChange: (viewName: string, data?: any) => void;
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
@@ -46,50 +53,6 @@ const isSameDay = (date1: Date, date2: Date): boolean => {
   );
 };
 
-// Inside calendar day rendering loop
-const renderCalendarDay = (day: ITimesheetDay, timesheetLines: ITimesheetLines[]): JSX.Element => {
-  
-  // Get available hours from punch data
-  const expectedDailyHours = day.availableHours || 8;
-  
-  // Calculate fill status
-  const fillStatus = getTimesheetFillStatus(
-    day.date, 
-    timesheetLines, 
-     day.availableHours || 8
-  );
-  
-  // Get CSS class
-  let progressClass =styles.notFilled; // Default GREY
-  if (fillStatus.status === 'FULL') {
-    progressClass = styles.filled; // GREEN
-  } else if (fillStatus.status === 'PARTIAL') {
-    progressClass = styles.partial; // ORANGE
-  }
-  return (
-    <div className={styles.calendarDay}>
-      {/* Day content */}
-      <div className={styles.dayNumber}>{day.dayNumber}</div>
-      
-      {/* Hours display */}
-      {fillStatus.expectedDailyHours > 0 && (
-        <div className={styles.dayTotalHours}>
-          {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
-        </div>
-      )}
-      
-      {/* Progress bar */}
-      {fillStatus.expectedDailyHours > 0 && (
-        <div className={styles.timesheetProgressBar}>
-          <div
-            className={`${styles.timesheetProgressFill}` + ` ${progressClass}`}
-            style={{ width: `${fillStatus.percentage}%` }}
-          />
-        </div>
-      )}
-    </div>
-  );
-};
 const isDateBefore = (date1: Date, date2: Date): boolean => {
   const d1 = createLocalDate(date1.getFullYear(), date1.getMonth(), date1.getDate());
   const d2 = createLocalDate(date2.getFullYear(), date2.getMonth(), date2.getDate());
@@ -191,11 +154,11 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [currentYear, setCurrentYear] = React.useState<number>(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
   const [regularizedDates, setRegularizedDates] = React.useState<Set<string>>(new Set());
+  const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]); // ✅ NEW: Store timesheet data
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = React.useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
-const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]);
 
   const [monthlyCounts, setMonthlyCounts] = React.useState({
     present: 0,
@@ -214,35 +177,31 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
     return HOLIDAYS.find(h => h.date === dateString) || null;
   }, []);
 
-  const getTimesheetEntriesForMonth = React.useCallback(async (year: number, month: number): Promise<Map<string, number>> => {
+  // ✅ NEW: Load timesheet lines for the month
+  const getTimesheetLinesForMonth = React.useCallback(async (year: number, month: number): Promise<ITimesheetLines[]> => {
     try {
       const empId = props.employeeMaster.EmployeeID;
       const startDate = createLocalDate(year, month, 1);
       const endDate = createLocalDate(year, month + 1, 0);
       
       const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
-
-      const weekStart = startDateStr;
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, weekStart);
+      
+      // Get or create timesheet header for this week/month
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDateStr);
 
       if (!timesheetHeader) {
-        return new Map();
+        console.log(`[AttendanceView] No timesheet header found for ${empId} at ${startDateStr}`);
+        return [];
       }
 
       const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
       
-      const entriesMap = new Map<string, number>();
-      lines.forEach(line => {
-        const dateStr = line.WorkDate || line.EntryDate || '';
-        const hours = line.HoursBooked || line.Hours || 0;
-        entriesMap.set(dateStr, (entriesMap.get(dateStr) || 0) + hours);
-      });
-
-      return entriesMap;
+      console.log(`[AttendanceView] Loaded ${lines.length} timesheet lines for month ${month + 1}/${year}`);
+      
+      return lines;
     } catch (error) {
-      console.error('[AttendanceView] Error getting timesheet entries:', error);
-      return new Map();
+      console.error('[AttendanceView] Error getting timesheet lines:', error);
+      return [];
     }
   }, [props.employeeMaster.EmployeeID, timesheetService]);
 
@@ -282,31 +241,23 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
       }
       setIsLoading(true);
       setError(null);
-      
 
       const empId = props.employeeMaster.EmployeeID;
       
-      const [calendar, timesheetEntries, regularizedDatesSet] = await Promise.all([
+      // ✅ PARALLEL LOADING: Fetch all data at once
+      const [calendar, timesheetLinesData, regularizedDatesSet] = await Promise.all([
         attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
-        getTimesheetEntriesForMonth(currentYear, currentMonth),
+        getTimesheetLinesForMonth(currentYear, currentMonth),
         getRegularizedDatesForMonth()
       ]);
 
-       const weekStart = calendar[0]?.date || '';
-    
-    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, weekStart);
-    let lines: ITimesheetLines[] = [];
-    
-    if (timesheetHeader) {
-      lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
-    }
-    
-    setTimesheetLines(lines);
-
+      // ✅ STORE TIMESHEET LINES IN STATE
+      setTimesheetLines(timesheetLinesData);
       setRegularizedDates(regularizedDatesSet);
 
       const todayLocal = getTodayLocal();
 
+      // ✅ ENHANCED CALENDAR: Calculate timesheet fill status for each day
       const enhancedCalendar = calendar.map(day => {
         const [year, month, dayNum] = day.date.split('-').map(Number);
         const dayDate = createLocalDate(year, month - 1, dayNum);
@@ -319,9 +270,7 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
         const isFuture = isDateAfter(dayDate, todayLocal);
         const isPast = isDateBefore(dayDate, todayLocal);
         const isCurrentDay = isTodayDate(dayDate);
-        // const isRegularized = regularizedDatesSet.has(day.date);
         const todayStr = dayDate.toISOString().split('T')[0];
-
 
         if (holiday) {
           finalStatus = 'holiday';
@@ -343,19 +292,23 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
           finalStatus = 'future';
         }
 
-        const timesheetHours = timesheetEntries.get(day.date) || 0;
-        const availableHours = day.availableHours || 0;
+        // ✅ CALCULATE TIMESHEET FILL STATUS
+        const fillStatus = getTimesheetFillStatus(
+          day.date,
+          timesheetLinesData,
+          day.availableHours || 8
+        );
 
         let timesheetStatus: 'notFilled' | 'partial' | 'completed' = 'notFilled';
         let timesheetPercentage = 0;
 
-        if ((finalStatus === 'present' || finalStatus === 'regularized') && availableHours > 0) {
-          if (timesheetHours >= availableHours) {
+        if ((finalStatus === 'present' || finalStatus === 'regularized') && fillStatus.expectedDailyHours > 0) {
+          if (fillStatus.status === 'FULL') {
             timesheetStatus = 'completed';
             timesheetPercentage = 100;
-          } else if (timesheetHours > 0) {
+          } else if (fillStatus.status === 'PARTIAL') {
             timesheetStatus = 'partial';
-            timesheetPercentage = (timesheetHours / availableHours) * 100;
+            timesheetPercentage = fillStatus.percentage;
           } else {
             timesheetStatus = 'notFilled';
             timesheetPercentage = 0;
@@ -366,7 +319,7 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
           ...day,
           status: finalStatus,
           leaveType: finalLeaveType,
-          timesheetHours: timesheetHours,
+          timesheetHours: fillStatus.totalFilledHours,
           timesheetProgress: {
             percentage: timesheetPercentage,
             status: timesheetStatus
@@ -384,7 +337,7 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
       setIsRefreshing(false);
       setIsLoading(false);
     }
-  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetEntriesForMonth, getRegularizedDatesForMonth, isHoliday]);
+  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth, isHoliday]);
 
   const calculateMonthlyCounts = React.useCallback((): void => {
     const counts = {
@@ -400,108 +353,26 @@ const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]
       timesheetNotFilled: 0
     };
 
-    // calendarDays.forEach(day => {
-    //   if (day.status === 'present') counts.present++;
-    //   else if (day.status === 'leave') counts.leave++;
-    //   else if (day.status === 'absent') counts.absent++;
-    //   else if (day.status === 'weekend') counts.weekend++;
-    //   else if (day.status === 'holiday') counts.holiday++;
-    //   else if (day.status === 'future') counts.future++;
-    //   else if (day.status === 'regularized') counts.regularized++;
+    calendarDays.forEach(day => {
+      if (day.status === 'present') counts.present++;
+      else if (day.status === 'leave') counts.leave++;
+      else if (day.status === 'absent') counts.absent++;
+      else if (day.status === 'weekend') counts.weekend++;
+      else if (day.status === 'holiday') counts.holiday++;
+      else if (day.status === 'future') counts.future++;
+      else if (day.status === 'regularized') counts.regularized++;
 
-    //   if ((day.status === 'present' || day.status === 'regularized') && day.availableHours > 0) {
-    //     if (day.timesheetProgress.status === 'completed') {
-    //       counts.timesheetFilled++;
-    //     } else if (day.timesheetProgress.status === 'partial') {
-    //       counts.timesheetPartial++;
-    //     } else if (day.timesheetProgress.status === 'notFilled') {
-    //       counts.timesheetNotFilled++;
-    //     }
-    //   }
-    // });
-// In Attendanceview.tsx - REPLACE the calendar day rendering section
+      if ((day.status === 'present' || day.status === 'regularized') && day.availableHours > 0) {
+        if (day.timesheetProgress.status === 'completed') {
+          counts.timesheetFilled++;
+        } else if (day.timesheetProgress.status === 'partial') {
+          counts.timesheetPartial++;
+        } else if (day.timesheetProgress.status === 'notFilled') {
+          counts.timesheetNotFilled++;
+        }
+      }
+    });
 
-// Inside the generateCalendarGrid callback, REPLACE the day.map section:
-
-calendarDays.forEach((day, index) => {
-  const [year, month, dayNum] = day.date.split('-').map(Number);
-  const dayDate = createLocalDate(year, month - 1, dayNum);
-  const dayNumber = dayDate.getDate();
-  const isTodayCheck = isTodayDate(dayDate);
-  const holiday = isHoliday(day.date);
-  const isRegularized = regularizedDates.has(day.date);
-
-  // ✅ ADD: Calculate fill status HERE (before JSX)
-  const fillStatus = getTimesheetFillStatus(
-    day.date,
-    // ⚠️ REPLACE WITH ACTUAL timesheetLines from state/props
-    timesheetLines, // TODO: Pass actual timesheetLines array
-    day.availableHours || 8
-  );
-
-  // ✅ ADD: Map status to CSS class explicitly
-  let progressClass = styles.notFilled; // Grey default
-  if (fillStatus.status === 'FULL') {
-    progressClass = styles.filled; // Green
-  } else if (fillStatus.status === 'PARTIAL') {
-    progressClass = styles.partial; // Orange
-  }
-
-  grid.push(
-    <div
-      key={`day-${index}`}
-      className={`${styles.calendarDay} ${getDayStatusClass(day.status, day.timesheetProgress.status, isRegularized)} ${isTodayCheck ? styles.today : ''}`}
-      onClick={() => handleDayClick(day)}
-      title={holiday ? holiday.name : ''}
-    >
-      <div className={styles.dayTopSection}>
-        <div className={styles.dayNumber}>{dayNumber}</div>
-        <div className={styles.dayStatus}>
-          {day.status === 'present' && !isRegularized && 'P'}
-          {day.status === 'regularized' && 'R'}
-          {day.status === 'absent' && 'A'}
-          {day.status === 'holiday' && 'H'}
-          {day.status === 'leave' && 'L'}
-          {day.status === 'weekend' && 'W'}
-          {day.status === 'future' && '-'}
-        </div>
-      </div>
-
-      {/* ✅ REPLACE: Hours display using fillStatus */}
-      {fillStatus.expectedDailyHours > 0 && (
-        <div className={styles.dayTotalHours}>
-          {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
-        </div>
-      )}
-
-      {/* ✅ KEEP: Punch times */}
-      {day.firstPunchIn && day.lastPunchOut && (
-        <div className={styles.dayTime}>
-          {formatTime(day.firstPunchIn)}-{formatTime(day.lastPunchOut)}
-        </div>
-      )}
-
-      {/* ✅ REPLACE: Progress bar using fillStatus and progressClass */}
-      {fillStatus.expectedDailyHours > 0 && (
-        <div className={styles.timesheetProgressBar}>
-          <div
-            className={`${styles.timesheetProgressFill} ${progressClass}`}
-            style={{ width: `${fillStatus.percentage}%` }}
-          />
-        </div>
-      )}
-
-      {/* ✅ KEEP: Leave indicator */}
-      {day.leaveType && !day.isWeekend && (
-        <div className={`${styles.leaveIndicator} ${getLeaveIndicatorClass(day.leaveType)}`}>
-          {day.leaveType === 'sick' && 'Sick'}
-          {day.leaveType === 'casual' && 'Casual'}
-          {day.leaveType === 'earned' && 'Earned'}
-        </div>
-      )}
-    </div>
-  );
-});
     setMonthlyCounts(counts);
   }, [calendarDays]);
 
@@ -538,93 +409,83 @@ calendarDays.forEach((day, index) => {
     await loadCalendarData(true);
   }, [loadCalendarData]);
 
-  const canRegularize = React.useCallback((dateString: string): boolean => {
-    const [year, month, day] = dateString.split('-').map(Number);
-    const date = createLocalDate(year, month - 1, day);
-    const today = getTodayLocal();
-    return isDateBefore(date, today);
-  }, []);
+  const handleDayClick = React.useCallback((day: ITimesheetDay): void => {
+    if (day.status === 'empty' || day.status === 'future') return;
 
- const handleDayClick = React.useCallback((day: ITimesheetDay): void => {
-  if (day.status === 'empty' || day.status === 'future') return;
+    const dayDate = createLocalDate(
+      parseInt(day.date.split('-')[0]),
+      parseInt(day.date.split('-')[1]) - 1,
+      parseInt(day.date.split('-')[2])
+    );
 
-  const dayDate = createLocalDate(
-    parseInt(day.date.split('-')[0]),
-    parseInt(day.date.split('-')[1]) - 1,
-    parseInt(day.date.split('-')[2])
-  );
+    const formattedDate = formatDateForDisplay(dayDate, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
 
-  const formattedDate = formatDateForDisplay(dayDate, {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
+    const holiday = isHoliday(day.date);
+    const isRegularized = regularizedDates.has(day.date);
 
-  const holiday = isHoliday(day.date);
-  const isRegularized = regularizedDates.has(day.date);
-
-  // ✅ FIX: Build popup message
-  let message = `Details for ${formattedDate}:\n\n`;
-  
-  if (holiday) {
-    message += `Holiday: ${holiday.name}\n\n`;
-  }
-  
-  message += `Status: ${getStatusText(day.status || '')}\n`;
-
-  if (isRegularized) {
-    message += `Regularization: Raised\n`;
-  }
-
-  // ✅ FIX: Show punch times and available hours for present days
-  if (day.status === 'present' || day.status === 'regularized') {
-    if (day.firstPunchIn) {
-      message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
-    }
-
-    if (day.lastPunchOut) {
-      message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
-    }
-
-    if (day.availableHours > 0) {
-      message += `Available Hours: ${day.availableHours.toFixed(1)}\n`;
-    }
-  }
-
-  if (day.totalHours && day.totalHours > 0) {
-    message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
-  }
-
-  if (day.leaveType) {
-    message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
-  }
-
-  const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
-  message += `\nTimesheet Status: ${timesheetStatus}\n`;
-
-  if (day.timesheetHours > 0) {
-    message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
-  }
-
-  // ✅ FIX: Popup actions for present days
-  if (day.status === 'present' || day.status === 'regularized') {
-    message += `\n\nActions:\n`;
-    message += `1. Create Timesheet Entry\n`;
-    message += `2. Request Regularization\n\n`;
-    message += `What would you like to do?`;
-
-    const action = prompt(message + "\n\nType '1' for Timesheet or '2' for Regularization:");
+    let message = `Details for ${formattedDate}:\n\n`;
     
-    if (action === '1') {
-      onViewChange('timesheet', { date: day.date }); // Pass date context
-    } else if (action === '2') {
-      onViewChange('regularize', { date: day.date });
+    if (holiday) {
+      message += `Holiday: ${holiday.name}\n\n`;
     }
-  } else {
-    alert(message);
-  }
-}, [onViewChange, isHoliday, regularizedDates]);
+    
+    message += `Status: ${getStatusText(day.status || '')}\n`;
+
+    if (isRegularized) {
+      message += `Regularization: Raised\n`;
+    }
+
+    if (day.status === 'present' || day.status === 'regularized') {
+      if (day.firstPunchIn) {
+        message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
+      }
+
+      if (day.lastPunchOut) {
+        message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
+      }
+
+      if (day.availableHours > 0) {
+        message += `Available Hours: ${day.availableHours.toFixed(1)}\n`;
+      }
+    }
+
+    if (day.totalHours && day.totalHours > 0) {
+      message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
+    }
+
+    if (day.leaveType) {
+      message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
+    }
+
+    const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
+    message += `\nTimesheet Status: ${timesheetStatus}\n`;
+
+    if (day.timesheetHours > 0) {
+      message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
+    }
+
+    if (day.status === 'present' || day.status === 'regularized') {
+      message += `\n\nActions:\n`;
+      message += `1. Create Timesheet Entry\n`;
+      message += `2. Request Regularization\n\n`;
+      message += `What would you like to do?`;
+
+      const action = prompt(message + "\n\nType '1' for Timesheet or '2' for Regularization:");
+      
+      if (action === '1') {
+        onViewChange('timesheet', { date: day.date });
+      } else if (action === '2') {
+        onViewChange('regularize', { date: day.date });
+      }
+    } else {
+      alert(message);
+    }
+  }, [onViewChange, isHoliday, regularizedDates]);
 
   const getDayStatusClass = React.useCallback((status: string | undefined, timesheetStatus?: string, isRegularized?: boolean): string => {
     if (!status) return '';
@@ -719,8 +580,6 @@ calendarDays.forEach((day, index) => {
       }
     }
 
-    const todayLocal = getTodayLocal();
-
     calendarDays.forEach((day, index) => {
       const [year, month, dayNum] = day.date.split('-').map(Number);
       const dayDate = createLocalDate(year, month - 1, dayNum);
@@ -728,6 +587,21 @@ calendarDays.forEach((day, index) => {
       const isTodayCheck = isTodayDate(dayDate);
       const holiday = isHoliday(day.date);
       const isRegularized = regularizedDates.has(day.date);
+
+      // ✅ CALCULATE FILL STATUS FOR THIS DAY
+      const fillStatus = getTimesheetFillStatus(
+        day.date,
+        timesheetLines,
+        day.availableHours || 8
+      );
+
+      // ✅ DETERMINE PROGRESS BAR COLOR
+      let progressClass = styles.notFilled; // Default YELLOW
+      if (fillStatus.status === 'FULL') {
+        progressClass = styles.filled; // GREEN
+      } else if (fillStatus.status === 'PARTIAL') {
+        progressClass = styles.partial; // ORANGE
+      }
 
       grid.push(
         <div
@@ -749,26 +623,10 @@ calendarDays.forEach((day, index) => {
             </div>
           </div>
 
-           {/* Hours display - ONLY show if expected hours > 0 */}
-  {fillStatus.expectedDailyHours > 0 && (
-    <div className={styles.dayTotalHours}>
-      {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
-    </div>
-  )}
-  
-  {/* Progress bar - ALWAYS render if expected hours > 0 */}
-  {fillStatus.expectedDailyHours > 0 && (
-    <div className={styles.timesheetProgressBar}>
-      <div
-        className={`${styles.timesheetProgressFill} ${progressClass}`}
-        style={{ width: `${fillStatus.percentage}%` }}
-      />
-    </div>
-  )}
-
-          {(day.status === 'present' || day.status === 'regularized') && day.availableHours > 0 && (
+          {/* ✅ SHOW HOURS ONLY IF EXPECTED HOURS > 0 */}
+          {fillStatus.expectedDailyHours > 0 && (
             <div className={styles.dayTotalHours}>
-              {day.timesheetHours.toFixed(1)}h / {day.availableHours.toFixed(1)}h
+              {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
             </div>
           )}
 
@@ -778,11 +636,12 @@ calendarDays.forEach((day, index) => {
             </div>
           )}
 
-          {(day.status === 'present' || day.status === 'regularized') && day.availableHours > 0 && (
+          {/* ✅ PROGRESS BAR - ALWAYS RENDER IF EXPECTED HOURS > 0 */}
+          {fillStatus.expectedDailyHours > 0 && (
             <div className={styles.timesheetProgressBar}>
               <div
-                className={`${styles.timesheetProgressFill} ${getProgressClass(day.timesheetProgress.status)}`}
-                style={{ width: `${day.timesheetProgress.percentage}%` }}
+                className={`${styles.timesheetProgressFill} ${progressClass}`}
+                style={{ width: `${fillStatus.percentage}%` }}
               />
             </div>
           )}
@@ -799,7 +658,7 @@ calendarDays.forEach((day, index) => {
     });
 
     return grid;
-  }, [calendarDays, isHoliday, regularizedDates, getDayStatusClass, handleDayClick, getProgressClass, getLeaveIndicatorClass]);
+  }, [calendarDays, timesheetLines, isHoliday, regularizedDates, getDayStatusClass, handleDayClick, getLeaveIndicatorClass]);
 
   React.useEffect(() => {
     loadCalendarData().catch(err => {
