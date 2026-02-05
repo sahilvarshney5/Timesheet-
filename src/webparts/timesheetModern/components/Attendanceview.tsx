@@ -56,12 +56,16 @@ const renderCalendarDay = (day: ITimesheetDay, timesheetLines: ITimesheetLines[]
   const fillStatus = getTimesheetFillStatus(
     day.date, 
     timesheetLines, 
-    expectedDailyHours
+     day.availableHours || 8
   );
   
   // Get CSS class
-  const progressClass = getTimesheetProgressClass(fillStatus.status);
-  
+  let progressClass =styles.notFilled; // Default GREY
+  if (fillStatus.status === 'FULL') {
+    progressClass = styles.filled; // GREEN
+  } else if (fillStatus.status === 'PARTIAL') {
+    progressClass = styles.partial; // ORANGE
+  }
   return (
     <div className={styles.calendarDay}>
       {/* Day content */}
@@ -648,6 +652,23 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
               {day.status === 'future' && '-'}
             </div>
           </div>
+
+           {/* Hours display - ONLY show if expected hours > 0 */}
+  {fillStatus.expectedDailyHours > 0 && (
+    <div className={styles.dayTotalHours}>
+      {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
+    </div>
+  )}
+  
+  {/* Progress bar - ALWAYS render if expected hours > 0 */}
+  {fillStatus.expectedDailyHours > 0 && (
+    <div className={styles.timesheetProgressBar}>
+      <div
+        className={`${styles.timesheetProgressFill} ${progressClass}`}
+        style={{ width: `${fillStatus.percentage}%` }}
+      />
+    </div>
+  )}
 
           {(day.status === 'present' || day.status === 'regularized') && day.availableHours > 0 && (
             <div className={styles.dayTotalHours}>
