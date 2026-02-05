@@ -78,7 +78,7 @@ const renderCalendarDay = (day: ITimesheetDay, timesheetLines: ITimesheetLines[]
       {fillStatus.expectedDailyHours > 0 && (
         <div className={styles.timesheetProgressBar}>
           <div
-            className={`${styles.timesheetProgressFill}`}
+            className={`${styles.timesheetProgressFill}` + ` ${progressClass}`}
             style={{ width: `${fillStatus.percentage}%` }}
           />
         </div>

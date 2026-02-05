@@ -1,10 +1,10 @@
-// ============================================================================
-// TIMESHEET FILL STATUS CALCULATOR
-// Location: src/webparts/timesheetModern/utils/TimesheetStatusUtils.ts
-// ============================================================================
+// // ============================================================================
+// // TIMESHEET FILL STATUS CALCULATOR
+// // Location: src/webparts/timesheetModern/utils/TimesheetStatusUtils.ts
+// // ============================================================================
 
 import { ITimesheetLines } from '../models';
-
+import styles from '../components/TimesheetModern.module.scss';
 export interface ITimesheetFillStatus {
   status: 'FULL' | 'PARTIAL' | 'NOT_FILLED';
   totalFilledHours: number;
@@ -68,9 +68,10 @@ export function getTimesheetFillStatus(
  */
 export function getTimesheetProgressClass(status: 'FULL' | 'PARTIAL' | 'NOT_FILLED'): string {
   const statusMap = {
-    'FULL': 'filled',        // Green
-    'PARTIAL': 'partial',    // Orange
-    'NOT_FILLED': 'notFilled' // Grey
+    'FULL': styles.filled,        // Green
+    'PARTIAL': styles.partial,    // Orange
+    'NOT_FILLED': styles.notFilled // Grey
   };
   return statusMap[status];
 }
+
