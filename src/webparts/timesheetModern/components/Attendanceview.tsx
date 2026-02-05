@@ -260,6 +260,9 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
         const isFuture = isDateAfter(dayDate, todayLocal);
         const isPast = isDateBefore(dayDate, todayLocal);
         const isCurrentDay = isTodayDate(dayDate);
+        // const isRegularized = regularizedDatesSet.has(day.date);
+        const todayStr = dayDate.toISOString().split('T')[0];
+
 
         if (holiday) {
           finalStatus = 'holiday';
@@ -273,7 +276,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
           finalStatus = 'regularized';
         } else if (day.status === 'present') {
           finalStatus = 'present';
-        } else if (isCurrentDay) {
+        } else if (isCurrentDay && calendar.some(d => d.date === todayStr && d.firstPunchIn)) {
           finalStatus = 'present';
         } else if (isPast) {
           finalStatus = 'absent';

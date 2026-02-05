@@ -26,6 +26,63 @@ export class AttendanceService {
   }
 
   /**
+ * Determine attendance status for a given date
+ * @param punchData Punch record for the date (or null)
+ * @param leaveData Leave record for the date (or null)
+ * @param isWeekend Whether date is weekend
+ * @param isHoliday Whether date is holiday
+ * @param isFuture Whether date is in future
+ * @returns Attendance status
+ */
+public getAttendanceStatus(
+  punchData: IPunchData | null,
+  leaveData: ILeaveData | null,
+  isWeekend: boolean,
+  isHoliday: boolean,
+  isFuture: boolean
+): 'present' | 'absent' | 'leave' | 'holiday' | 'weekend' | 'future' | null {
+  
+  // Rule 1: Future dates
+  if (isFuture) {
+    return 'future';
+  }
+  
+  // Rule 2: Weekends
+  if (isWeekend) {
+    return 'weekend';
+  }
+  
+  // Rule 3: Holidays
+  if (isHoliday) {
+    return 'holiday';
+  }
+  
+  // Rule 4: Leave (approved only)
+  if (leaveData && leaveData.Status === 'Approved') {
+    return 'leave';
+  }
+  
+  // Rule 5: Present (ONLY if punch data exists)
+  if (punchData && (punchData.FirstPunchIn || punchData.Status === 'Synced')) {
+    return 'present';
+  }
+  
+  // Rule 6: Absent (past working day with no punch)
+  // Only mark absent if it's a past working day
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const checkDate = new Date(punchData?.AttendanceDate || '');
+  checkDate.setHours(0, 0, 0, 0);
+  
+  if (checkDate < today) {
+    return 'absent';
+  }
+  
+  // Rule 7: Default (no data, not future)
+  return null;
+}
+  /**
    * Normalize ISO date to YYYY-MM-DD format (ES5-compatible, timezone-safe)
    */
   private normalizeToDateString(isoDateString: string): string {
@@ -278,6 +335,7 @@ export class AttendanceService {
         }
         
         calendarDays.push({
+          Id:dayPunch?.Id || 0,
           date: dateString,
           dayNumber: day,
           status: status,

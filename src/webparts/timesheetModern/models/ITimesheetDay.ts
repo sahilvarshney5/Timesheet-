@@ -1,6 +1,7 @@
 import { ITimesheetEntry } from './ITimesheetEntry';
 
 export interface ITimesheetDay {
+  Id:number; // Unique identifier for the day, e.g., "2024-09-01"
   /* Calendar */
   date: string;
   dayNumber?: number;
