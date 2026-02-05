@@ -159,6 +159,9 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [error, setError] = React.useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = React.useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
+  const [showPopup, setShowPopup] = React.useState(false);
+const [selectedDay, setSelectedDay] = React.useState<any>(null);
+
 
   const [monthlyCounts, setMonthlyCounts] = React.useState({
     present: 0,
@@ -176,6 +179,10 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const isHoliday = React.useCallback((dateString: string): IHoliday | null => {
     return HOLIDAYS.find(h => h.date === dateString) || null;
   }, []);
+  const onDayClick = (dayData: any) => {
+  setSelectedDay(dayData);
+  setShowPopup(true);
+};
 
   // ✅ NEW: Load timesheet lines for the month
   const getTimesheetLinesForMonth = React.useCallback(async (year: number, month: number): Promise<ITimesheetLines[]> => {
@@ -428,64 +435,65 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
 
     const holiday = isHoliday(day.date);
     const isRegularized = regularizedDates.has(day.date);
+onDayClick(day);
 
-    let message = `Details for ${formattedDate}:\n\n`;
+    // let message = `Details for ${formattedDate}:\n\n`;
     
-    if (holiday) {
-      message += `Holiday: ${holiday.name}\n\n`;
-    }
+    // if (holiday) {
+    //   message += `Holiday: ${holiday.name}\n\n`;
+    // }
     
-    message += `Status: ${getStatusText(day.status || '')}\n`;
+    // message += `Status: ${getStatusText(day.status || '')}\n`;
 
-    if (isRegularized) {
-      message += `Regularization: Raised\n`;
-    }
+    // if (isRegularized) {
+    //   message += `Regularization: Raised\n`;
+    // }
 
-    if (day.status === 'present' || day.status === 'regularized') {
-      if (day.firstPunchIn) {
-        message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
-      }
+    // if (day.status === 'present' || day.status === 'regularized') {
+    //   if (day.firstPunchIn) {
+    //     message += `First Punch In: ${formatTime(day.firstPunchIn)}\n`;
+    //   }
 
-      if (day.lastPunchOut) {
-        message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
-      }
+    //   if (day.lastPunchOut) {
+    //     message += `Last Punch Out: ${formatTime(day.lastPunchOut)}\n`;
+    //   }
 
-      if (day.availableHours > 0) {
-        message += `Available Hours: ${day.availableHours.toFixed(1)}\n`;
-      }
-    }
+    //   if (day.availableHours > 0) {
+    //     message += `Available Hours: ${day.availableHours.toFixed(1)}\n`;
+    //   }
+    // }
 
-    if (day.totalHours && day.totalHours > 0) {
-      message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
-    }
+    // if (day.totalHours && day.totalHours > 0) {
+    //   message += `Total Hours: ${day.totalHours.toFixed(1)}\n`;
+    // }
 
-    if (day.leaveType) {
-      message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
-    }
+    // if (day.leaveType) {
+    //   message += `Leave Type: ${getLeaveTypeName(day.leaveType)}\n`;
+    // }
 
-    const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
-    message += `\nTimesheet Status: ${timesheetStatus}\n`;
+    // const timesheetStatus = getTimesheetStatusText(day.timesheetProgress.status);
+    // message += `\nTimesheet Status: ${timesheetStatus}\n`;
 
-    if (day.timesheetHours > 0) {
-      message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
-    }
+    // if (day.timesheetHours > 0) {
+    //   message += `Timesheet Hours: ${day.timesheetHours.toFixed(1)}/${day.availableHours.toFixed(1)}\n`;
+    // }
 
-    if (day.status === 'present' || day.status === 'regularized') {
-      message += `\n\nActions:\n`;
-      message += `1. Create Timesheet Entry\n`;
-      message += `2. Request Regularization\n\n`;
-      message += `What would you like to do?`;
+    // if (day.status === 'present' || day.status === 'regularized') {
+    //   message += `\n\nActions:\n`;
+    //   message += `1. Create Timesheet Entry\n`;
+    //   message += `2. Request Regularization\n\n`;
+    //   message += `What would you like to do?`;
 
-      const action = prompt(message + "\n\nType '1' for Timesheet or '2' for Regularization:");
+    //   const action = prompt(message + "\n\nType '1' for Timesheet or '2' for Regularization:");
       
-      if (action === '1') {
-        onViewChange('timesheet', { date: day.date });
-      } else if (action === '2') {
-        onViewChange('regularize', { date: day.date });
-      }
-    } else {
-      alert(message);
-    }
+    //   if (action === '1') {
+    //     onViewChange('timesheet', { date: day.date });
+    //   } else if (action === '2') {
+    //     onViewChange('regularize', { date: day.date });
+    //   }
+    // } else {
+    //   alert(message);
+    // }
   }, [onViewChange, isHoliday, regularizedDates]);
 
   const getDayStatusClass = React.useCallback((status: string | undefined, timesheetStatus?: string, isRegularized?: boolean): string => {
@@ -808,6 +816,67 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
           {generateCalendarGrid()}
         </div>
       </div>
+
+      {showPopup && selectedDay && (
+  <div className={styles.attendanceModalOverlay}>
+    <div className={styles.attendanceModal}>
+
+      <div className={styles.modalHeader}>
+        {selectedDay.displayDate}
+      </div>
+
+      <div className={styles.modalBody}>
+        <div className={styles.infoRow}>
+          <span>Status</span>
+          <strong>{selectedDay.status}</strong>
+        </div>
+
+        <div className={styles.infoRow}>
+          <span>Timesheet</span>
+          <strong>{selectedDay.timesheetStatus}</strong>
+        </div>
+
+        <div className={styles.infoRow}>
+          <span>Logged Hours</span>
+          <strong>
+            {selectedDay.loggedHours} / {selectedDay.expectedHours}
+          </strong>
+        </div>
+      </div>
+
+      <div className={styles.modalActions}>
+        <button
+          className={styles.primaryBtn}
+          onClick={() => {
+            setShowPopup(false);
+        onViewChange('timesheet', { date: selectedDay.date });
+          }}
+        >
+           📄 Create Timesheet Entry
+        </button>
+
+        <button
+          className={styles.warningBtn}
+          onClick={() => {
+            setShowPopup(false);
+            onViewChange('regularize', { date: selectedDay.date });
+          }}
+        >
+        📝 Request Regularization
+        </button>
+
+        <button
+          className={styles.cancelBtn}
+          onClick={() => setShowPopup(false)}
+        >
+          Cancel
+        </button>
+      </div>
+
+    </div>
+  </div>
+)}
+
     </div>
   );
 };

@@ -679,6 +679,95 @@
   padding: 8px 0;
   text-transform: uppercase;
 }
+.attendanceModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 94, 215, 0.15);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.attendanceModal {
+  width: 430px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+/* Header */
+.modalHeader {
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 15px;
+  color: #ffffff;
+  background: linear-gradient(90deg, #0B5ED7, #084298);
+}
+
+/* Body */
+.modalBody {
+  padding: 18px 20px;
+}
+
+.infoRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 14px;
+  color: #212529;
+}
+
+.infoRow span {
+  color: #6C757D;
+}
+
+/* Actions */
+.modalActions {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.primaryBtn {
+  background: #0B5ED7;
+  color: #ffffff;
+  border: none;
+  padding: 11px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.primaryBtn:hover {
+  background: #084298;
+}
+
+.warningBtn {
+  background: #F39C12;
+  color: #ffffff;
+  border: none;
+  padding: 11px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.warningBtn:hover {
+  background: #d68910;
+}
+
+.cancelBtn {
+  margin-top: 6px;
+  background: transparent;
+  border: none;
+  color: #6C757D;
+  font-size: 13px;
+  cursor: pointer;
+}
 
 .calendarDay {
   width: 80%;
