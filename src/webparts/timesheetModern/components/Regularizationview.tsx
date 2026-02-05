@@ -346,7 +346,7 @@ React.useEffect(() => {
 
     try {
       setIsLoading(true);
-      await approvalService.recallRegularization(requestId);
+      await approvalService.recallRegularization(requestId, 'recall');
 
       setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) => 
         req.id === requestId 
@@ -371,16 +371,24 @@ React.useEffect(() => {
     }
 
     try {
+            setIsLoading(true);
+
+            await approvalService.recallRegularization(requestId, 'recall');
+
       setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) => 
         req.id === requestId 
           ? { ...req, status: 'rejected' as const }
           : req
       ));
+            await loadRegularizationHistory();
+
       alert('Regularization request cancelled successfully.');
 
     } catch (err) {
       console.error('[RegularizationView] Error cancelling request:', err);
       alert('Failed to cancel regularization request. Please try again.');
+    }finally {
+      setIsLoading(false);
     }
   };
 
@@ -665,12 +673,20 @@ React.useEffect(() => {
                     >
                       View
                     </button>
-                    {(request.status === 'pending' || request.status === 'approved') && (
+                    {request.status === 'pending' && (
                       <button 
                         className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
                         onClick={() => { handleRecall(request.id!).catch(console.error); }}
                       >
                         Recall
+                      </button>
+                    )}
+                    {request.status === 'approved' &&(
+                       <button 
+                        className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
+                        onClick={() => { handleCancel(request.id!).catch(console.error); }}
+                      >
+                        Cancel
                       </button>
                     )}
                   </td>

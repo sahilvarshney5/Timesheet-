@@ -39,12 +39,18 @@ export class ApprovalService {
  * Recall a regularization request (move back to Pending)
  * @param requestId Request ID
  */
-public async recallRegularization(requestId: number): Promise<void> {
+public async recallRegularization(requestId: number,action:string): Promise<void> {
   try {
     const listName = getListInternalName('attendanceRegularization');
     
+    let actionStatus = '';
+    if(action === 'recall'){
+      actionStatus = 'Pending';
+    }else if(action === 'cancel'){
+      actionStatus = 'Cancelled';
+    }
     const itemData: any = {
-      [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Pending',
+      [getColumnInternalName('AttendanceRegularization', 'Status')]: actionStatus,
       [getColumnInternalName('AttendanceRegularization', 'ManagerComment')]: '' // Clear comment
     };
     
