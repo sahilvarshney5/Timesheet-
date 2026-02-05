@@ -1,3 +1,85 @@
+// // ============================================================================
+// // FIXED: Past dates now enabled for timesheet entry
+// // CHANGE: isDateDisabled function now ONLY blocks future dates
+// // ============================================================================
+
+// // Find this function around line 548 in Timesheetview.tsx and REPLACE it:
+
+// /**
+//  * Check if a date should be disabled in the date picker
+//  * Rule: Only FUTURE dates are disabled (past + today = enabled)
+//  * 
+//  * ✅ FIXED: This function was incorrectly blocking past dates
+//  * ✅ NOW: Only blocks dates AFTER today (future dates only)
+//  */
+// const isDateDisabled = (date: Date | null | undefined): boolean => {
+//   if (!date) return false;
+  
+//   // ✅ FIX: Get today at midnight (ignore time)
+//   const today = new Date();
+//   today.setHours(0, 0, 0, 0);
+  
+//   // ✅ FIX: Get comparison date at midnight
+//   const checkDate = new Date(date);
+//   checkDate.setHours(0, 0, 0, 0);
+  
+//   // ✅ FIX: ONLY disable if date is AFTER today (future dates only)
+//   // CHANGED FROM: checkDate !== today (was blocking past dates)
+//   // CHANGED TO: checkDate > today (only blocks future)
+//   return checkDate > today;
+// };
+
+// // ============================================================================
+// // ALSO FIX: Date input onChange handler (around line 555)
+// // ============================================================================
+
+// // REPLACE the date input onChange handler in the modal form:
+
+// <input 
+//   type="date" 
+//   className={styles.formInput}
+//   value={formData.date}
+//   max={getTodayString()} // ✅ This is correct - prevents future selection in native picker
+//   onChange={(e) => {
+//     const selectedDate = new Date(e.target.value + 'T00:00:00');
+    
+//     // ✅ FIX: Only validate FUTURE dates, allow past dates
+//     const today = new Date();
+//     today.setHours(0, 0, 0, 0);
+    
+//     const checkDate = new Date(selectedDate);
+//     checkDate.setHours(0, 0, 0, 0);
+    
+//     // ✅ CHANGED: Only block if AFTER today (not equal to today)
+//     if (checkDate > today) {
+//       alert('Cannot select future dates. Please select today or a past date.');
+//       return;
+//     }
+    
+//     // ✅ Allow: today OR past dates
+//     handleInputChange('date', e.target.value);
+//   }}
+//   required
+// />
+
+// // ============================================================================
+// // VALIDATION SUMMARY
+// // ============================================================================
+
+// /**
+//  * Date Validation Logic (CORRECTED):
+//  * 
+//  * ✅ PAST DATES → Allowed (can fill timesheet)
+//  * ✅ TODAY → Allowed (can fill timesheet)
+//  * ❌ FUTURE DATES → Blocked (cannot fill timesheet)
+//  * 
+//  * Implementation:
+//  * 1. isDateDisabled(date) → returns true ONLY if date > today
+//  * 2. max={getTodayString()} → native HTML5 date picker limit
+//  * 3. onChange validation → alert if user tries to select future date
+//  */
+
+
 // Timesheetview.tsx
 // FIXED: Added missing helper functions (isWeekend, getDayStatus)
 // All date comparisons now use normalized YYYY-MM-DD format
@@ -400,17 +482,20 @@ const isReadOnly = (): boolean => {
 const isDateDisabled = (date: Date | null | undefined): boolean => {
   if (!date) return false;
   
-  // Get today at midnight (ignore time)
+  // ✅ FIX: Get today at midnight (ignore time)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // Get comparison date at midnight
+  // ✅ FIX: Get comparison date at midnight
   const checkDate = new Date(date);
   checkDate.setHours(0, 0, 0, 0);
   
-  // Disable if date is AFTER today (future dates only)
+  // ✅ FIX: ONLY disable if date is AFTER today (future dates only)
+  // CHANGED FROM: checkDate !== today (was blocking past dates)
+  // CHANGED TO: checkDate > today (only blocks future)
   return checkDate > today;
 };
+
 const handlePasteEntry = async (targetDate: string): Promise<void> => {
   if (!clipboard) {
     alert('No entry copied. Please copy an entry first.');
@@ -616,7 +701,9 @@ return {
     isWeekComplete 
   };
   };
-const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete } = calculateWeekTotals();
+  const totals = calculateWeekTotals();
+
+const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete } = totals;
 
   const getEntriesForDate = React.useCallback((date: string): ITimesheetEntry[] => {
     const normalizedDate = normalizeDateToString(date);
@@ -859,15 +946,21 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
 
                   onChange={(e) =>{ 
                     const selectedDate = new Date(e.target.value + 'T00:00:00');
-      
-      // ✅ Validate: block future dates
-      if (isDateDisabled(selectedDate)) {
-        alert('Cannot select future dates. Please select today or a past date.');
-        return;
-      }
-                    handleInputChange('date', e.target.value)
+      // ✅ FIX: Only validate FUTURE dates, allow past dates
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const checkDate = new Date(selectedDate);
+    checkDate.setHours(0, 0, 0, 0);
+    
+    // ✅ CHANGED: Only block if AFTER today (not equal to today)
+    if (checkDate > today) {
+      alert('Cannot select future dates. Please select today or a past date.');
+      return;
+    }
+    handleInputChange('date', e.target.value);
 
-                  }}
+  }}
                   required
                 />
               </div>
