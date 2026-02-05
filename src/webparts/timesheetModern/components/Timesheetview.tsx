@@ -71,6 +71,7 @@ const [activeProjects, setActiveProjects] = React.useState<IProjectTask[]>([]);
 // In Timesheetview.tsx
 
 const [timesheetStatus, setTimesheetStatus] = React.useState<'Draft' | 'Submitted' | 'Approved'>('Draft');
+
   // Form state
   const [formData, setFormData] = React.useState({
     date: '',
@@ -392,7 +393,24 @@ const isReadOnly = (): boolean => {
     setClipboard(entry);
     alert(`Entry copied: ${entry.hours}h for ${entry.project}\n\nClick "Paste" on any day to create a copy.`);
   };
-
+/**
+ * Check if a date should be disabled in the date picker
+ * Rule: Only FUTURE dates are disabled (past + today = enabled)
+ */
+const isDateDisabled = (date: Date | null | undefined): boolean => {
+  if (!date) return false;
+  
+  // Get today at midnight (ignore time)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Get comparison date at midnight
+  const checkDate = new Date(date);
+  checkDate.setHours(0, 0, 0, 0);
+  
+  // Disable if date is AFTER today (future dates only)
+  return checkDate > today;
+};
 const handlePasteEntry = async (targetDate: string): Promise<void> => {
   if (!clipboard) {
     alert('No entry copied. Please copy an entry first.');
@@ -571,7 +589,8 @@ const handleSubmitTimesheet = async (): Promise<void> => {
     totalHours: number;
     availableHours: number;
     daysWithEntries: number;
-    totalDays: number 
+    totalDays: number;
+    isWeekComplete: boolean; // ✅ NEW
   } => {
     const weekDays = getCurrentWeekDays();
     const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
@@ -585,15 +604,19 @@ const handleSubmitTimesheet = async (): Promise<void> => {
     return dayStatus === 'present'; // Only count present days
   });
     const availableHours = workingDays.length * MAX_DAILY_HOURS;
-
+// ✅ NEW: Check if weekly requirement is met
+  const REQUIRED_WEEKLY_HOURS = 45;
+  const isWeekComplete = totalHours >= REQUIRED_WEEKLY_HOURS;
     
 return { 
     totalHours, 
     availableHours,
     daysWithEntries, 
-    totalDays: weekDays.length 
+    totalDays: weekDays.length,
+    isWeekComplete 
   };
   };
+const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete } = calculateWeekTotals();
 
   const getEntriesForDate = React.useCallback((date: string): ITimesheetEntry[] => {
     const normalizedDate = normalizeDateToString(date);
@@ -608,7 +631,6 @@ return {
     return checkIsToday(dateString);
   };
 
-const { totalHours, availableHours, daysWithEntries, totalDays } = calculateWeekTotals();
   const weekDays = getCurrentWeekDays();
   const weekRangeText = getWeekRangeText();
 
@@ -776,10 +798,31 @@ const { totalHours, availableHours, daysWithEntries, totalDays } = calculateWeek
         <button 
           className={styles.submitTimesheetBtn}
           onClick={() => { handleSubmitTimesheet().catch(console.error); }}
-  disabled={isReadOnly()} // DISABLE if already submitted
+  disabled={
+    isReadOnly() || // Already submitted
+    !totals.isWeekComplete || // ✅ NEW: Less than 45 hours
+    isLoading
+  } // DISABLE if already submitted
         >
-           {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'}
+          {timesheetStatus === 'Submitted' 
+    ? '✓ Submitted' 
+    : totals.isWeekComplete 
+      ? '✓ Submit Timesheet' 
+      : `⏳ ${totals.totalHours.toFixed(1)} / 45 hours (${(45 - totals.totalHours).toFixed(1)}h remaining)`
+  }
+           {/* {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'} */}
         </button>
+        {/* ✅ NEW: Warning message if incomplete */}
+{!totals.isWeekComplete && totals.totalHours > 0 && (
+  <div style={{ 
+    textAlign: 'center', 
+    color: 'var(--danger)', 
+    fontSize: 'var(--font-sm)',
+    marginTop: '0.5rem'
+  }}>
+    Please fill at least 45 hours before submitting timesheet
+  </div>
+)}
       </div>
       
       <div className={styles.timesheetSummary}>
@@ -812,7 +855,19 @@ const { totalHours, availableHours, daysWithEntries, totalDays } = calculateWeek
                   type="date" 
                   className={styles.formInput}
                   value={formData.date}
-                  onChange={(e) => handleInputChange('date', e.target.value)}
+                  max={getTodayString()} // ✅ NEW: Prevent future dates in native date picker
+
+                  onChange={(e) =>{ 
+                    const selectedDate = new Date(e.target.value + 'T00:00:00');
+      
+      // ✅ Validate: block future dates
+      if (isDateDisabled(selectedDate)) {
+        alert('Cannot select future dates. Please select today or a past date.');
+        return;
+      }
+                    handleInputChange('date', e.target.value)
+
+                  }}
                   required
                 />
               </div>
