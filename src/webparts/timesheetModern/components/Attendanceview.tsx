@@ -185,9 +185,10 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
       const endDate = createLocalDate(year, month + 1, 0);
       
       const startDateStr = startDate.toISOString().split('T')[0];
-      
+      const endDateStr = endDate.toISOString().split('T')[0];
+
       // Get or create timesheet header for this week/month
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDateStr);
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDateStr, endDateStr);
 
       if (!timesheetHeader) {
         console.log(`[AttendanceView] No timesheet header found for ${empId} at ${startDateStr}`);

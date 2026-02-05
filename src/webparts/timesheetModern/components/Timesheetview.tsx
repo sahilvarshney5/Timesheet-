@@ -214,12 +214,12 @@ React.useEffect(() => {
       
       const weekDays = getCurrentWeekDays();
       const startDate = weekDays[0];
-      
+      const endDate = weekDays[6];
       const empId = props.employeeMaster.EmployeeID;
       
-      console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate}`);
+      console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
       
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
       if (timesheetHeader) {
   setTimesheetStatus(timesheetHeader.Status as 'Draft' | 'Submitted' | 'Approved');
 }
@@ -400,8 +400,9 @@ const isReadOnly = (): boolean => {
       const empId = props.employeeMaster.EmployeeID;
       const weekDays = getCurrentWeekDays();
       const startDate = weekDays[0];
-      
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      const endDate = weekDays[6];
+
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
       
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
@@ -482,19 +483,19 @@ const isReadOnly = (): boolean => {
 const isDateDisabled = (date: Date | null | undefined): boolean => {
   if (!date) return false;
   
-  // ✅ FIX: Get today at midnight (ignore time)
+  // Get today at midnight (ignore time)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // ✅ FIX: Get comparison date at midnight
+  // Get comparison date at midnight
   const checkDate = new Date(date);
   checkDate.setHours(0, 0, 0, 0);
   
-  // ✅ FIX: ONLY disable if date is AFTER today (future dates only)
-  // CHANGED FROM: checkDate !== today (was blocking past dates)
-  // CHANGED TO: checkDate > today (only blocks future)
+  // ✅ FIXED: Disable ONLY if date is AFTER today (future dates)
+  // Past dates and today are ENABLED
   return checkDate > today;
 };
+
 
 const handlePasteEntry = async (targetDate: string): Promise<void> => {
   if (!clipboard) {
@@ -545,8 +546,9 @@ const handlePasteEntry = async (targetDate: string): Promise<void> => {
     const empId = props.employeeMaster.EmployeeID;
     const weekDays = getCurrentWeekDays();
     const startDate = weekDays[0];
+    const endDate = weekDays[6];
     
-    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
     
     if (!timesheetHeader) {
       timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
@@ -648,8 +650,8 @@ const handleSubmitTimesheet = async (): Promise<void> => {
       
       const empId = props.employeeMaster.EmployeeID;
       const startDate = weekDays[0];
-      
-      const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate);
+      const endDate = weekDays[6];
+      const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
       
       if (!timesheetHeader) {
         throw new Error('Timesheet header not found');

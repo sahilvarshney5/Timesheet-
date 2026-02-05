@@ -65,11 +65,13 @@ export class TimesheetService {
    * Get timesheet header for a specific week and employee
    * @param employeeId Employee ID
    * @param weekStartDate Week start date (Monday, ISO format)
+   * @param weekEndDate Week end date (Sunday, ISO format)
    */
-  public async getTimesheetHeader(employeeId: string, weekStartDate: string): Promise<ITimesheetHeader | null> {
+  public async getTimesheetHeader(employeeId: string, weekStartDate: string,weekEndDate:string): Promise<ITimesheetHeader | null> {
     try {
       // ✅ Normalize input date
       const normalizedWeekStart = normalizeDateToString(weekStartDate);
+      const normalizedWeekEnd = normalizeDateToString(weekEndDate);
       
       const listName = getListInternalName('timesheetHeader');
       
@@ -77,7 +79,7 @@ export class TimesheetService {
       const empIdCol = getColumnInternalName('TimesheetHeader', 'EmployeeID');
       const weekStartCol = getColumnInternalName('TimesheetHeader', 'WeekStartDate');
       
-      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${weekStartCol} ge '${normalizedWeekStart}'`;
+      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${weekStartCol} ge '${normalizedWeekStart}' and ${weekStartCol} le '${normalizedWeekEnd}'`;
       
       const selectFields = [
         'Id',
