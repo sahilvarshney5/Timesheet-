@@ -65,7 +65,7 @@ export class DashboardService {
     ).length;
     
     // ✅ FIX: Calculate actual hours from timesheet
-    const timesheetHeader = await this.timesheetService.getTimesheetHeader(employeeId, weekStart,weekEnd);
+    const timesheetHeader = await this.timesheetService.getTimesheetHeader(employeeId, monthStart,monthEnd);
     let hoursThisWeek = 0;
     
     if (timesheetHeader) {

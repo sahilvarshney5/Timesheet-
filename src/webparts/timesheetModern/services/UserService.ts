@@ -61,8 +61,8 @@ export class UserService {
     try {
       // Check group membership for determining permissions
       const [isManager, isAdmin] = await Promise.all([
-        this.isUserInGroup('Timesheet-Managers'),
-        this.isUserInGroup('Timesheet-Admins')
+        this.isUserInGroup('Timesheet_Managers'),
+        this.isUserInGroup('Timesheet_Admins')
       ]);
 
       return {
