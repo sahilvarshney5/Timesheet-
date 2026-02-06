@@ -161,6 +161,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
   const [showPopup, setShowPopup] = React.useState(false);
 const [selectedDay, setSelectedDay] = React.useState<any>(null);
+const isLoadingRef = React.useRef(false);
 
 const [holidayDates, setHolidayDates] = React.useState<Map<string, string>>(new Map());
   const [monthlyCounts, setMonthlyCounts] = React.useState({
@@ -193,22 +194,29 @@ const isHoliday = React.useCallback((date: string): IHoliday | null => {
   
   return null;
 }, [holidayDates]);
-const loadHolidaysForMonth = React.useCallback(async (year: number, month: number): Promise<void> => {
-  try {
-    const holidays = await holidayService.getHolidaysForMonth(year, month);
-    
-    const holidayMap = new Map<string, string>();
-    holidays.forEach((holiday: IHolidayMaster) => {
-      const normalizedDate = normalizeDateString(holiday.HolidayDate);
-      holidayMap.set(normalizedDate, holiday.Title);
-    });
-    
-    setHolidayDates(holidayMap);
-  } catch (error) {
-    console.error('[AttendanceView] Error loading holidays:', error);
-    setHolidayDates(new Map());
-  }
-}, [holidayService]);
+const loadHolidaysForMonth = React.useCallback(
+  async (year: number, month: number): Promise<Map<string, string>> => {
+    try {
+      const holidays = await holidayService.getHolidaysForMonth(year, month);
+
+      const holidayMap = new Map<string, string>();
+      holidays.forEach((holiday: IHolidayMaster) => {
+        const normalizedDate = normalizeDateString(holiday.HolidayDate);
+        holidayMap.set(normalizedDate, holiday.Title);
+      });
+
+      // keep state for UI / tooltip usage
+      setHolidayDates(holidayMap);
+
+      return holidayMap; // ✅ KEY FIX
+    } catch (error) {
+      console.error('[AttendanceView] Error loading holidays:', error);
+      setHolidayDates(new Map());
+      return new Map();
+    }
+  },
+  [holidayService]
+);
   const onDayClick = (dayData: any) => {
   setSelectedDay(dayData);
   setShowPopup(true);
@@ -270,7 +278,13 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
     }
   }, [props.employeeMaster.EmployeeID, approvalService]);
 
-  const loadCalendarData = React.useCallback(async (isRefresh = false): Promise<void> => {
+  const loadCalendarData = React.useCallback(async (isRefresh: boolean = false): Promise<void> => {
+     // ✅ Prevent duplicate calls
+  if (isLoadingRef.current) {
+    console.log('[AttendanceView] Already loading, skipping duplicate call');
+    return;
+  }
+  isLoadingRef.current = true;
     try {
       if (isRefresh) {
         setIsRefreshing(true);
@@ -281,7 +295,7 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
       setError(null);
 
       const empId = props.employeeMaster.EmployeeID;
-      // await  loadHolidaysForMonth(currentYear, currentMonth);
+    const holidayMap = await loadHolidaysForMonth(currentYear, currentMonth);
       // ✅ PARALLEL LOADING: Fetch all data at once
       const [calendar, timesheetLinesData, regularizedDatesSet] = await Promise.all([
         attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
@@ -303,14 +317,17 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
         let finalStatus = day.status;
         let finalLeaveType = day.leaveType;
 
-        const holiday = isHoliday(day.date);
+        const holidayName = holidayMap.get(day.date);
+      const isHolidayDay = !!holidayName;
+
+        // const holiday = isHoliday(day.date);
         const isRegularized = regularizedDatesSet.has(day.date);
         const isFuture = isDateAfter(dayDate, todayLocal);
         const isPast = isDateBefore(dayDate, todayLocal);
         const isCurrentDay = isTodayDate(dayDate);
         const todayStr = dayDate.toISOString().split('T')[0];
 
-        if (holiday) {
+        if (isHolidayDay) {
           finalStatus = 'holiday';
           finalLeaveType = undefined;
         } else if (day.status === 'weekend') {
@@ -374,8 +391,10 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
       setIsInitialLoad(false);
       setIsRefreshing(false);
       setIsLoading(false);
+          isLoadingRef.current = false;
+
     }
-  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth, isHoliday,holidayDates]);
+  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth,loadHolidaysForMonth]);
 
   const calculateMonthlyCounts = React.useCallback((): void => {
     const counts = {
@@ -444,7 +463,7 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
   }, [attendanceService, props.employeeMaster.EmployeeID, currentYear, currentMonth]);
 
   const handleRefresh = React.useCallback(async (): Promise<void> => {
-    await loadCalendarData(true);
+    await loadCalendarData();
   }, [loadCalendarData]);
 
   const handleDayClick = React.useCallback((day: ITimesheetDay): void => {
@@ -699,13 +718,20 @@ onDayClick(day);
     return grid;
   }, [calendarDays, timesheetLines, isHoliday, regularizedDates, getDayStatusClass, handleDayClick, getLeaveIndicatorClass]);
 
-  React.useEffect(() => {
-     loadHolidaysForMonth(currentYear, currentMonth)
-    .then(() => loadCalendarData())
-    .catch(err => {
-      console.error('[AttendanceView] Effect error:', err);
-    });
-  }, [currentMonth, currentYear,loadHolidaysForMonth, loadCalendarData]);
+  // ✅ Effect 1: Load holidays
+React.useEffect(() => {
+  loadHolidaysForMonth(currentYear, currentMonth).catch(err => {
+    console.error('[AttendanceView] Error loading holidays:', err);
+  });
+}, [currentMonth, currentYear, loadHolidaysForMonth]);
+
+// ✅ Effect 2: Load calendar (runs independently)
+React.useEffect(() => {
+  loadCalendarData().catch(err => {
+    console.error('[AttendanceView] Effect error:', err);
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentMonth, currentYear]); // ✅ ONLY month/year, NOT loadCalendarData
 
   React.useEffect(() => {
     calculateMonthlyCounts();
