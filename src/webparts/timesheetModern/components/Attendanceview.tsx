@@ -718,7 +718,7 @@ onDayClick(day);
 
       <div className={styles.calendarContainer}>
         <div className={styles.calendarHeader}>
-          <div className={styles.calendarNav}>
+        <div className={styles.calendarNavigation}>
             <button
               className={styles.navBtn}
               onClick={() => handleMonthChange(-1)}
@@ -760,55 +760,55 @@ onDayClick(day);
             <div className={`${styles.legendColor} ${getLegendColorClass('present')}`}>
               <span className={styles.legendCount}>{monthlyCounts.present}</span>
             </div>
-            <span>Present</span>
+            <span className={styles.legendlabel}>Present</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('regularized')}`}>
               <span className={styles.legendCount}>{monthlyCounts.regularized}</span>
             </div>
-            <span>Regularized</span>
+            <span className={styles.legendlabel}>Regularized</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('absent')}`}>
               <span className={styles.legendCount}>{monthlyCounts.absent}</span>
             </div>
-            <span>Absent</span>
+            <span className={styles.legendlabel}>Absent</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('holiday')}`}>
               <span className={styles.legendCount}>{monthlyCounts.holiday}</span>
             </div>
-            <span>Holiday</span>
+            <span className={styles.legendlabel}>Holiday</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('leave')}`}>
               <span className={styles.legendCount}>{monthlyCounts.leave}</span>
             </div>
-            <span>On Leave</span>
+            <span className={styles.legendlabel}>On Leave</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('weekend')}`}>
               <span className={styles.legendCount}>{monthlyCounts.weekend}</span>
             </div>
-            <span>Weekend</span>
+            <span className={styles.legendlabel}>Weekend</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('progressFilled')}`}>
               <span className={styles.legendCount}>{monthlyCounts.timesheetFilled}</span>
             </div>
-            <span>Timesheet: Filled</span>
+            <span className={styles.legendlabel}>Timesheet: Filled</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('progressPartial')}`}>
               <span className={styles.legendCount}>{monthlyCounts.timesheetPartial}</span>
             </div>
-            <span>Timesheet: Partial</span>
+            <span className={styles.legendlabel}>Timesheet: Partial</span>
           </div>
           <div className={styles.legendItem}>
             <div className={`${styles.legendColor} ${getLegendColorClass('progressNotFilled')}`}>
               <span className={styles.legendCount}>{monthlyCounts.timesheetNotFilled}</span>
             </div>
-            <span>Timesheet: Not Filled</span>
+            <span className={styles.legendlabel}>Timesheet: Not Filled</span>
           </div>
         </div>
 
