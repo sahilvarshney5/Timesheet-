@@ -13,7 +13,7 @@ import { TimesheetService } from '../services/TimesheetService';
 import { ApprovalService } from '../services/ApprovalService';
 import { IEmployeeMaster, ITimesheetDay, ITimesheetLines } from '../models';
 import { getTimesheetFillStatus } from '../utils/TimesheetStatusUtils';
-
+import { HolidayService, IHolidayMaster } from '../services/HolidayService';
 export interface IAttendanceViewProps {
   onViewChange: (viewName: string, data?: any) => void;
   spHttpClient: SPHttpClient;
@@ -28,13 +28,13 @@ interface IHoliday {
   name: string;
 }
 
-const HOLIDAYS: IHoliday[] = [
-  { date: '2026-01-14', name: 'Lohri' },
-  { date: '2026-01-15', name: 'Makar Sankranti' },
-  { date: '2026-01-26', name: 'Republic Day' },
-  { date: '2026-03-05', name: 'Holi' },
-  { date: '2026-03-06', name: 'Holi' }
-];
+// const HOLIDAYS: IHoliday[] = [
+//   { date: '2026-01-14', name: 'Lohri' },
+//   { date: '2026-01-15', name: 'Makar Sankranti' },
+//   { date: '2026-01-26', name: 'Republic Day' },
+//   { date: '2026-03-05', name: 'Holi' },
+//   { date: '2026-03-06', name: 'Holi' }
+// ];
 
 const createLocalDate = (year: number, month: number, day: number): Date => {
   return new Date(year, month, day, 0, 0, 0, 0);
@@ -162,7 +162,7 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [showPopup, setShowPopup] = React.useState(false);
 const [selectedDay, setSelectedDay] = React.useState<any>(null);
 
-
+const [holidayDates, setHolidayDates] = React.useState<Map<string, string>>(new Map());
   const [monthlyCounts, setMonthlyCounts] = React.useState({
     present: 0,
     leave: 0,
@@ -176,9 +176,39 @@ const [selectedDay, setSelectedDay] = React.useState<any>(null);
     timesheetNotFilled: 0
   });
 
-  const isHoliday = React.useCallback((dateString: string): IHoliday | null => {
-    return HOLIDAYS.find(h => h.date === dateString) || null;
-  }, []);
+  const holidayService = React.useMemo(
+  () => new HolidayService(spHttpClient, siteUrl),
+  [spHttpClient, siteUrl]
+);
+const normalizeDateString = (dateString: string): string => {
+  return dateString.split('T')[0]; // Returns YYYY-MM-DD
+};
+const isHoliday = React.useCallback((date: string): IHoliday | null => {
+  const dateStr = normalizeDateString(date);
+  const holidayName = holidayDates.get(dateStr);
+  
+  if (holidayName) {
+    return { date: dateStr, name: holidayName };
+  }
+  
+  return null;
+}, [holidayDates]);
+const loadHolidaysForMonth = React.useCallback(async (year: number, month: number): Promise<void> => {
+  try {
+    const holidays = await holidayService.getHolidaysForMonth(year, month);
+    
+    const holidayMap = new Map<string, string>();
+    holidays.forEach((holiday: IHolidayMaster) => {
+      const normalizedDate = normalizeDateString(holiday.HolidayDate);
+      holidayMap.set(normalizedDate, holiday.Title);
+    });
+    
+    setHolidayDates(holidayMap);
+  } catch (error) {
+    console.error('[AttendanceView] Error loading holidays:', error);
+    setHolidayDates(new Map());
+  }
+}, [holidayService]);
   const onDayClick = (dayData: any) => {
   setSelectedDay(dayData);
   setShowPopup(true);
@@ -251,7 +281,7 @@ const [selectedDay, setSelectedDay] = React.useState<any>(null);
       setError(null);
 
       const empId = props.employeeMaster.EmployeeID;
-      
+      await  loadHolidaysForMonth(currentYear, currentMonth);
       // ✅ PARALLEL LOADING: Fetch all data at once
       const [calendar, timesheetLinesData, regularizedDatesSet] = await Promise.all([
         attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
@@ -345,7 +375,7 @@ const [selectedDay, setSelectedDay] = React.useState<any>(null);
       setIsRefreshing(false);
       setIsLoading(false);
     }
-  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth, isHoliday]);
+  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth, isHoliday,loadHolidaysForMonth]);
 
   const calculateMonthlyCounts = React.useCallback((): void => {
     const counts = {
