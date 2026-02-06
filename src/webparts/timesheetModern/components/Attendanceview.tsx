@@ -281,7 +281,7 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
       setError(null);
 
       const empId = props.employeeMaster.EmployeeID;
-      await  loadHolidaysForMonth(currentYear, currentMonth);
+      // await  loadHolidaysForMonth(currentYear, currentMonth);
       // ✅ PARALLEL LOADING: Fetch all data at once
       const [calendar, timesheetLinesData, regularizedDatesSet] = await Promise.all([
         attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
@@ -375,7 +375,7 @@ const loadHolidaysForMonth = React.useCallback(async (year: number, month: numbe
       setIsRefreshing(false);
       setIsLoading(false);
     }
-  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth, isHoliday,loadHolidaysForMonth]);
+  }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth, isHoliday,holidayDates]);
 
   const calculateMonthlyCounts = React.useCallback((): void => {
     const counts = {
@@ -700,10 +700,12 @@ onDayClick(day);
   }, [calendarDays, timesheetLines, isHoliday, regularizedDates, getDayStatusClass, handleDayClick, getLeaveIndicatorClass]);
 
   React.useEffect(() => {
-    loadCalendarData().catch(err => {
+     loadHolidaysForMonth(currentYear, currentMonth)
+    .then(() => loadCalendarData())
+    .catch(err => {
       console.error('[AttendanceView] Effect error:', err);
     });
-  }, [currentMonth, currentYear, loadCalendarData]);
+  }, [currentMonth, currentYear,loadHolidaysForMonth, loadCalendarData]);
 
   React.useEffect(() => {
     calculateMonthlyCounts();
