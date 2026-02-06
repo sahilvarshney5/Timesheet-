@@ -26,6 +26,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 // ✅ ADD THESE NEW LINES:
 const [statusOptions, setStatusOptions] = React.useState<Array<{ key: string; text: string }>>([]);
 const [isLoadingStatuses, setIsLoadingStatuses] = React.useState<boolean>(false);
+// Add this state variable after existing states
+const [isFormModalOpen, setIsFormModalOpen] = React.useState<boolean>(false);
   // ✅ FIX: Initialize approvalService from props
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
@@ -52,6 +54,14 @@ const [isLoadingStatuses, setIsLoadingStatuses] = React.useState<boolean>(false)
     yesterday.setDate(today.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
   };
+  // Add this handler after existing handlers
+const handleOpenFormModal = (): void => {
+  setIsFormModalOpen(true);
+};
+
+const handleCloseFormModal = (): void => {
+  setIsFormModalOpen(false);
+};
 
   // ✅ ADD THIS FUNCTION inside RegularizationView component:
 /**
@@ -279,7 +289,8 @@ React.useEffect(() => {
       setDuration(0);
       
       await loadRegularizationHistory();
-      
+        // ✅ ADD THIS LINE:
+  setIsFormModalOpen(false);
       onViewChange('dashboard');
    
     } catch (err) {
@@ -449,8 +460,23 @@ React.useEffect(() => {
         <h1>Attendance Regularization</h1>
         <p>Submit requests to regularize your attendance (past dates only)</p>
       </div>
+      {/* ✅ NEW: Regularization Form Modal */}
+{isFormModalOpen && (
+  <div className={styles.modal} style={{ display: 'flex' }}>
+    <div className={styles.modalContent}>
+      <div className={styles.modalHeader}>
+        <h3>Request Attendance Regularization</h3>
+        <button 
+          className={styles.closeBtn} 
+          onClick={handleCloseFormModal}
+          type="button"
+        >
+          ×
+        </button>
+      </div>
       
-      <div className={styles.formContainer}>
+      
+      {/* <div className={styles.formContainer}> */}
         <form onSubmit={handleSubmit}>
           {/* Radio buttons for Day-based vs Time-based */}
           <div className={styles.radioGroup}>
@@ -619,8 +645,24 @@ React.useEffect(() => {
             </button>
           </div>
         </form>
-      </div>
-      
+        </div>
+        </div>
+)}
+      {/* </div> */}
+       {/* ✅ NEW: Request Regularization Button Section */}
+    <div style={{ 
+      marginBottom: '1.5rem', 
+      display: 'flex', 
+      justifyContent: 'center' 
+    }}>
+      <button 
+        className={`${styles.btn} ${styles.btnPrimary}`}
+        onClick={handleOpenFormModal}
+        style={{ padding: '0.75rem 2rem', fontSize: 'var(--font-base)' }}
+      >
+        📝 Request Regularization
+      </button>
+    </div>
       {/* Regularization History */}
       <div className={styles.regularizationHistory}>
         <div className={styles.historyHeader}>
