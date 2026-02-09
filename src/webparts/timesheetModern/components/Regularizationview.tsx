@@ -73,7 +73,7 @@ const fetchRegularizationCategories = React.useCallback(async (): Promise<void> 
     setIsLoadingStatuses(true);
     
     // Fetch Status column from BC Integration Log
-    const endpoint = `${siteUrl}/_api/web/lists/getbytitle('BC Integration Log')/items?$select=Title&$top=5000`;
+    const endpoint = `${siteUrl}/_api/web/lists/getbytitle('Regularization%20Categories')/items?$select=Description&$top=5000`;
     // $filter=UserId eq '${props.employeeMaster.UserId}'
     
     const response = await spHttpClient.get(
@@ -91,15 +91,15 @@ const fetchRegularizationCategories = React.useCallback(async (): Promise<void> 
     const uniqueStatuses = Array.from(
       new Set(
         data.value
-          .map((item: any) => item.Title)
-          .filter((Title: string) => Title && Title.trim() !== '') // Remove null/undefined/empty
+          .map((item: any) => item.Description)
+          .filter((Description: string) => Description && Description.trim() !== '') // Remove null/undefined/empty
       )
     ) as string[];
     
     // Convert to dropdown options format
-    const options = uniqueStatuses.map(Title => ({
-      key: Title.toLowerCase().replace(/\s+/g, '_'), // Convert to snake_case for key
-      text: Title // Display original text
+    const options = uniqueStatuses.map(Description => ({
+      key: Description.toLowerCase().replace(/\s+/g, '_'), // Convert to snake_case for key
+      text: Description // Display original text
     }));
     
     setStatusOptions(options);
@@ -221,6 +221,7 @@ React.useEffect(() => {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     
+    
     if (isSaving) return;
     
     try {
@@ -229,13 +230,23 @@ React.useEffect(() => {
 
       const form = event.currentTarget;
       const formData = new FormData(form);
-      
+      const employeeId = props.employeeMaster.EmployeeID;
       const fromDate = formData.get('fromDate') as string;
       const toDate = formData.get('toDate') as string;
       const category = formData.get('category') as string;
       const reason = formData.get('reason') as string;
-      const timeStart = formData.get('timeStart') as string;
-      const timeEnd = formData.get('timeEnd') as string;
+      let timeStart = formData.get('timeStart') as string;
+      let timeEnd = formData.get('timeEnd') as string;
+
+      const exists = await approvalService.checkRegularizationExists(
+      employeeId,
+      fromDate
+    );
+
+    if (exists) {
+      alert("Regularization already raised for this date.");
+      return;
+    }
       
       // ✅ VALIDATION 1: Date range check
       if (new Date(toDate) < new Date(fromDate)) {
@@ -264,6 +275,10 @@ React.useEffect(() => {
         setIsSaving(false);
         return;
       }
+      if(regularizationType == 'day_based'){
+        timeStart = '08:00';
+        timeEnd = '17:00';
+      }
       
       const empId = props.employeeMaster.EmployeeID;
       const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
@@ -272,10 +287,10 @@ React.useEffect(() => {
       const newRequest: Partial<IAttendanceRegularization> = {
         EmployeeID: empId,
         RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
-        StartDate: fromDate,
-        EndDate: toDate,
-        ExpectedIn: regularizationType === 'time_based' ? timeStart : undefined,
-        ExpectedOut: regularizationType === 'time_based' ? timeEnd : undefined,
+        StartDate: `${fromDate}T${timeStart}:00`,
+        EndDate: `${toDate}T${timeEnd}:00`,
+        ExpectedIn: `${fromDate}T${timeStart}:00`,
+        ExpectedOut:  `${toDate}T${timeEnd}:00`,
         Reason: enhancedReason,
         Status: 'Pending' as const
       };

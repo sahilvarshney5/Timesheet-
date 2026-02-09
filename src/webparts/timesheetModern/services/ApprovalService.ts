@@ -33,36 +33,36 @@ export class ApprovalService {
   }
 
 
-// ✅ ADD THIS FUNCTION HERE:
+  // ✅ ADD THIS FUNCTION HERE:
 
-/**
- * Recall a regularization request (move back to Pending)
- * @param requestId Request ID
- */
-public async recallRegularization(requestId: number,action:string): Promise<void> {
-  try {
-    const listName = getListInternalName('attendanceRegularization');
-    
-    let actionStatus = '';
-    if(action === 'recall'){
-      actionStatus = 'Pending';
-    }else if(action === 'cancel'){
-      actionStatus = 'Cancelled';
+  /**
+   * Recall a regularization request (move back to Pending)
+   * @param requestId Request ID
+   */
+  public async recallRegularization(requestId: number, action: string): Promise<void> {
+    try {
+      const listName = getListInternalName('attendanceRegularization');
+
+      let actionStatus = '';
+      if (action === 'recall') {
+        actionStatus = 'Pending';
+      } else if (action === 'cancel') {
+        actionStatus = 'Cancelled';
+      }
+      const itemData: any = {
+        [getColumnInternalName('AttendanceRegularization', 'Status')]: actionStatus,
+        [getColumnInternalName('AttendanceRegularization', 'ManagerComment')]: '' // Clear comment
+      };
+
+      await this.httpService.updateListItem(listName, requestId, itemData);
+
+      console.log(`[ApprovalService] Recalled request ${requestId} to Pending status`);
+
+    } catch (error) {
+      console.error('[ApprovalService] Error recalling request:', error);
+      throw error;
     }
-    const itemData: any = {
-      [getColumnInternalName('AttendanceRegularization', 'Status')]: actionStatus,
-      [getColumnInternalName('AttendanceRegularization', 'ManagerComment')]: '' // Clear comment
-    };
-    
-    await this.httpService.updateListItem(listName, requestId, itemData);
-    
-    console.log(`[ApprovalService] Recalled request ${requestId} to Pending status`);
-    
-  } catch (error) {
-    console.error('[ApprovalService] Error recalling request:', error);
-    throw error;
   }
-}
 
   /**
    * Get pending regularization requests for approval
@@ -71,15 +71,15 @@ public async recallRegularization(requestId: number,action:string): Promise<void
   public async getPendingApprovals(managerId?: string): Promise<IApprovalQueueItem[]> {
     try {
       const listName = getListInternalName('attendanceRegularization');
-      
+
       const statusCol = getColumnInternalName('AttendanceRegularization', 'Status');
-      
+
       // Build filter for pending status
       let filterQuery = `$filter=${statusCol} eq 'Pending'`;
-      
+
       // TODO: Add manager filter if needed
       // This would require a Manager column or lookup to employee-manager mapping
-      
+
       const selectFields = [
         'Id',
         getColumnInternalName('AttendanceRegularization', 'EmployeeID'),
@@ -96,10 +96,10 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         'Author/Title',
         'Author/EMail'
       ];
-      
+
       const expandFields = ['Author'];
       const orderBy = 'Created';
-      
+
       // Call httpService.getListItems with expanded Author field
       const items = await this.httpService.getListItems<IAttendanceRegularizationExpanded>(
         listName,
@@ -109,14 +109,14 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         1000,
         expandFields
       );
-      
+
       // Transform to approval queue items with proper field mapping
       const approvalItems: IApprovalQueueItem[] = items.map(item => {
         // Format date range
         const fromDate = item.SubmittedDate || '';
         const toDate = item.ApprovedDate || fromDate;
         const dateRange = this.formatDateRange(fromDate, toDate);
-        
+
         return {
           requestId: item.Id!, // FIXED: Use requestId instead of id
           employeeName: item.Author?.Title || 'Unknown',
@@ -125,9 +125,9 @@ public async recallRegularization(requestId: number,action:string): Promise<void
           status: 'Pending'
         };
       });
-      
+
       return approvalItems;
-      
+
     } catch (error) {
       console.error('[ApprovalService] Error getting pending approvals:', error);
       throw error;
@@ -147,18 +147,18 @@ public async recallRegularization(requestId: number,action:string): Promise<void
   ): Promise<IRegularizationRequest[]> {
     try {
       const listName = getListInternalName('attendanceRegularization');
-      
+
       const statusCol = getColumnInternalName('AttendanceRegularization', 'Status');
-      
+
       // Build filter for approved/rejected status
       let filterQuery = `$filter=(${statusCol} eq 'Approved' or ${statusCol} eq 'Rejected')`;
-      
+
       // Add date range filter if provided
       if (startDate && endDate) {
         const createdCol = 'Created';
         filterQuery += ` and ${createdCol} ge '${startDate}' and ${createdCol} le '${endDate}'`;
       }
-      
+
       const selectFields = [
         'Id',
         getColumnInternalName('AttendanceRegularization', 'EmployeeID'),
@@ -177,10 +177,10 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         'Editor/Title',
         'Editor/EMail'
       ];
-      
+
       const expandFields = ['Author', 'Editor'];
       const orderBy = 'Modified'; // Order by last modified
-      
+
       // FIXED: Proper call to httpService.getListItems (removed TODO comment)
       const items = await this.httpService.getListItems<IAttendanceRegularizationExpanded>(
         listName,
@@ -190,28 +190,35 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         1000,
         expandFields
       );
-      
+
       // Transform to regularization requests with proper field mapping
-      const requests: IRegularizationRequest[] = items.map(item => ({
-        id: item.Id,
-        employeeId: item.EmployeeID || '', // FIXED: Provide default empty string
-        employeeName: item.Author?.Title || 'Unknown',
-        requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
-        category: this.mapCategoryFromReason(item.Reason || ''),
-        fromDate: item.StartDate || '',
-        toDate: item.EndDate || item.StartDate || '',
-        startTime: item.ExpectedIn,
-        endTime: item.ExpectedOut,
-        reason: item.Reason || '',
-        status: item.Status === 'Approved' ? 'approved' : 'rejected',
-        submittedOn: item.Created || '',
-        approvedBy: item.Editor?.Title, // FIXED: Use Editor instead of ManagerComment
-        approvedOn: item.Modified,
-        managerComment: item.ManagerComments // FIXED: Use ManagerComments (plural)
-      }));
-      
+      const requests: IRegularizationRequest[] = items.map(item => {
+        const fromDate = item.SubmittedDate || '';
+        const toDate = item.ApprovedDate || item.SubmittedDate || '';
+        const dateRange = this.formatDateRange(fromDate, toDate);
+
+        return {
+          id: item.Id,
+          employeeId: item.EmployeeID || '', // FIXED: Provide default empty string
+          employeeName: item.Author?.Title || 'Unknown',
+          requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',
+          category: this.mapCategoryFromReason(item.Reason || ''),
+          fromDate: item.SubmittedDate || '',
+          toDate: item.ApprovedDate || item.SubmittedDate || '',
+          dateRange: dateRange,
+          startTime: item.ExpectedIn,
+          endTime: item.ExpectedOut,
+          reason: item.Reason || '',
+          status: item.Status === 'Approved' ? 'approved' : 'rejected',
+          submittedOn: item.Created || '',
+          approvedBy: item.Editor?.Title, // FIXED: Use Editor instead of ManagerComment
+          approvedOn: item.Modified,
+          managerComment: item.ManagerComments // FIXED: Use ManagerComments (plural)
+        }
+      });
+
       return requests;
-      
+
     } catch (error) {
       console.error('[ApprovalService] Error getting approval history:', error);
       throw error;
@@ -225,10 +232,10 @@ public async recallRegularization(requestId: number,action:string): Promise<void
   public async getEmployeeRegularizations(employeeId: string): Promise<IRegularizationRequest[]> {
     try {
       const listName = getListInternalName('attendanceRegularization');
-      
+
       const empIdCol = getColumnInternalName('AttendanceRegularization', 'EmployeeID');
       const filterQuery = `$filter=${empIdCol} eq '${employeeId}'`;
-      
+
       const selectFields = [
         'Id',
         empIdCol,
@@ -244,10 +251,10 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         'Modified',
         'Editor/Title'
       ];
-      
+
       const expandFields = ['Editor'];
       const orderBy = 'Created';
-      
+
       // Call httpService.getListItems with expanded Editor field
       const items = await this.httpService.getListItems<IAttendanceRegularizationExpanded>(
         listName,
@@ -257,7 +264,7 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         1000,
         expandFields
       );
-      
+
       // Transform to regularization requests with proper field mapping
       const requests: IRegularizationRequest[] = items.map(item => ({
         id: item.Id,
@@ -276,9 +283,9 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         approvedOn: item.Modified,
         managerComment: item.ManagerComments // FIXED: Use ManagerComments (plural)
       }));
-      
+
       return requests;
-      
+
     } catch (error) {
       console.error('[ApprovalService] Error getting employee regularizations:', error);
       throw error;
@@ -293,20 +300,20 @@ public async recallRegularization(requestId: number,action:string): Promise<void
   public async approveRequest(requestId: number, managerComment?: string): Promise<void> {
     try {
       const listName = getListInternalName('attendanceRegularization');
-      
+
       const itemData: any = {
         [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Approved'
       };
-      
+
       if (managerComment) {
         itemData[getColumnInternalName('AttendanceRegularization', 'ManagerComment')] = managerComment;
       }
-      
+
       // Call httpService.updateListItem
       await this.httpService.updateListItem(listName, requestId, itemData);
-      
+
       console.log(`[ApprovalService] Approved request ${requestId}`);
-      
+
     } catch (error) {
       console.error('[ApprovalService] Error approving request:', error);
       throw error;
@@ -321,20 +328,20 @@ public async recallRegularization(requestId: number,action:string): Promise<void
   public async rejectRequest(requestId: number, managerComment?: string): Promise<void> {
     try {
       const listName = getListInternalName('attendanceRegularization');
-      
+
       const itemData: any = {
         [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Rejected'
       };
-      
+
       if (managerComment) {
         itemData[getColumnInternalName('AttendanceRegularization', 'ManagerComment')] = managerComment;
       }
-      
+
       // Call httpService.updateListItem
       await this.httpService.updateListItem(listName, requestId, itemData);
-      
+
       console.log(`[ApprovalService] Rejected request ${requestId}`);
-      
+
     } catch (error) {
       console.error('[ApprovalService] Error rejecting request:', error);
       throw error;
@@ -348,7 +355,7 @@ public async recallRegularization(requestId: number,action:string): Promise<void
   public async submitRegularizationRequest(request: Partial<IAttendanceRegularization>): Promise<IAttendanceRegularization> {
     try {
       const listName = getListInternalName('attendanceRegularization');
-      
+
       const itemData = {
         [getColumnInternalName('AttendanceRegularization', 'EmployeeID')]: request.EmployeeID,
         [getColumnInternalName('AttendanceRegularization', 'RequestType')]: request.RequestType,
@@ -359,17 +366,17 @@ public async recallRegularization(requestId: number,action:string): Promise<void
         [getColumnInternalName('AttendanceRegularization', 'Reason')]: request.Reason,
         [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Pending'
       };
-      
+
       // Call httpService.createListItem
       const newRequest = await this.httpService.createListItem<IAttendanceRegularization>(
         listName,
         itemData
       );
-      
+
       console.log(`[ApprovalService] Created new regularization request with ID: ${newRequest.Id}`);
-      
+
       return newRequest;
-      
+
     } catch (error) {
       console.error('[ApprovalService] Error submitting regularization request:', error);
       throw error;
@@ -381,14 +388,14 @@ public async recallRegularization(requestId: number,action:string): Promise<void
    */
   private formatDateRange(fromDate: string, toDate: string): string {
     if (!fromDate) return '';
-    
+
     const from = new Date(fromDate);
     const to = new Date(toDate);
-    
+
     if (fromDate === toDate) {
       return from.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
-    
+
     return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
 
@@ -398,13 +405,53 @@ public async recallRegularization(requestId: number,action:string): Promise<void
    */
   private mapCategoryFromReason(reason: string): 'late_coming' | 'early_going' | 'missed_punch' | 'work_from_home' | 'on_duty' {
     const lowerReason = reason.toLowerCase();
-    
+
     if (lowerReason.includes('late')) return 'late_coming';
     if (lowerReason.includes('early')) return 'early_going';
     if (lowerReason.includes('punch') || lowerReason.includes('forgot')) return 'missed_punch';
     if (lowerReason.includes('wfh') || lowerReason.includes('work from home')) return 'work_from_home';
     if (lowerReason.includes('duty') || lowerReason.includes('site')) return 'on_duty';
-    
+
     return 'missed_punch'; // Default
   }
+
+  public async checkRegularizationExists(
+    employeeId: string,
+    fromDate: string
+  ): Promise<boolean> {
+
+    const startDate = new Date(fromDate);
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = new Date(fromDate);
+    endDate.setHours(23, 59, 59, 999);
+    const listName = getListInternalName('attendanceRegularization');
+    const selectedDate = new Date(fromDate);
+    selectedDate.setHours(12, 0, 0, 0); // avoid timezone edge cases
+    const dayStart = new Date(fromDate);
+dayStart.setHours(0, 0, 0, 0);
+
+const dayEnd = new Date(fromDate);
+dayEnd.setHours(23, 59, 59, 999);
+
+const filterQuery = `
+  ${getColumnInternalName('AttendanceRegularization', 'EmployeeID')} eq '${employeeId}'
+  and ${getColumnInternalName('AttendanceRegularization', 'Status')} ne 'Rejected'
+  and ${getColumnInternalName('AttendanceRegularization', 'StartDate')} ge datetime'${dayStart.toISOString()}'
+  and ${getColumnInternalName('AttendanceRegularization', 'StartDate')} le datetime'${dayEnd.toISOString()}'
+`;
+
+    const selectFields = ['Id', getColumnInternalName('AttendanceRegularization', 'EmployeeID'), getColumnInternalName('AttendanceRegularization', 'Status'), getColumnInternalName('AttendanceRegularization', 'StartDate'), getColumnInternalName('AttendanceRegularization', 'EndDate')];
+
+
+    const response = await this.httpService.getListItems(
+      listName,
+      selectFields,
+        `$filter=${filterQuery}`
+
+    );
+
+    return Array.isArray(response) && response.length > 0;
+  }
+
 }

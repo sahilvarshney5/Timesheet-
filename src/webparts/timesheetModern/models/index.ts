@@ -16,5 +16,7 @@ export * from './IProjectTaskMaster';
 export * from './IUserInfo';
 export * from './IApiResponse';
 export * from './IEmployeeMaster';
+export * from './IProjectAssignment'; // NEW: Project Assignment
+
 // Export UserService types
 export type { IUserPermissions } from '../services/UserService';

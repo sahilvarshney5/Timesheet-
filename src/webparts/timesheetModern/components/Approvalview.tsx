@@ -268,7 +268,7 @@ const confirmReject = async (): Promise<void> => {
           onClick={() => handleTabChange('history')}
           disabled={isProcessing}
         >
-          Approval History ({approvalHistory.length})
+          History ({approvalHistory.length})
         </button>
       </div>
       
@@ -300,7 +300,7 @@ const confirmReject = async (): Promise<void> => {
                       <div style={{ fontWeight: 600 }}>{request.employeeName}</div>
                       <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-secondary)' }}>{request.employeeId}</div>
                     </td>
-                    <td>{formatDateRange(request.fromDate, request.toDate)}</td>
+                    <td>{request.fromDate}</td>
                     <td>{request.requestType === 'time_based' ? 'Time-based' : 'Day-based'}</td>
                     <td>{formatCategoryText(request.category)}</td>
                     <td>
@@ -370,7 +370,7 @@ const confirmReject = async (): Promise<void> => {
                       <div style={{ fontWeight: 600 }}>{request.employeeName}</div>
                       <div style={{ fontSize: 'var(--font-xs)', color: 'var(--text-secondary)' }}>{request.employeeId}</div>
                     </td>
-                    <td>{formatDateRange(request.fromDate, request.toDate)}</td>
+                    <td>{request.dateRange}</td>
                     <td>{request.requestType === 'time_based' ? 'Time-based' : 'Day-based'}</td>
                     <td>{formatCategoryText(request.category)}</td>
                     <td>

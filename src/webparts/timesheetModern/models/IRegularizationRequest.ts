@@ -14,7 +14,7 @@ export interface IRegularizationRequest {
   approvedBy?: string;
   approvedOn?: string;
   managerComment?: string;
-  
+  dateRange?: string; // ADDED: For formatted date range display in UI
   // Legacy/deprecated properties for backwards compatibility
   attendanceDate?: string;
   requestedInTime?: string;

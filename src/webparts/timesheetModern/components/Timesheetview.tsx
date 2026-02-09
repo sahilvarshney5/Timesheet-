@@ -89,7 +89,7 @@ import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { TimesheetService } from '../services/TimesheetService';
 import { ProjectTaskService,IProjectTask } from '../services/ProjectTaskService';
-
+import { ProjectAssignmentService, IProjectAssignment, ITaskTypeOption } from '../services/ProjectAssignmentService'; // FIXED: Import added
 import { AttendanceService } from '../services/AttendanceService'; // FIXED: Import added
 import { IEmployeeMaster } from '../models';
 import { 
@@ -131,6 +131,11 @@ const MAX_WEEKLY_HOURS = 45; // Configurable
     [spHttpClient, siteUrl]
   );
 
+  const projectAssignmentService = React.useMemo(
+  () => new ProjectAssignmentService(spHttpClient, siteUrl),
+  [spHttpClient, siteUrl]
+);
+
   // FIXED: Add attendance service for validation
   const attendanceService = React.useMemo(
     () => new AttendanceService(spHttpClient, siteUrl),
@@ -153,7 +158,9 @@ const [activeProjects, setActiveProjects] = React.useState<IProjectTask[]>([]);
 // In Timesheetview.tsx
 
 const [timesheetStatus, setTimesheetStatus] = React.useState<'Draft' | 'Submitted' | 'Approved'>('Draft');
-
+const [activeProjectstype, setActiveProjectstype] = React.useState<IProjectAssignment[]>([]);
+const [availableTaskTypes, setAvailableTaskTypes] = React.useState<ITaskTypeOption[]>([]);
+const [selectedProjectNumber, setSelectedProjectNumber] = React.useState<string>('');
   // Form state
   const [formData, setFormData] = React.useState({
     date: '',
@@ -178,7 +185,15 @@ React.useEffect(() => {
   
   loadProjects().catch(console.error);
 }, [props.employeeMaster.EmployeeID]);
-
+React.useEffect(() => {
+  const loadProjectAssignments = async () => {
+    const projects = await projectAssignmentService.getActiveProjectAssignments(
+      props.employeeMaster.EmployeeID
+    );
+    setActiveProjectstype(projects);
+  };
+ void loadProjectAssignments();
+}, [props.employeeMaster.EmployeeID]);
   // ============================================================================
   // HELPER FUNCTIONS - DEFINED FIRST
   // ============================================================================
@@ -207,7 +222,29 @@ React.useEffect(() => {
     
     return getWeekDays(adjustedDate);
   }, [currentWeekOffset]);
+const handleProjectChange = async (projectNumber: string) => {
+  setSelectedProjectNumber(projectNumber);
+  
+  if (projectNumber) {
+    const taskTypes = await projectAssignmentService.getTaskTypeOptionsForProject(
+      props.employeeMaster.EmployeeID,
+      projectNumber
+    );
+    setAvailableTaskTypes(taskTypes);
+  }
+};
 
+const handleTaskTypeChange = (taskType: string) => {
+  const selectedTask = availableTaskTypes.find(t => t.taskType === taskType);
+  
+  if (selectedTask) {
+    setFormData(prev => ({
+      ...prev,
+      taskType: taskType,
+      hours: selectedTask.duration  // ✅ Auto-populate!
+    }));
+  }
+};
   const loadTimesheetData = React.useCallback(async (): Promise<void> => {
     try {
       setIsLoading(true);
@@ -573,6 +610,16 @@ const handlePasteEntry = async (targetDate: string): Promise<void> => {
   } finally {
     setIsLoading(false);
   }
+};
+const LoadtimeData = async (taskType: string): Promise<void> => {
+  const value = Number(
+    activeProjectstype.find(p => p.TaskName === taskType)?.DurationTask ?? 0
+  );
+
+  setFormData(prev => ({
+    ...prev,
+    hours: value
+  }));
 };
 
 // In Timesheetview.tsx, add clear clipboard function
@@ -1008,13 +1055,19 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                   <select 
                     className={styles.formSelect}
                     value={formData.taskType}
-                    onChange={(e) => handleInputChange('taskType', e.target.value)}
+                    onChange={(e) =>{ handleInputChange('taskType', e.target.value); 
+                      void LoadtimeData(e.target.value); }}
                   >
-                    <option value="Development">Development</option>
+                    {/* <option value="Development">Development</option>
                     <option value="Testing">Testing</option>
                     <option value="Meeting">Meeting</option>
                     <option value="Planning">Planning</option>
-                    <option value="Documentation">Documentation</option>
+                    <option value="Documentation">Documentation</option> */}
+                    {activeProjectstype.map(task => (
+                      <option key={task.JobTaskType} value={task.JobTaskType}>
+                        {task.JobTaskType}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

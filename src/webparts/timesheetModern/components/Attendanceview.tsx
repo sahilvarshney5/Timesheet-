@@ -388,10 +388,13 @@ const loadHolidaysForMonth = React.useCallback(
       console.error('[AttendanceView] Error loading calendar data:', err);
       setError('Failed to load calendar data. Please try again.');
     } finally {
-      setIsInitialLoad(false);
-      setIsRefreshing(false);
-      setIsLoading(false);
-          isLoadingRef.current = false;
+       const resetLoadingStates = (): void => {
+        setIsInitialLoad(false);
+        setIsRefreshing(false);
+        setIsLoading(false);
+        isLoadingRef.current = false;
+      };
+      resetLoadingStates();
 
     }
   }, [props.employeeMaster.EmployeeID, attendanceService, currentYear, currentMonth, getTimesheetLinesForMonth, getRegularizedDatesForMonth,loadHolidaysForMonth]);

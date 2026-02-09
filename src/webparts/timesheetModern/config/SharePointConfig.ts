@@ -1,4 +1,4 @@
-// SharePointConfig.ts - UPDATED with LeaveBalance list
+// SharePointConfig.ts - UPDATED with Project Assignment list
 // Centralized configuration for SharePoint lists and columns
 
 export interface IListConfig {
@@ -16,11 +16,12 @@ export interface ISharePointConfig {
     employeeMaster: IListConfig;
     punchData: IListConfig;
     leaveData: IListConfig;
-    leaveBalance: IListConfig; // ADDED
+    leaveBalance: IListConfig;
     timesheetHeader: IListConfig;
     timesheetLines: IListConfig;
     attendanceRegularization: IListConfig;
     projectTaskMaster: IListConfig;
+    projectAssignment: IListConfig; // NEW: Project Assignment list
   };
   columns: {
     [listName: string]: {
@@ -50,7 +51,6 @@ export const SharePointConfig: ISharePointConfig = {
       displayName: 'Leave Data',
       internalName: 'Leave Data'
     },
-    // ADDED: Leave Balance List
     leaveBalance: {
       displayName: 'Leave Balance',
       internalName: 'Leave Balance'
@@ -69,6 +69,11 @@ export const SharePointConfig: ISharePointConfig = {
     },
     projectTaskMaster: {
       displayName: 'Project Task Master',
+      internalName: 'Project%20Task%20Master'
+    },
+    // NEW: Project Assignment List
+    projectAssignment: {
+      displayName: 'Project Assignment',
       internalName: 'Project%20Task%20Master'
     }
   },
@@ -142,10 +147,9 @@ export const SharePointConfig: ISharePointConfig = {
         internalName: 'Title'
       },
       Employee: {
-    displayName: 'Employee',
-    internalName: 'Employee'  // ✅ Person or Group
-  },
-
+        displayName: 'Employee',
+        internalName: 'Employee'
+      },
       LeaveType: {
         displayName: 'Leave Type',
         internalName: 'LeaveType'
@@ -167,31 +171,31 @@ export const SharePointConfig: ISharePointConfig = {
         internalName: 'Status'
       },
       HRMSLeaveID: {
-    displayName: 'HRMS Leave ID',
-    internalName: 'HRMSLeaveID'
-  },
-  AppliedDate: {
-    displayName: 'Applied Date',
-    internalName: 'AppliedDate'
-  },
-  ApprovedDate: {
-    displayName: 'Approved Date',
-    internalName: 'ApprovedDate'
-  },
+        displayName: 'HRMS Leave ID',
+        internalName: 'HRMSLeaveID'
+      },
+      AppliedDate: {
+        displayName: 'Applied Date',
+        internalName: 'AppliedDate'
+      },
+      ApprovedDate: {
+        displayName: 'Approved Date',
+        internalName: 'ApprovedDate'
+      },
       ColorCode: {
         displayName: 'Color Code',
         internalName: 'ColorCode'
       },
       Reason: {
-    displayName: 'Reason',
-    internalName: 'Reason'
-  },
-  ApprovedBy: {
-    displayName: 'Approved By',
-    internalName: 'ApprovedBy'
-  }
+        displayName: 'Reason',
+        internalName: 'Reason'
+      },
+      ApprovedBy: {
+        displayName: 'Approved By',
+        internalName: 'ApprovedBy'
+      }
     },
-    // ADDED: LeaveBalance columns
+    // LeaveBalance columns
     LeaveBalance: {
       EmployeeID: {
         displayName: 'Employee ID',
@@ -305,58 +309,113 @@ export const SharePointConfig: ISharePointConfig = {
     },
     // ProjectTaskMaster columns
     ProjectTaskMaster: {
-     ResourceID: {
-    displayName: 'Resource ID',
-    internalName: 'Title'
-  },
-  ProjectNo: {
-    displayName: 'Project Number',
-    internalName: 'ProjectNumber'
-  },
-  ProjectName: {
-    displayName: 'Project Name',
-    internalName: 'ProjectName'
-  },
-  TaskNo: {
-    displayName: 'Task Number',
-    internalName: 'TaskNumber'
-  },
-  TaskName: {
-    displayName: 'Task Name',
-    internalName: 'TaskName'
-  },
-  ValidFrom: {
-    displayName: 'Valid From',
-    internalName: 'ValidFrom'
-  },
-  ValidTo: {
-    displayName: 'Valid To',
-    internalName: 'ValidTo'
-  },
-  BookingEnabled: {
-    displayName: 'Booking Enabled',
-    internalName: 'IsActive'
-  },
-  BCResourceNo: {
-    displayName: 'BC Resource No',
-    internalName: 'BCResourceNo'
-  },
-  TaskStatus: {
-    displayName: 'Task Status',
-    internalName: 'TaskStatus'
-  },
-  Description: {
-    displayName: 'Description',
-    internalName: 'Description'
-  },
-  ProjectID: {
-    displayName: 'ProjectID',
-    internalName: 'ProjectID'
-  },
-  JobTaskType: {
-    displayName: 'Job Task Type',
-    internalName: 'JobTaskType'
-  }
+      ResourceID: {
+        displayName: 'Resource ID',
+        internalName: 'Title'
+      },
+      ProjectNo: {
+        displayName: 'Project Number',
+        internalName: 'ProjectNumber'
+      },
+      ProjectName: {
+        displayName: 'Project Name',
+        internalName: 'ProjectName'
+      },
+      TaskNo: {
+        displayName: 'Task Number',
+        internalName: 'TaskNumber'
+      },
+      TaskName: {
+        displayName: 'Task Name',
+        internalName: 'TaskName'
+      },
+      ValidFrom: {
+        displayName: 'Valid From',
+        internalName: 'ValidFrom'
+      },
+      ValidTo: {
+        displayName: 'Valid To',
+        internalName: 'ValidTo'
+      },
+      BookingEnabled: {
+        displayName: 'Booking Enabled',
+        internalName: 'IsActive'
+      },
+      BCResourceNo: {
+        displayName: 'BC Resource No',
+        internalName: 'BCResourceNo'
+      },
+      TaskStatus: {
+        displayName: 'Task Status',
+        internalName: 'TaskStatus'
+      },
+      Description: {
+        displayName: 'Description',
+        internalName: 'Description'
+      },
+      ProjectID: {
+        displayName: 'ProjectID',
+        internalName: 'ProjectID'
+      },
+      JobTaskType: {
+        displayName: 'Job Task Type',
+        internalName: 'JobTaskType'
+      }
+    },
+    // NEW: ProjectAssignment columns
+    ProjectAssignment: {
+      ResourceID: {
+        displayName: 'Resource ID',
+        internalName: 'Title'
+      },
+      ProjectNumber: {
+        displayName: 'Project Number',
+        internalName: 'ProjectNumber'
+      },
+      ProjectName: {
+        displayName: 'Project Name',
+        internalName: 'ProjectName'
+      },
+      TaskNumber: {
+        displayName: 'Task Number',
+        internalName: 'TaskNumber'
+      },
+      TaskName: {
+        displayName: 'Task Name',
+        internalName: 'TaskName'
+      },
+      TaskStatus: {
+        displayName: 'Task Status',
+        internalName: 'TaskStatus'
+      },
+      ValidFrom: {
+        displayName: 'Valid From',
+        internalName: 'ValidFrom'
+      },
+      ValidTo: {
+        displayName: 'Valid To',
+        internalName: 'ValidTo'
+      },
+      BookingEnabled: {
+        displayName: 'Booking Enabled',
+        internalName: 'IsActive'
+      },
+      Description: {
+        displayName: 'Description',
+        internalName: 'Description'
+      },
+      ProjectID: {
+        displayName: 'Project ID',
+        internalName: 'ProjectID'
+      },
+      JobTaskType: {
+        displayName: 'Job Task Type',
+        internalName: 'JobTaskType'
+      },
+      DurationTask: {
+        displayName: 'Duration of task',
+        internalName: 'DurationTask'
+      }
     }
   },
   groups: {
