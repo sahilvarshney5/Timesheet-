@@ -93,6 +93,72 @@ const formatTime = (timeString: string): string => {
   }
 };
 
+/**
+ * Calculate working hours between two time strings
+ * @param startTime - Start time (HH:mm format or ISO datetime)
+ * @param endTime - End time (HH:mm format or ISO datetime)
+ * @returns Hours worked, capped at 8.0
+ */
+const calculateWorkingHours = (startTime: string, endTime: string): number => {
+  if (!startTime || !endTime) return 0;
+  
+  try {
+    // Parse times - handle both "HH:mm" and ISO datetime formats
+    const parseTime = (timeStr: string): Date => {
+      // If it's already a full datetime
+      if (timeStr.includes('T') || timeStr.includes(' ')) {
+        return new Date(timeStr);
+      }
+      // If it's just HH:mm format, use today's date
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date;
+    };
+    
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+    
+    // Calculate hours
+    const diffMs = end.getTime() - start.getTime();
+    const hours = diffMs / (1000 * 60 * 60);
+    
+    // Cap at 8.0 hours
+    return Math.min(hours, 8.0);
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * Format time string to HH:mm format
+ * Handles both ISO datetime and simple time strings
+ * ES2015 compatible (no padStart)
+ */
+const formatTimeSimple = (timeString: string): string => {
+  if (!timeString) return '';
+  
+  try {
+    // If it's HH:mm format already, return as-is
+    if (/^\d{2}:\d{2}$/.test(timeString)) {
+      return timeString;
+    }
+    
+    // Otherwise parse as datetime
+    const date = new Date(timeString);
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    
+    // Manual padding without padStart (ES2015 compatible)
+    const paddedHours = hours < 10 ? '0' + hours : hours.toString();
+    const paddedMinutes = minutes < 10 ? '0' + minutes : minutes.toString();
+    
+    return `${paddedHours}:${paddedMinutes}`;
+  } catch {
+    return timeString;
+  }
+};
+
 const getMonthName = (month: number): string => {
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -153,7 +219,8 @@ const AttendanceView: React.FC<IAttendanceViewProps> = (props) => {
   const [currentMonth, setCurrentMonth] = React.useState<number>(new Date().getMonth());
   const [currentYear, setCurrentYear] = React.useState<number>(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = React.useState<ITimesheetDay[]>([]);
-  const [regularizedDates, setRegularizedDates] = React.useState<Set<string>>(new Set());
+  // ✅ UPDATED: Store regularized dates with timing information
+  const [regularizedDates, setRegularizedDates] = React.useState<Map<string, { startTime?: string; endTime?: string }>>(new Map());
   const [timesheetLines, setTimesheetLines] = React.useState<ITimesheetLines[]>([]); // ✅ NEW: Store timesheet data
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -217,10 +284,29 @@ const loadHolidaysForMonth = React.useCallback(
   },
   [holidayService]
 );
-  const onDayClick = (dayData: any) => {
-  setSelectedDay(dayData);
-  setShowPopup(true);
-};
+  const onDayClick = (dayData: ITimesheetDay) => {
+    // Format the day data for display in popup
+    const [year, month, dayNum] = dayData.date.split('-').map(Number);
+    const dayDate = createLocalDate(year, month - 1, dayNum);
+    
+    const displayData = {
+      date: dayData.date,
+      displayDate: formatDateForDisplay(dayDate, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }),
+      status: getStatusText(dayData.status || ''),
+      timesheetStatus: getTimesheetStatusText(dayData.timesheetProgress.status),
+      loggedHours: dayData.timesheetHours.toFixed(1),
+      expectedHours: dayData.availableHours.toFixed(1),
+      rawDay: dayData // Keep raw day data for accessing punch times
+    };
+    
+    setSelectedDay(displayData);
+    setShowPopup(true);
+  };
 
   // ✅ NEW: Load timesheet lines for the month
   const getTimesheetLinesForMonth = React.useCallback(async (year: number, month: number): Promise<ITimesheetLines[]> => {
@@ -251,12 +337,12 @@ const loadHolidaysForMonth = React.useCallback(
     }
   }, [props.employeeMaster.EmployeeID, timesheetService]);
 
-  const getRegularizedDatesForMonth = React.useCallback(async (): Promise<Set<string>> => {
+  const getRegularizedDatesForMonth = React.useCallback(async (): Promise<Map<string, { startTime?: string; endTime?: string }>> => {
     try {
       const empId = props.employeeMaster.EmployeeID;
       const regularizations = await approvalService.getEmployeeRegularizations(empId);
       
-      const approvedDates = new Set<string>();
+      const approvedDatesMap = new Map<string, { startTime?: string; endTime?: string }>();
       regularizations.forEach(reg => {
         if (reg.status === 'approved' || reg.status === 'pending') {
           const fromDate = new Date(reg.fromDate);
@@ -265,16 +351,20 @@ const loadHolidaysForMonth = React.useCallback(
           const currentDate = new Date(fromDate);
           while (currentDate <= toDate) {
             const dateStr = currentDate.toISOString().split('T')[0];
-            approvedDates.add(dateStr);
+            // ✅ Store timing information along with the date
+            approvedDatesMap.set(dateStr, {
+              startTime: reg.startTime,
+              endTime: reg.endTime
+            });
             currentDate.setDate(currentDate.getDate() + 1);
           }
         }
       });
       
-      return approvedDates;
+      return approvedDatesMap;
     } catch (error) {
       console.error('[AttendanceView] Error getting regularized dates:', error);
-      return new Set();
+      return new Map();
     }
   }, [props.employeeMaster.EmployeeID, approvalService]);
 
@@ -297,7 +387,7 @@ const loadHolidaysForMonth = React.useCallback(
       const empId = props.employeeMaster.EmployeeID;
     const holidayMap = await loadHolidaysForMonth(currentYear, currentMonth);
       // ✅ PARALLEL LOADING: Fetch all data at once
-      const [calendar, timesheetLinesData, regularizedDatesSet] = await Promise.all([
+      const [calendar, timesheetLinesData, regularizedDatesMap] = await Promise.all([
         attendanceService.buildCalendarForMonth(empId, currentYear, currentMonth + 1),
         getTimesheetLinesForMonth(currentYear, currentMonth),
         getRegularizedDatesForMonth()
@@ -305,7 +395,7 @@ const loadHolidaysForMonth = React.useCallback(
 
       // ✅ STORE TIMESHEET LINES IN STATE
       setTimesheetLines(timesheetLinesData);
-      setRegularizedDates(regularizedDatesSet);
+      setRegularizedDates(regularizedDatesMap);
 
       const todayLocal = getTodayLocal();
 
@@ -321,7 +411,7 @@ const loadHolidaysForMonth = React.useCallback(
       const isHolidayDay = !!holidayName;
 
         // const holiday = isHoliday(day.date);
-        const isRegularized = regularizedDatesSet.has(day.date);
+        const isRegularized = regularizedDatesMap.has(day.date);
         const isFuture = isDateAfter(dayDate, todayLocal);
         const isPast = isDateBefore(dayDate, todayLocal);
         const isCurrentDay = isTodayDate(dayDate);
@@ -648,6 +738,9 @@ onDayClick(day);
       const isTodayCheck = isTodayDate(dayDate);
       const holiday = isHoliday(day.date);
       const isRegularized = regularizedDates.has(day.date);
+      
+      // ✅ GET REGULARIZATION TIMING DATA
+      const regularizationData = regularizedDates.get(day.date);
 
       // ✅ CALCULATE FILL STATUS FOR THIS DAY
       const fillStatus = getTimesheetFillStatus(
@@ -687,15 +780,62 @@ onDayClick(day);
           {/* ✅ SHOW HOURS ONLY IF EXPECTED HOURS > 0 */}
           {fillStatus.expectedDailyHours > 0 && (
             <div className={styles.dayTotalHours}>
-              {fillStatus.totalFilledHours.toFixed(1)}h / {fillStatus.expectedDailyHours.toFixed(1)}h
+              {(() => {
+                let displayHours = fillStatus.totalFilledHours;
+                
+                // For regularized days: calculate and cap at 8h
+                if (isRegularized && regularizationData?.startTime && regularizationData?.endTime) {
+                  const calculatedHours = calculateWorkingHours(
+                    regularizationData.startTime, 
+                    regularizationData.endTime
+                  );
+                  displayHours = Math.min(calculatedHours, 8.0);
+                }
+                
+                return `${displayHours.toFixed(1)}h / ${fillStatus.expectedDailyHours.toFixed(1)}h`;
+              })()}
             </div>
           )}
 
-          {day.firstPunchIn && day.lastPunchOut && (
-            <div className={styles.dayTime}>
-              {formatTime(day.firstPunchIn)}-{formatTime(day.lastPunchOut)}
-            </div>
-          )}
+          {/* ✅ SHOW TIMING - Unified logic for Present and Regularized days */}
+          {(() => {
+            // For Present days: use actual punch data
+            if (day.firstPunchIn && day.lastPunchOut && !isRegularized) {
+              return (
+                <div className={styles.dayTime}>
+                  {formatTime(day.firstPunchIn)}-{formatTime(day.lastPunchOut)}
+                </div>
+              );
+            }
+            
+            // For Regularized days: use regularization timing OR punch data fallback
+            if (isRegularized) {
+              let displayStartTime = '';
+              let displayEndTime = '';
+              
+              // Priority 1: Use regularization expected times if available
+              if (regularizationData?.startTime && regularizationData?.endTime) {
+                displayStartTime = formatTimeSimple(regularizationData.startTime);
+                displayEndTime = formatTimeSimple(regularizationData.endTime);
+              }
+              // Priority 2: Fallback to actual punch data if regularization times missing
+              else if (day.firstPunchIn && day.lastPunchOut) {
+                displayStartTime = formatTime(day.firstPunchIn);
+                displayEndTime = formatTime(day.lastPunchOut);
+              }
+              
+              // Display if we have both times
+              if (displayStartTime && displayEndTime) {
+                return (
+                  <div className={styles.dayTime}>
+                    {displayStartTime}-{displayEndTime}
+                  </div>
+                );
+              }
+            }
+            
+            return null;
+          })()}
 
           {/* ✅ PROGRESS BAR - ALWAYS RENDER IF EXPECTED HOURS > 0 */}
           {fillStatus.expectedDailyHours > 0 && (
@@ -891,6 +1031,36 @@ React.useEffect(() => {
           <span>Status</span>
           <strong>{selectedDay.status}</strong>
         </div>
+
+        {/* Show Punch Times for Present/Regularized days */}
+        {(selectedDay.rawDay?.firstPunchIn || selectedDay.rawDay?.lastPunchOut) && (
+          <>
+            <div className={styles.infoRow}>
+              <span>First Punch In</span>
+              <strong>
+                {selectedDay.rawDay?.firstPunchIn 
+                  ? formatTime(selectedDay.rawDay.firstPunchIn) 
+                  : '-'}
+              </strong>
+            </div>
+            <div className={styles.infoRow}>
+              <span>Last Punch Out</span>
+              <strong>
+                {selectedDay.rawDay?.lastPunchOut 
+                  ? formatTime(selectedDay.rawDay.lastPunchOut) 
+                  : '-'}
+              </strong>
+            </div>
+            <div className={styles.infoRow}>
+              <span>Total Hours</span>
+              <strong>
+                {selectedDay.rawDay?.totalHours 
+                  ? selectedDay.rawDay.totalHours.toFixed(1) 
+                  : '0.0'} hrs
+              </strong>
+            </div>
+          </>
+        )}
 
         <div className={styles.infoRow}>
           <span>Timesheet</span>

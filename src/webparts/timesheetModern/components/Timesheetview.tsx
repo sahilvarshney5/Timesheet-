@@ -170,6 +170,47 @@ const [selectedProjectNumber, setSelectedProjectNumber] = React.useState<string>
     description: ''
   });
 
+  // ============================================================================
+  // VALIDATION HELPERS - 8 HOUR DAILY LIMIT
+  // ============================================================================
+
+  /**
+   * Convert hours to minutes
+   */
+  const convertToMinutes = (hours: number): number => {
+    return Math.round(hours * 60);
+  };
+
+  /**
+   * Calculate total minutes for a specific date
+   */
+  const getTotalMinutesForDate = (date: string, excludeEntryId?: number): number => {
+    return entries
+      .filter(e => e.date === date && e.id !== excludeEntryId)
+      .reduce((total, e) => total + convertToMinutes(e.hours), 0);
+  };
+
+  /**
+   * Get remaining minutes available for a date
+   */
+  const getRemainingMinutes = (date: string, excludeEntryId?: number): number => {
+    const used = getTotalMinutesForDate(date, excludeEntryId);
+    return Math.max(0, 480 - used); // 480 minutes = 8 hours
+  };
+
+  /**
+   * Check if date is in the future
+   */
+  const isFutureDate = (dateString: string): boolean => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const checkDate = new Date(dateString + 'T00:00:00');
+    checkDate.setHours(0, 0, 0, 0);
+    
+    return checkDate > today;
+  };
+
   // Load projects on mount
 React.useEffect(() => {
   const loadProjects = async (): Promise<void> => {
@@ -365,11 +406,10 @@ const isReadOnly = (): boolean => {
     const weekDays = getCurrentWeekDays();
     const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
 
-     // ✅ FIX: Block future dates
+     // ✅ FIX: Block future dates (silently)
   const today = getTodayString();
   if (normalizedDate > today) {
-    alert('Cannot add timesheet entries for future dates.\n\nTimesheet can only be filled for past and present dates.');
-    return;
+    return; // Silently block - no alert
   }
     const validation = await validateTimesheetDate(normalizedDate);
     
@@ -413,6 +453,28 @@ const isReadOnly = (): boolean => {
   };
 
   const handleInputChange = (field: string, value: unknown): void => {
+    // VALIDATION: Future date check (NO ALERT - just block)
+    if (field === 'date' && typeof value === 'string' && isFutureDate(value)) {
+      return; // Silently block future dates
+    }
+    
+    // VALIDATION: Hours limit check
+    if (field === 'hours') {
+      const newMinutes = convertToMinutes(value as number);
+      const currentDate = formData.date;
+      
+      if (currentDate) {
+        const usedMinutes = getTotalMinutesForDate(currentDate, editingEntry?.id);
+        const totalMinutes = usedMinutes + newMinutes;
+        
+        // Block if exceeds 480 minutes (8 hours)
+        if (totalMinutes > 480) {
+          console.log('[Validation] Cannot exceed 8 hours per day');
+          return; // Block the change
+        }
+      }
+    }
+    
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -426,6 +488,25 @@ const isReadOnly = (): boolean => {
       setIsLoading(true);
       
       const normalizedDate = normalizeDateToString(formData.date);
+      
+      // VALIDATION: Final safety check before save
+      // 1. Check future date
+      if (isFutureDate(normalizedDate)) {
+        setIsLoading(false);
+        return; // Silently block
+      }
+      
+      // 2. Check 8-hour limit
+      const newMinutes = convertToMinutes(formData.hours);
+      const usedMinutes = getTotalMinutesForDate(normalizedDate, editingEntry?.id);
+      const totalMinutes = usedMinutes + newMinutes;
+      
+      if (totalMinutes > 480) {
+        console.log('[Validation] Save blocked: Exceeds 8 hour daily limit');
+        setIsLoading(false);
+        return; // Block save - DO NOT call API
+      }
+      
       const validation = await validateTimesheetDate(normalizedDate);
       
       if (!validation.isValid) {
@@ -541,6 +622,22 @@ const handlePasteEntry = async (targetDate: string): Promise<void> => {
   }
   
   const normalizedDate = normalizeDateToString(targetDate);
+  
+  // VALIDATION: Check future date (NO ALERT)
+  if (isFutureDate(normalizedDate)) {
+    return; // Silently block paste to future dates
+  }
+  
+  // VALIDATION: Check 8-hour limit for target date
+  const pasteMinutes = convertToMinutes(clipboard.hours);
+  const usedMinutes = getTotalMinutesForDate(normalizedDate);
+  const totalMinutes = usedMinutes + pasteMinutes;
+  
+  if (totalMinutes > 480) {
+    console.log('[Validation] Paste blocked: Would exceed 8 hour limit');
+    return; // Block paste - no state update
+  }
+  
   const validation = await validateTimesheetDate(normalizedDate);
   
   if (!validation.isValid) {
@@ -828,7 +925,9 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
           </div>
         ) : (
           <div className={styles.timesheetGrid}>
-            {weekDays.map((date) => {
+            {weekDays
+              .filter(date => new Date(date + 'T00:00:00') <= new Date(new Date().toDateString()))
+              .map((date) => {
               const dateEntries = getEntriesForDate(date);
               const dateTotalHours = getTotalHoursForDate(date);
               const isTodayDate = isToday(date);
@@ -912,7 +1011,10 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                     <button 
                       className={styles.addEntryBtn}
                       onClick={() => { handleAddEntry(date).catch(console.error); }}
-                        disabled={isReadOnly()} // DISABLE if submitted
+                        disabled={
+                          isReadOnly() || 
+                          getTotalMinutesForDate(date) >= 480 // DISABLE if 8 hours reached
+                        }
 
                     >
                       + Add Entry for {formatDateForDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
@@ -1002,10 +1104,9 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
     const checkDate = new Date(selectedDate);
     checkDate.setHours(0, 0, 0, 0);
     
-    // ✅ CHANGED: Only block if AFTER today (not equal to today)
+    // ✅ CHANGED: Only block if AFTER today (no alert - silent block)
     if (checkDate > today) {
-      alert('Cannot select future dates. Please select today or a past date.');
-      return;
+      return; // Silently block - no alert
     }
     handleInputChange('date', e.target.value);
 

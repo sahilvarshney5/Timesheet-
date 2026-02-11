@@ -2,6 +2,7 @@ import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
+import { AttendanceService } from '../services/AttendanceService';
 import { IRegularizationRequest, IAttendanceRegularization, IEmployeeMaster } from '../models';
 
 export interface IRegularizationViewProps {
@@ -28,9 +29,17 @@ const [statusOptions, setStatusOptions] = React.useState<Array<{ key: string; te
 const [isLoadingStatuses, setIsLoadingStatuses] = React.useState<boolean>(false);
 // Add this state variable after existing states
 const [isFormModalOpen, setIsFormModalOpen] = React.useState<boolean>(false);
+const [viewDetailsModalOpen, setViewDetailsModalOpen] = React.useState<boolean>(false);
+const [selectedRequest, setSelectedRequest] = React.useState<IRegularizationRequest | null>(null);
+const [punchData, setPunchData] = React.useState<any>(null);
   // ✅ FIX: Initialize approvalService from props
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
+
+  const attendanceService = React.useMemo(
+    () => new AttendanceService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
 
@@ -316,47 +325,46 @@ React.useEffect(() => {
     }
   };
 
-  const handleView = React.useCallback((request: IRegularizationRequest): void => {
-    const fromDate = new Date(request.fromDate);
-    const toDate = new Date(request.toDate);
-    const submittedDate = new Date(request.submittedOn);
-    
-    let message = `Regularization Request Details:\n\n`;
-    message += `ID: ${request.id}\n`;
-    message += `Type: ${request.requestType === 'time_based' ? 'Time-based' : 'Day-based'}\n`;
-    message += `Date Range: ${fromDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
-    
-    if (request.fromDate !== request.toDate) {
-      message += ` to ${toDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-    } else {
-      message += '\n';
+  // Helper function to format time
+  const formatTime = (timeString: string): string => {
+    if (!timeString) return '';
+    try {
+      const date = new Date(timeString);
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    } catch {
+      return timeString;
     }
-    
-    const categoryText = request.category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    
-    message += `Category: ${categoryText}\n`;
-    message += `Status: ${request.status.charAt(0).toUpperCase() + request.status.slice(1)}\n`;
-    message += `Submitted On: ${submittedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-    
-    if (request.requestType === 'time_based' && request.startTime && request.endTime) {
-      message += `Time: ${request.startTime} to ${request.endTime}\n`;
+  };
+
+  // Helper function to format category text
+  const formatCategoryText = (category: string): string => {
+    return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
+  const handleView = React.useCallback(async (request: IRegularizationRequest): Promise<void> => {
+    try {
+      setSelectedRequest(request);
+      
+      // Fetch punch data for the date range
+      const empId = props.employeeMaster.EmployeeID;
+      const punchDataForRange = await attendanceService.getPunchData(
+        empId,
+        request.fromDate,
+        request.toDate
+      );
+      
+      setPunchData(punchDataForRange.length > 0 ? punchDataForRange[0] : null);
+      setViewDetailsModalOpen(true);
+    } catch (error) {
+      console.error('[RegularizationView] Error fetching punch data:', error);
+      setPunchData(null);
+      setViewDetailsModalOpen(true);
     }
-    
-    message += `Reason: ${request.reason}\n`;
-    
-    if (request.approvedBy) {
-      const approvedDate = new Date(request.approvedOn!);
-      message += `\nApproval Details:\n`;
-      message += `Approved By: ${request.approvedBy}\n`;
-      message += `Approved On: ${approvedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-    }
-    
-    if (request.managerComment) {
-      message += `Manager Comment: ${request.managerComment}\n`;
-    }
-    
-    alert(message);
-  }, []);
+  }, [attendanceService, props.employeeMaster.EmployeeID]);
 
   const handleRecall = React.useCallback(async (requestId: number): Promise<void> => {
     const request = regularizationHistory.find((r: IRegularizationRequest) => r.id === requestId);
@@ -421,10 +429,6 @@ React.useEffect(() => {
   const handleRefresh = React.useCallback((): void => {
     void loadRegularizationHistory();
   }, [loadRegularizationHistory]);
-
-  const formatCategoryText = (category: string): string => {
-    return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
 
   const formatDateRange = (fromDate: string, toDate: string): string => {
     const from = new Date(fromDate);
@@ -753,6 +757,163 @@ React.useEffect(() => {
           </tbody>
         </table>
       </div>
+
+      {/* View Details Modal */}
+      {viewDetailsModalOpen && selectedRequest && (
+        <div className={styles.attendanceModalOverlay}>
+          <div className={styles.attendanceModal}>
+            <div className={styles.modalHeader}>
+              Regularization Request Details
+            </div>
+
+            <div className={styles.modalBody}>
+              <div className={styles.infoRow}>
+                <span>Request ID</span>
+                <strong>#{selectedRequest.id}</strong>
+              </div>
+
+              <div className={styles.infoRow}>
+                <span>Date Range</span>
+                <strong>
+                  {new Date(selectedRequest.fromDate).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                  })}
+                  {selectedRequest.fromDate !== selectedRequest.toDate && (
+                    <> to {new Date(selectedRequest.toDate).toLocaleDateString('en-US', { 
+                      month: 'short', 
+                      day: 'numeric', 
+                      year: 'numeric' 
+                    })}</>
+                  )}
+                </strong>
+              </div>
+
+              <div className={styles.infoRow}>
+                <span>Category</span>
+                <strong>{formatCategoryText(selectedRequest.category)}</strong>
+              </div>
+
+              <div className={styles.infoRow}>
+                <span>Status</span>
+                <strong>
+                  <span className={`${styles.statusBadge} ${
+                    selectedRequest.status === 'pending' ? styles.statusPending :
+                    selectedRequest.status === 'approved' ? styles.statusApproved :
+                    styles.statusRejected
+                  }`}>
+                    {selectedRequest.status.charAt(0).toUpperCase() + selectedRequest.status.slice(1)}
+                  </span>
+                </strong>
+              </div>
+
+              {/* Show Actual Punch Times if available */}
+              {punchData && (
+                <>
+                  <div className={styles.infoRow}>
+                    <span>Actual Punch In</span>
+                    <strong>
+                      {punchData.FirstPunchIn 
+                        ? formatTime(punchData.FirstPunchIn) 
+                        : '-'}
+                    </strong>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <span>Actual Punch Out</span>
+                    <strong>
+                      {punchData.LastPunchOut 
+                        ? formatTime(punchData.LastPunchOut) 
+                        : '-'}
+                    </strong>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <span>Total Hours</span>
+                    <strong>
+                      {punchData.TotalHours 
+                        ? punchData.TotalHours.toFixed(1) + ' hrs'
+                        : '-'}
+                    </strong>
+                  </div>
+                </>
+              )}
+
+              {/* Show Requested Times for time-based regularization */}
+              {selectedRequest.requestType === 'time_based' && (
+                <>
+                  <div className={styles.infoRow}>
+                    <span>Requested In Time</span>
+                    <strong>{selectedRequest.startTime || '-'}</strong>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <span>Requested Out Time</span>
+                    <strong>{selectedRequest.endTime || '-'}</strong>
+                  </div>
+                </>
+              )}
+
+              <div className={styles.infoRow}>
+                <span>Reason</span>
+                <strong>{selectedRequest.reason}</strong>
+              </div>
+
+              <div className={styles.infoRow}>
+                <span>Submitted On</span>
+                <strong>
+                  {new Date(selectedRequest.submittedOn).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </strong>
+              </div>
+
+              {selectedRequest.approvedBy && (
+                <>
+                  <div className={styles.infoRow}>
+                    <span>Approved By</span>
+                    <strong>{selectedRequest.approvedBy}</strong>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <span>Approved On</span>
+                    <strong>
+                      {selectedRequest.approvedOn && new Date(selectedRequest.approvedOn).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </strong>
+                  </div>
+                </>
+              )}
+
+              {selectedRequest.managerComment && (
+                <div className={styles.infoRow}>
+                  <span>Manager Comment</span>
+                  <strong>{selectedRequest.managerComment}</strong>
+                </div>
+              )}
+            </div>
+
+            <div className={styles.modalActions}>
+              <button
+                className={styles.cancelBtn}
+                onClick={() => {
+                  setViewDetailsModalOpen(false);
+                  setSelectedRequest(null);
+                  setPunchData(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
