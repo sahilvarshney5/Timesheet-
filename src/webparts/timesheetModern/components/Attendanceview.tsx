@@ -119,8 +119,13 @@ const calculateWorkingHours = (startTime: string, endTime: string): number => {
     const start = parseTime(startTime);
     const end = parseTime(endTime);
     
+    
     // Calculate hours
     const diffMs = end.getTime() - start.getTime();
+    // ❌ If negative → return 0
+    if (diffMs <= 0) {
+      return 0;
+    }
     const hours = diffMs / (1000 * 60 * 60);
     
     // Cap at 8.0 hours
@@ -347,14 +352,17 @@ const loadHolidaysForMonth = React.useCallback(
         if (reg.status === 'approved' || reg.status === 'pending') {
           const fromDate = new Date(reg.fromDate);
           const toDate = new Date(reg.toDate);
+          const fromTime = fromDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit',hour12: false });
+          const toTime = toDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit',hour12: false  });
+
           
           const currentDate = new Date(fromDate);
           while (currentDate <= toDate) {
             const dateStr = currentDate.toISOString().split('T')[0];
             // ✅ Store timing information along with the date
             approvedDatesMap.set(dateStr, {
-              startTime: reg.startTime,
-              endTime: reg.endTime
+              startTime: fromTime,
+              endTime: toTime
             });
             currentDate.setDate(currentDate.getDate() + 1);
           }
@@ -776,8 +784,9 @@ onDayClick(day);
               {day.status === 'future' && '-'}
             </div>
           </div>
-
+        
           {/* ✅ SHOW HOURS ONLY IF EXPECTED HOURS > 0 */}
+          {/* (day.status=="present" || day.status=="regularized") */}
           {fillStatus.expectedDailyHours > 0 && (
             <div className={styles.dayTotalHours}>
               {(() => {
@@ -800,7 +809,7 @@ onDayClick(day);
           {/* ✅ SHOW TIMING - Unified logic for Present and Regularized days */}
           {(() => {
             // For Present days: use actual punch data
-            if (day.firstPunchIn && day.lastPunchOut && !isRegularized) {
+            if (day.firstPunchIn && day.lastPunchOut && !isRegularized && (day.status=="present" || day.status=="regularized")) {
               return (
                 <div className={styles.dayTime}>
                   {formatTime(day.firstPunchIn)}-{formatTime(day.lastPunchOut)}
@@ -825,7 +834,7 @@ onDayClick(day);
               }
               
               // Display if we have both times
-              if (displayStartTime && displayEndTime) {
+              if (displayStartTime && displayEndTime && (day.status=="present" || day.status=="regularized")) {
                 return (
                   <div className={styles.dayTime}>
                     {displayStartTime}-{displayEndTime}

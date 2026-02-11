@@ -274,6 +274,10 @@ export const SharePointConfig: ISharePointConfig = {
         displayName: 'Employee ID',
         internalName: 'Title'
       },
+         RequestID: {
+        displayName: 'Request ID',
+        internalName: 'RequestID'
+      },
       RequestType: {
         displayName: 'Request Type',
         internalName: 'RegularizationType'

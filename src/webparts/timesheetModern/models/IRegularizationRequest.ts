@@ -19,4 +19,5 @@ export interface IRegularizationRequest {
   attendanceDate?: string;
   requestedInTime?: string;
   requestedOutTime?: string;
+  RequestID?: string; // ADDED: For consistency with SharePoint column
 }

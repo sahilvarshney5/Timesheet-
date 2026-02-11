@@ -25,4 +25,5 @@ export interface IAttendanceRegularization extends IBaseModel {
   ExpectedOut?: string;
 
   ManagerComments?: string;
+  RequestID?: string; // ADDED: For consistency with SharePoint column
 }

@@ -503,6 +503,7 @@ const isReadOnly = (): boolean => {
       
       if (totalMinutes > 480) {
         console.log('[Validation] Save blocked: Exceeds 8 hour daily limit');
+        alert('Cannot save entry: Exceeds 8 hour limit for the day.');
         setIsLoading(false);
         return; // Block save - DO NOT call API
       }
@@ -1137,12 +1138,12 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
               
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Hours * (Max 9 per day)</label>
+                  <label className={styles.formLabel}>Hours * (Max 8 per day)</label>
                   <input 
                     type="number" 
                     className={styles.formInput}
                     min="0.5"
-                    max="9"
+                    max="8"
                     step="0.5"
                     placeholder="0.0"
                     value={formData.hours || ''}
@@ -1165,15 +1166,15 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                     <option value="Planning">Planning</option>
                     <option value="Documentation">Documentation</option> */}
                     {activeProjectstype.map(task => (
-                      <option key={task.JobTaskType} value={task.JobTaskType}>
-                        {task.JobTaskType}
+                      <option key={task.TaskName} value={task.TaskName}>
+                        {task.TaskName}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
               
-              <div className={styles.formGroup}>
+              {/* <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Description *</label>
                 <textarea 
                   className={styles.formTextarea}
@@ -1183,7 +1184,7 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                   onChange={(e) => handleInputChange('description', e.target.value)}
                   required
                 />
-              </div>
+              </div> */}
               
               <div className={styles.formActions}>
                 <button 

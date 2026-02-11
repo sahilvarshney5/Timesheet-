@@ -240,6 +240,7 @@ export class ApprovalService {
         'Id',
         empIdCol,
         getColumnInternalName('AttendanceRegularization', 'RequestType'),
+        getColumnInternalName('AttendanceRegularization', 'RequestID'),
         getColumnInternalName('AttendanceRegularization', 'StartDate'),
         getColumnInternalName('AttendanceRegularization', 'EndDate'),
         getColumnInternalName('AttendanceRegularization', 'ExpectedIn'),
@@ -268,6 +269,7 @@ export class ApprovalService {
       // Transform to regularization requests with proper field mapping
       const requests: IRegularizationRequest[] = items.map(item => ({
         id: item.Id,
+        RequestID: item.RequestID || '', // FIXED: Provide default empty string
         employeeId: item.EmployeeID || '', // FIXED: Provide default empty string
         employeeName: 'Current User', // TODO: Get from context
         requestType: item.RequestType === 'Day' ? 'day_based' : 'time_based',

@@ -698,6 +698,7 @@ React.useEffect(() => {
         <table className={styles.historyTable}>
           <thead>
             <tr>
+              <th>AR request ID</th>
               <th>Date Range</th>
               <th>Category</th>
               <th>Status</th>
@@ -708,13 +709,14 @@ React.useEffect(() => {
           <tbody>
             {regularizationHistory.length === 0 ? (
               <tr>
-                <td colSpan={5} className={styles.historyEmpty}>
+                <td colSpan={6} className={styles.historyEmpty}>
                   No regularization requests submitted yet.
                 </td>
               </tr>
             ) : (
               regularizationHistory.map(request => (
                 <tr key={request.id}>
+                  <td>{request.RequestID}</td>
                   <td>{formatDateRange(request.fromDate, request.toDate)}</td>
                   <td>{formatCategoryText(request.category)}</td>
                   <td>
