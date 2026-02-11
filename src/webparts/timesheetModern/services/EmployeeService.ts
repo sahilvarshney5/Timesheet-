@@ -20,6 +20,7 @@ export class EmployeeService {
     this.employeeCache = new Map();
   }
 
+
   /**
    * Get current employee master record by SharePoint user
    * This is the PRIMARY method to call on app load

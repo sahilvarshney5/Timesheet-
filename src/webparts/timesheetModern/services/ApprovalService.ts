@@ -7,7 +7,6 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
 import { SharePointConfig, getListInternalName, getColumnInternalName } from '../config/SharePointConfig';
 import { IAttendanceRegularization, IApprovalQueueItem, IRegularizationRequest } from '../models';
-
 /**
  * Extended interface for AttendanceRegularization with Author/Editor lookup fields
  * These fields come from $expand in REST calls
@@ -32,7 +31,82 @@ export class ApprovalService {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
 
+   private async getReporteeEmployeeIds(): Promise<string[]> {
+    try {
+      const currentUser = await this.httpService.getCurrentUser();
+      const currentUserEmail = currentUser.Email;
+      
+      const listName = getListInternalName('employeeMaster');
+      const employeeIDCol = getColumnInternalName('EmployeeMaster', 'EmployeeID');
+      const managerCol = getColumnInternalName('EmployeeMaster', 'Manager');
+      
+      const filterQuery = `$filter=${managerCol}/EMail eq '${currentUserEmail}'`;
+      const selectFields = ['Id', employeeIDCol, `${managerCol}/EMail`];
+      const expandFields = [managerCol];
+      
+      const items = await this.httpService.getListItems<any>(
+        listName,
+        selectFields,
+        filterQuery,
+        undefined,
+        5000,
+        expandFields
+      );
+      
+      return items.map((item: any) => item[employeeIDCol]);
+      
+    } catch (error) {
+      console.error('[ApprovalService] Error getting reportee employee IDs:', error);
+      return [];
+    }
+  }
 
+/**
+ * ADDED: Update regularization status
+ */
+public async updateRegularizationStatus(requestId: number, newStatus: string): Promise<void> {
+  try {
+    const listName = getListInternalName('attendanceRegularization');
+    
+    const updateData = {
+      Status: newStatus
+    };
+    
+    await this.httpService.updateListItem(
+      listName,
+      requestId,
+      updateData
+    );
+    
+    console.log(`[ApprovalService] Updated regularization ${requestId} status to ${newStatus}`);
+  } catch (error) {
+    console.error('[ApprovalService] Error updating regularization status:', error);
+    throw error;
+  }
+}
+
+/**
+ * ADDED: Update regularization request data
+ */
+public async updateRegularization(
+  requestId: number, 
+  requestData: Partial<IAttendanceRegularization>
+): Promise<void> {
+  try {
+    const listName = getListInternalName('attendanceRegularization');
+    
+    await this.httpService.updateListItem(
+      listName,
+      requestId,
+      requestData
+    );
+    
+    console.log(`[ApprovalService] Updated regularization ${requestId} successfully`);
+  } catch (error) {
+    console.error('[ApprovalService] Error updating regularization:', error);
+    throw error;
+  }
+}
   // ✅ ADD THIS FUNCTION HERE:
 
   /**
@@ -45,7 +119,7 @@ export class ApprovalService {
 
       let actionStatus = '';
       if (action === 'recall') {
-        actionStatus = 'Pending';
+        actionStatus = 'Draft';
       } else if (action === 'cancel') {
         actionStatus = 'Cancelled';
       }
@@ -56,7 +130,7 @@ export class ApprovalService {
 
       await this.httpService.updateListItem(listName, requestId, itemData);
 
-      console.log(`[ApprovalService] Recalled request ${requestId} to Pending status`);
+      console.log(`[ApprovalService] Recalled request ${requestId} to ${actionStatus} status`);
 
     } catch (error) {
       console.error('[ApprovalService] Error recalling request:', error);

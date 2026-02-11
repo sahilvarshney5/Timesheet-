@@ -5,7 +5,7 @@ export interface IAttendanceRegularization extends IBaseModel {
   EmployeeId: number;
   AttendanceDate: string;
   Reason: string;
-  Status: 'Pending' | 'Approved' | 'Rejected';
+  Status: 'Pending' | 'Approved' | 'Rejected'|'Draft';
 
   /* Optional request times */
   RequestedInTime?: string;

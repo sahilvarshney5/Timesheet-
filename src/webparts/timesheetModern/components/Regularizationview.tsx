@@ -32,6 +32,9 @@ const [isFormModalOpen, setIsFormModalOpen] = React.useState<boolean>(false);
 const [viewDetailsModalOpen, setViewDetailsModalOpen] = React.useState<boolean>(false);
 const [selectedRequest, setSelectedRequest] = React.useState<IRegularizationRequest | null>(null);
 const [punchData, setPunchData] = React.useState<any>(null);
+// ADDED: State for editing draft requests
+const [isEditMode, setIsEditMode] = React.useState<boolean>(false);
+const [editingRequest, setEditingRequest] = React.useState<IRegularizationRequest | null>(null);
   // ✅ FIX: Initialize approvalService from props
   const approvalService = React.useMemo(
     () => new ApprovalService(spHttpClient, siteUrl),
@@ -70,8 +73,83 @@ const handleOpenFormModal = (): void => {
 
 const handleCloseFormModal = (): void => {
   setIsFormModalOpen(false);
+    setIsEditMode(false);
+  setEditingRequest(null);
 };
+  const loadRegularizationHistory = React.useCallback(async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
+      const empId = props.employeeMaster.EmployeeID;
+
+      console.log(`[RegularizationView] Loading history for Employee ID: ${empId}`);
+
+      const requests = await approvalService.getEmployeeRegularizations(empId);
+      
+      setRegularizationHistory(requests);
+      console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
+
+    } catch (err) {
+      console.error('[RegularizationView] Error loading regularization history:', err);
+      setError('Failed to load regularization history. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [props.employeeMaster.EmployeeID, approvalService]);
+// ADDED: Handle editing a draft request
+const handleEditDraft = React.useCallback((request: IRegularizationRequest): void => {
+  // Set edit mode and populate form with existing data
+  setEditingRequest(request);
+  setIsEditMode(true);
+  
+  // Set regularization type
+  setRegularizationType(request.requestType);
+  
+  // Calculate duration
+  const dur = calculateDuration(request.fromDate, request.toDate);
+  setDuration(dur);
+  
+  // Open form modal
+  setIsFormModalOpen(true);
+}, [calculateDuration]);
+
+// ADDED: Handle submitting a draft request (change status from Draft to Pending)
+// ADDED: Handle submitting a draft request (change status from Draft to Pending)
+const handleSubmitDraft = React.useCallback(async (requestId: number): Promise<void> => {
+  const request = regularizationHistory.find((r: IRegularizationRequest) => r.id === requestId);
+  if (!request) return;
+
+  const confirmMessage = 'Are you sure you want to submit this draft request for approval?';
+  
+  if (!confirm(confirmMessage)) {
+    return;
+  }
+
+  try {
+    setIsLoading(true);
+    
+    // Update status from Draft to Pending
+    await approvalService.updateRegularizationStatus(requestId, 'Pending');
+
+    // Update frontend state immediately
+    setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) => 
+      req.id === requestId 
+        ? { ...req, status: 'pending' as any }
+        : req
+    ));
+    
+    alert('Draft request submitted successfully for manager approval.');
+    
+  } catch (err) {
+    console.error('[RegularizationView] Error submitting draft request:', err);
+    alert('Failed to submit draft request. Please try again.');
+  } finally {
+    setIsLoading(false);
+    // FIXED: Call loadRegularizationHistory here instead of in dependency array
+    void loadRegularizationHistory();
+  }
+}, [regularizationHistory, approvalService]);  // FIXED: Removed loadRegularizationHistory from dependencies
   // ✅ ADD THIS FUNCTION inside RegularizationView component:
 /**
  * Fetch unique Status values from BC Integration Log
@@ -138,27 +216,7 @@ React.useEffect(() => {
   void fetchRegularizationCategories();
 }, [fetchRegularizationCategories]);
 
-  const loadRegularizationHistory = React.useCallback(async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError(null);
 
-      const empId = props.employeeMaster.EmployeeID;
-
-      console.log(`[RegularizationView] Loading history for Employee ID: ${empId}`);
-
-      const requests = await approvalService.getEmployeeRegularizations(empId);
-      
-      setRegularizationHistory(requests);
-      console.log(`[RegularizationView] Loaded ${requests.length} regularization requests`);
-
-    } catch (err) {
-      console.error('[RegularizationView] Error loading regularization history:', err);
-      setError('Failed to load regularization history. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [props.employeeMaster.EmployeeID, approvalService]);
 
   React.useEffect(() => {
     void loadRegularizationHistory();
@@ -227,104 +285,120 @@ React.useEffect(() => {
     }
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    
-    
-    if (isSaving) return;
-    
-    try {
-      setIsSaving(true);
-      setError(null);
+const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  event.preventDefault();
+  
+  if (isSaving) return;
+  
+  try {
+    setIsSaving(true);
+    setError(null);
 
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      const employeeId = props.employeeMaster.EmployeeID;
-      const fromDate = formData.get('fromDate') as string;
-      const toDate = formData.get('toDate') as string;
-      const category = formData.get('category') as string;
-      const reason = formData.get('reason') as string;
-      let timeStart = formData.get('timeStart') as string;
-      let timeEnd = formData.get('timeEnd') as string;
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const employeeId = props.employeeMaster.EmployeeID;
+    const fromDate = formData.get('fromDate') as string;
+    
+    // UPDATED: Auto-set toDate = fromDate for time_based regularization
+    let toDate = formData.get('toDate') as string;
+    if (regularizationType === 'time_based') {
+      toDate = fromDate;
+    }
+    
+    const category = formData.get('category') as string;
+    const reason = formData.get('reason') as string;
+    let timeStart = formData.get('timeStart') as string;
+    let timeEnd = formData.get('timeEnd') as string;
 
+    // UPDATED: Skip duplicate check when editing
+    if (!isEditMode) {
       const exists = await approvalService.checkRegularizationExists(
-      employeeId,
-      fromDate
-    );
+        employeeId,
+        fromDate
+      );
 
-    if (exists) {
-      alert("Regularization already raised for this date.");
+      if (exists) {
+        alert("Regularization already raised for this date.");
+        setIsSaving(false);
+        return;
+      }
+    }
+    
+    // ✅ VALIDATION 1: Date range check
+    if (regularizationType !== 'time_based' && new Date(toDate) < new Date(fromDate)) {
+      alert('To Date cannot be earlier than From Date');
+      setIsSaving(false);
       return;
     }
-      
-      // ✅ VALIDATION 1: Date range check
-      if (new Date(toDate) < new Date(fromDate)) {
-        alert('To Date cannot be earlier than From Date');
-        setIsSaving(false);
-        return;
-      }
-      
-      // ✅ VALIDATION 2: Check for weekends/holidays/leaves/FUTURE/TODAY
-      const dateRangeValid = await validateDateRange(fromDate, toDate);
-      if (!dateRangeValid.isValid) {
-        alert(`Cannot submit regularization:\n\n${dateRangeValid.reason}`);
-        setIsSaving(false);
-        return;
-      }
-      
-      // ✅ VALIDATION 3: Time-based checks
-      if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
-        alert('Please fill in all time-based fields.');
-        setIsSaving(false);
-        return;
-      }
-      
-      if (regularizationType === 'time_based' && timeStart >= timeEnd) {
-        alert('End Time must be after Start Time.');
-        setIsSaving(false);
-        return;
-      }
-      if(regularizationType == 'day_based'){
-        timeStart = '08:00';
-        timeEnd = '17:00';
-      }
-      
-      const empId = props.employeeMaster.EmployeeID;
-      const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
-      const enhancedReason = `[${categoryFormatted}] ${reason}`;
-
-      const newRequest: Partial<IAttendanceRegularization> = {
-        EmployeeID: empId,
-        RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
-        StartDate: `${fromDate}T${timeStart}:00`,
-        EndDate: `${toDate}T${timeEnd}:00`,
-        ExpectedIn: `${fromDate}T${timeStart}:00`,
-        ExpectedOut:  `${toDate}T${timeEnd}:00`,
-        Reason: enhancedReason,
-        Status: 'Pending' as const
-      };
-      
-      await approvalService.submitRegularizationRequest(newRequest);
-      
-      alert(`Regularization request submitted successfully!\n\nType: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\nFrom: ${fromDate}\nTo: ${toDate}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`);
-
-      form.reset();
-      setRegularizationType('day_based');
-      setDuration(0);
-      
-      await loadRegularizationHistory();
-        // ✅ ADD THIS LINE:
-  setIsFormModalOpen(false);
-      onViewChange('dashboard');
-   
-    } catch (err) {
-      console.error('[RegularizationView] Error submitting regularization:', err);
-      alert('Failed to submit regularization request. Please try again.');
-    } finally {
+    
+    // ✅ VALIDATION 2: Check for weekends/holidays/leaves/FUTURE/TODAY
+    const dateRangeValid = await validateDateRange(fromDate, toDate);
+    if (!dateRangeValid.isValid) {
+      alert(`Cannot submit regularization:\n\n${dateRangeValid.reason}`);
       setIsSaving(false);
+      return;
     }
-  };
+    
+    // ✅ VALIDATION 3: Time-based checks
+    if (regularizationType === 'time_based' && (!timeStart || !timeEnd)) {
+      alert('Please fill in all time-based fields.');
+      setIsSaving(false);
+      return;
+    }
+    
+    if (regularizationType === 'time_based' && timeStart >= timeEnd) {
+      alert('End Time must be after Start Time.');
+      setIsSaving(false);
+      return;
+    }
+    
+    if(regularizationType == 'day_based'){
+      timeStart = '08:00';
+      timeEnd = '17:00';
+    }
+    
+    const empId = props.employeeMaster.EmployeeID;
+    const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
+    const enhancedReason = `[${categoryFormatted}] ${reason}`;
 
+    const newRequest: Partial<IAttendanceRegularization> = {
+      EmployeeID: empId,
+      RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
+      StartDate: `${fromDate}T${timeStart}:00`,
+      EndDate: `${toDate}T${timeEnd}:00`,
+      ExpectedIn: `${fromDate}T${timeStart}:00`,
+      ExpectedOut: `${toDate}T${timeEnd}:00`,
+      Reason: enhancedReason,
+      Status: 'Pending' as const  // FIXED: Use 'Pending' instead of 'Draft'
+    };
+    
+    // ADDED: Check if editing or creating new
+    if (isEditMode && editingRequest) {
+      // Update existing draft request
+      await approvalService.updateRegularization(editingRequest.id!, newRequest);
+      alert(`Draft regularization updated successfully!\n\nType: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\nFrom: ${fromDate}\nTo: ${toDate}\nCategory: ${categoryFormatted}\n\nStatus: Updated`);
+    } else {
+      // Create new request
+      await approvalService.submitRegularizationRequest(newRequest);
+      alert(`Regularization request submitted successfully!\n\nType: ${regularizationType === 'time_based' ? 'Time-based' : 'Day-based'}\nFrom: ${fromDate}\nTo: ${toDate}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`);
+    }
+
+    form.reset();
+    setRegularizationType('day_based');
+    setDuration(0);
+    setIsEditMode(false);
+    setEditingRequest(null);
+    
+    await loadRegularizationHistory();
+    setIsFormModalOpen(false);
+ 
+  } catch (err) {
+    console.error('[RegularizationView] Error submitting regularization:', err);
+    alert('Failed to submit regularization request. Please try again.');
+  } finally {
+    setIsSaving(false);
+  }
+};
   // Helper function to format time
   const formatTime = (timeString: string): string => {
     if (!timeString) return '';
@@ -370,10 +444,8 @@ React.useEffect(() => {
     const request = regularizationHistory.find((r: IRegularizationRequest) => r.id === requestId);
     if (!request) return;
 
-    const confirmMessage = request.status === 'approved' 
-      ? 'Are you sure you want to recall this approved regularization request? It will be moved back to Pending status.'
-      : 'Are you sure you want to recall this pending regularization request? It will be moved back to Pending status.';
-    
+      const confirmMessage = 'Are you sure you want to recall this regularization request? It will be moved to Draft status.';
+
     if (!confirm(confirmMessage)) {
       return;
     }
@@ -384,11 +456,11 @@ React.useEffect(() => {
 
       setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) => 
         req.id === requestId 
-          ? { ...req, status: 'pending' as const }
+          ? { ...req, status: 'Draft' as any }
           : req
       ));
       
-      alert('Regularization request recalled successfully and moved to Pending status.');
+      alert('Regularization request recalled successfully and moved to Draft status.');
       
       await loadRegularizationHistory();
     } catch (err) {
@@ -484,7 +556,7 @@ React.useEffect(() => {
   <div className={styles.modal} style={{ display: 'flex' }}>
     <div className={styles.modalContent}>
       <div className={styles.modalHeader}>
-        <h3>Request Attendance Regularization</h3>
+  <h3>{isEditMode ? 'Edit Draft Regularization Request' : 'Request Attendance Regularization'}</h3>
         <button 
           className={styles.closeBtn} 
           onClick={handleCloseFormModal}
@@ -504,7 +576,8 @@ React.useEffect(() => {
                 type="radio" 
                 name="regularization-type" 
                 value="day_based" 
-                checked={regularizationType === 'day_based'}
+                checked={isEditMode && editingRequest ? (editingRequest.requestType === 'day_based' || editingRequest.requestType === 'Day') : regularizationType === 'day_based'}
+                // defaultValue={isEditMode && editingRequest ? editingRequest.toDate : ''}
                 onChange={handleTypeChange}
                 disabled={isSaving}
               />
@@ -515,7 +588,7 @@ React.useEffect(() => {
                 type="radio" 
                 name="regularization-type" 
                 value="time_based"
-                checked={regularizationType === 'time_based'}
+                checked={isEditMode && editingRequest ? editingRequest.requestType === 'time_based' : regularizationType === 'time_based'}
                 onChange={handleTypeChange}
                 disabled={isSaving}
               />
@@ -545,15 +618,24 @@ React.useEffect(() => {
                 className={styles.formInput} 
                 max={maxDate}
                 disabled={isSaving}
+                    defaultValue={isEditMode && editingRequest ? editingRequest.fromDate : ''}
+
                 onChange={(e) => {
-                  const toDateInput = document.querySelector('input[name="toDate"]') as HTMLInputElement;
-                  if (toDateInput && toDateInput.value) {
-                    setDuration(calculateDuration(e.target.value, toDateInput.value));
-                  }
+                 if (regularizationType !== 'time_based') {
+      const toDateInput = document.querySelector('input[name="toDate"]') as HTMLInputElement;
+      if (toDateInput && toDateInput.value) {
+        setDuration(calculateDuration(e.target.value, toDateInput.value));
+      }
+    } else {
+      // ADDED: For time_based, duration is always 1 day
+      setDuration(1);
+    }
                 }}
                 required  
               />
             </div>
+            {regularizationType !== 'time_based' && (
+
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>To Date *</label>
               <input 
@@ -562,21 +644,26 @@ React.useEffect(() => {
                 className={styles.formInput} 
                 max={maxDate}
                 disabled={isSaving}
+                      defaultValue={isEditMode && editingRequest ? editingRequest.toDate : ''}
+
                 onChange={(e) => {
                   const fromDateInput = document.querySelector('input[name="fromDate"]') as HTMLInputElement;
                   if (fromDateInput && fromDateInput.value) {
                     setDuration(calculateDuration(fromDateInput.value, e.target.value));
                   }
                 }}
-                required  
+                required={regularizationType !== 'time_based'}  
               />
             </div>
+           )} 
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Category *</label>
               <select 
                 name="category" 
                 className={styles.formSelect}
                 disabled={isSaving || isLoadingStatuses}
+                    defaultValue={isEditMode && editingRequest ? editingRequest.category : ''}
+
                 required
               >
                 {/* <option value="">Choose category...</option>
@@ -619,6 +706,8 @@ React.useEffect(() => {
                   name="timeStart"
                   className={styles.formInput}
                   disabled={isSaving}
+                          defaultValue={isEditMode && editingRequest ? editingRequest.startTime : ''}
+
                   required={regularizationType === 'time_based'}
                 />
               </div>
@@ -629,6 +718,8 @@ React.useEffect(() => {
                   name="timeEnd"
                   className={styles.formInput}
                   disabled={isSaving}
+                          defaultValue={isEditMode && editingRequest ? editingRequest.endTime : ''}
+
                   required={regularizationType === 'time_based'}
                 />
               </div>
@@ -642,6 +733,8 @@ React.useEffect(() => {
               className={styles.formTextarea} 
               placeholder="Explain why you need attendance regularization..." 
               disabled={isSaving}
+                  defaultValue={isEditMode && editingRequest ? editingRequest.reason.replace(/^\[.*?\]\s*/, '') : ''}
+
               required 
             />
           </div>
@@ -660,7 +753,7 @@ React.useEffect(() => {
               className={`${styles.btn} ${styles.btnPrimary}`}
               disabled={isSaving}
             >
-              {isSaving ? 'Submitting...' : 'Submit Request'}
+  {isSaving ? 'Saving...' : (isEditMode ? 'Update Draft' : 'Save as Draft')}
             </button>
           </div>
         </form>
@@ -744,6 +837,29 @@ React.useEffect(() => {
                         Recall
                       </button>
                     )}
+                    {/* ADDED: Show Edit + Submit buttons for draft status */}
+                    {request.status === 'draft' && (
+                      <>
+                        <button
+                          className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSmall}`}
+                          
+                                    onClick={() => handleEditDraft(request)}
+
+                            // TODO: Open edit form with pre-filled data
+                            // console.log('Edit request:', request);
+                          
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`}
+                                 onClick={() => { handleSubmitDraft(request.id!).catch(console.error); }}
+
+                        >
+                          Submit
+                        </button>
+                      </>
+                    )}
                     {request.status === 'approved' &&(
                        <button 
                         className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
@@ -765,9 +881,22 @@ React.useEffect(() => {
         <div className={styles.attendanceModalOverlay}>
           <div className={styles.attendanceModal}>
             <div className={styles.modalHeader}>
-              Regularization Request Details
-            </div>
+            <h3>Regularization Request Details</h3>
 
+            
+ {/* ADDED: Close button in header */}
+        <button
+          className={styles.closeBtn}
+          onClick={() => {
+            setViewDetailsModalOpen(false);
+            setSelectedRequest(null);
+            setPunchData(null);
+          }}
+          type="button"
+        >
+          ×
+        </button>
+      </div>
             <div className={styles.modalBody}>
               <div className={styles.infoRow}>
                 <span>Request ID</span>
@@ -903,11 +1032,12 @@ React.useEffect(() => {
 
             <div className={styles.modalActions}>
               <button
-                className={styles.cancelBtn}
+                className={`${styles.btn} ${styles.btnOutline}`}
                 onClick={() => {
                   setViewDetailsModalOpen(false);
                   setSelectedRequest(null);
                   setPunchData(null);
+                  
                 }}
               >
                 Close
