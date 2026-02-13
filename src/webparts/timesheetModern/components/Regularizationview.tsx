@@ -4,7 +4,8 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
 import { AttendanceService } from '../services/AttendanceService';
 import { IRegularizationRequest, IAttendanceRegularization, IEmployeeMaster } from '../models';
-
+import { MSGraphClientV3 } from '@microsoft/sp-http';
+import { UserService } from '../services/UserService';
 export interface IRegularizationViewProps {
   onViewChange: (viewName: string) => void;
   spHttpClient: SPHttpClient;
@@ -12,6 +13,8 @@ export interface IRegularizationViewProps {
   currentUserDisplayName: string;
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
+  graphClient?: MSGraphClientV3;  // ADD THIS
+
 }
 
 const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
@@ -294,21 +297,25 @@ const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<vo
     setIsSaving(true);
     setError(null);
 
-    const form = event.currentTarget;
-    const formData = new FormData(form);
+    // FIX: Use event.target and cast it properly to HTMLFormElement
+    // event.currentTarget can sometimes lose its type in nested React components
+    const form = event.target as HTMLFormElement;
+    
+    // Alternative approach: Access form elements directly without FormData
+    const formElements = form.elements;
     const employeeId = props.employeeMaster.EmployeeID;
-    const fromDate = formData.get('fromDate') as string;
+    const fromDate = (formElements.namedItem('fromDate') as HTMLInputElement)?.value || '';
     
     // UPDATED: Auto-set toDate = fromDate for time_based regularization
-    let toDate = formData.get('toDate') as string;
+    let toDate = (formElements.namedItem('toDate') as HTMLInputElement)?.value || '';
     if (regularizationType === 'time_based') {
       toDate = fromDate;
     }
     
-    const category = formData.get('category') as string;
-    const reason = formData.get('reason') as string;
-    let timeStart = formData.get('timeStart') as string;
-    let timeEnd = formData.get('timeEnd') as string;
+    const category = (formElements.namedItem('category') as HTMLSelectElement)?.value || '';
+    const reason = (formElements.namedItem('reason') as HTMLTextAreaElement)?.value || '';
+    let timeStart = (formElements.namedItem('timeStart') as HTMLInputElement)?.value || '';
+    let timeEnd = (formElements.namedItem('timeEnd') as HTMLInputElement)?.value || '';
 
     // UPDATED: Skip duplicate check when editing
     if (!isEditMode) {
@@ -356,7 +363,17 @@ const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<vo
       timeStart = '08:00';
       timeEnd = '17:00';
     }
-    
+    // FIXED: Get manager email using graphClient from props
+    let managerEmail = '';
+    if (props.graphClient) {
+      try {
+        const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
+        managerEmail = await userService.getCurrentUserManagerEmail();
+      } catch (error) {
+        // Silent fail - submission will continue without manager email
+      }
+    }
+
     const empId = props.employeeMaster.EmployeeID;
     const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
     const enhancedReason = `[${categoryFormatted}] ${reason}`;
@@ -369,7 +386,8 @@ const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<vo
       ExpectedIn: `${fromDate}T${timeStart}:00`,
       ExpectedOut: `${toDate}T${timeEnd}:00`,
       Reason: enhancedReason,
-      Status: 'Pending' as const  // FIXED: Use 'Pending' instead of 'Draft'
+      Status: 'Pending' as const,  // FIXED: Use 'Pending' instead of 'Draft'
+      ManagerEmail:managerEmail
     };
     
     // ADDED: Check if editing or creating new

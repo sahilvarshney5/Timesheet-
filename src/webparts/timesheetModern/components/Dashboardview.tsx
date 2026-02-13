@@ -46,6 +46,24 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
     [spHttpClient, siteUrl]
   );
 
+  // Helper function to get manager name from employeeMaster
+const getManagerName = (): string => {
+  const { employeeMaster } = props;
+  
+  // Try to get manager name from Manager object
+  if (employeeMaster.Manager && employeeMaster.Manager.Title) {
+    return employeeMaster.Manager.Title;
+  }
+  
+  // Fallback: Check if manager email exists
+  if (employeeMaster.ManagerEmail) {
+    return employeeMaster.ManagerEmail;
+  }
+  
+  // No manager found
+  return 'Not Assigned';
+};
+
   const loadDashboardData = React.useCallback(async (): Promise<void> => {
     try {
       setIsLoading(true);
@@ -128,10 +146,22 @@ const DashboardView: React.FC<IDashboardViewProps> = (props) => {
       <div className={styles.welcomeContainer}>
         <div className={styles.welcomeHeader}>
           <h1>Welcome back, {currentUserDisplayName}!</h1>
-          <p>
-            Role: <strong>{userRole}</strong> | 
-            Here's everything you need to manage your work and attendance in one place
-          </p>
+          <p className={styles.employeeInfoLine}>
+  <span className={styles.employeeInfoItem}>
+    <strong>Employee ID:</strong> {props.employeeMaster.EmployeeID}
+  </span>
+  <span className={styles.employeeInfoSeparator}>|</span>
+  <span className={styles.employeeInfoItem}>
+    <strong>Role:</strong> {userRole}
+  </span>
+  <span className={styles.employeeInfoSeparator}>|</span>
+  <span className={styles.employeeInfoItem}>
+    <strong>Manager:</strong> {getManagerName()}
+  </span>
+</p>
+<p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
+  Here's everything you need to manage your work and attendance in one place
+</p>
           <div className={styles.welcomeStats}>
             <div className={styles.welcomeStat}>
               <div className={styles.welcomeStatValue}>{stats.daysPresent}</div>

@@ -91,7 +91,7 @@ import { TimesheetService } from '../services/TimesheetService';
 import { ProjectTaskService,IProjectTask } from '../services/ProjectTaskService';
 import { ProjectAssignmentService, IProjectAssignment, ITaskTypeOption } from '../services/ProjectAssignmentService'; // FIXED: Import added
 import { AttendanceService } from '../services/AttendanceService'; // FIXED: Import added
-import { IEmployeeMaster } from '../models';
+import { IEmployeeMaster, ITimesheetHeader } from '../models';
 import { 
   normalizeDateToString, 
   formatDateForDisplay, 
@@ -99,6 +99,8 @@ import {
   getWeekDays,
   getTodayString
 } from '../utils/DateUtils';
+import { MSGraphClientV3 } from '@microsoft/sp-http';
+import { UserService } from '../services/UserService';
 
 interface ITimesheetEntry {
   id: number;
@@ -110,13 +112,15 @@ interface ITimesheetEntry {
 }
 
 export interface ITimesheetViewProps {
-  onViewChange: (viewName: string) => void;
+  onViewChange: (viewName: string, data?: any) => void;
   spHttpClient: SPHttpClient;
   siteUrl: string;
   currentUserDisplayName: string;
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
     navigationData?: any; // Optional navigation context for passing data between views
+      graphClient?: MSGraphClientV3;  // ADD THIS
+
 
 }
 
@@ -161,6 +165,7 @@ const [timesheetStatus, setTimesheetStatus] = React.useState<'Draft' | 'Submitte
 const [activeProjectstype, setActiveProjectstype] = React.useState<IProjectAssignment[]>([]);
 const [availableTaskTypes, setAvailableTaskTypes] = React.useState<ITaskTypeOption[]>([]);
 const [selectedProjectNumber, setSelectedProjectNumber] = React.useState<string>('');
+const [currentTimesheetHeader, setCurrentTimesheetHeader] = React.useState<ITimesheetHeader | null>(null);
   // Form state
   const [formData, setFormData] = React.useState({
     date: '',
@@ -733,89 +738,43 @@ const handleClearPaste = (): void => {
   }
 };
 const handleSubmitTimesheet = async (): Promise<void> => {
-  const weekDays = getCurrentWeekDays();
-  const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
-  
-  if (weekEntries.length === 0) {
-    alert('Please add at least one timesheet entry before submitting.');
-    return;
-  }
+  try {
+    setIsLoading(true);
 
-  // ✅ FIX: Validate all working days have full hours
-  const validationErrors: string[] = [];
-  
-  for (const date of weekDays) {
-    const dateObj = new Date(date);
-    const dayOfWeek = dateObj.getDay();
-    
-    // Skip weekends
-    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-    
-    const dayStatus = getDayStatus(date);
-    
-    // Skip non-working days
-    if (dayStatus === 'leave' || dayStatus === 'absent' || dayStatus === 'holiday') continue;
-    
-    const dayEntries = entries.filter(e => e.date === date);
-    const loggedHours = dayEntries.reduce((sum, e) => sum + e.hours, 0);
-    
-    // ✅ FIX: Get available hours from punch data via service
-    try {
-      const empId = props.employeeMaster.EmployeeID;
-      const punchData = await attendanceService.getPunchData(empId, date, date);
-      const availableHours = punchData.length > 0 ? (punchData[0].TotalHours || 0) : 0;
-      
-      if (availableHours > 0 && loggedHours < availableHours) {
-        validationErrors.push(
-          `${formatDateForDisplay(date)}: ${loggedHours.toFixed(1)}h / ${availableHours.toFixed(1)}h (incomplete)`
-        );
-      }
-    } catch (error) {
-      console.error(`[TimesheetView] Error getting punch data for ${date}:`, error);
-      // Continue validation for other days
+    if (!currentTimesheetHeader || !currentTimesheetHeader.Id) {
+      alert('No timesheet header found. Please create a timesheet first.');
+      return;
     }
-  }
-  
-  // ✅ FIX: Block submit if validation fails
-  if (validationErrors.length > 0) {
-    alert(
-      `Cannot submit timesheet. The following days are incomplete:\n\n` +
-      validationErrors.join('\n') +
-      `\n\nPlease fill all working days with available hours before submitting.`
+
+    // FIXED: Get manager email using graphClient from props
+    let managerEmail = '';
+    if (props.graphClient) {
+      try {
+        const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
+        managerEmail = await userService.getCurrentUserManagerEmail();
+      } catch (error) {
+        // Silent fail - submission will continue without manager email
+      }
+    }
+
+    // Submit timesheet with manager email
+    await timesheetService.submitTimesheetWithManagerEmail(
+      currentTimesheetHeader.Id,
+      managerEmail
     );
-    return;
-  }
 
-  // Existing submit logic...
-  const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
-  
-  if (confirm(`Submit timesheet for approval?\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}\n\nYour timesheet will be sent for approval.`)) {
-    try {
-      setIsLoading(true);
-      
-      const empId = props.employeeMaster.EmployeeID;
-      const startDate = weekDays[0];
-      const endDate = weekDays[6];
-      const timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
-      
-      if (!timesheetHeader) {
-        throw new Error('Timesheet header not found');
-      }
-      
-      await timesheetService.submitTimesheet(timesheetHeader.Id!);
-      
-      alert(`Timesheet submitted successfully!\n\nTotal Hours: ${totalHours.toFixed(1)}\nEntries: ${weekEntries.length}`);
-      
-      await loadTimesheetData();
-      
-    } catch (error) {
-      console.error('[TimesheetView] Error submitting timesheet:', error);
-      alert('Error submitting timesheet. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    alert('Timesheet submitted successfully for approval!');
+    
+    // Reload timesheet data
+    await loadTimesheetData();
+
+  } catch (error) {
+    alert('Failed to submit timesheet. Please try again.');
+  } finally {
+    setIsLoading(false);
   }
 };
+
 
   const calculateWeekTotals = (): { 
     totalHours: number;

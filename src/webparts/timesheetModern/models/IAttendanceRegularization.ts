@@ -26,4 +26,5 @@ export interface IAttendanceRegularization extends IBaseModel {
 
   ManagerComments?: string;
   RequestID?: string; // ADDED: For consistency with SharePoint column
+  ManagerEmail?: string; // ADDED: To store manager's email for notifications
 }

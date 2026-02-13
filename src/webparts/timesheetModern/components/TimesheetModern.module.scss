@@ -742,8 +742,49 @@
 .modalBody {
   padding: 24px;
   background: #F8F9FA; // ✅ Subtle background
+  max-height: 80vh;
+  overflow-y: scroll;
+}
+// Employee info line styles (horizontal layout)
+.employeeInfoLine {
+  display: block;
+  align-items: center;
+  // flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  margin: 0.75rem 0 0 0;
 }
 
+.employeeInfoItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  
+  strong {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+.employeeInfoSeparator {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-weight: 300;
+}
+
+// Responsive behavior for mobile
+@media (max-width: 768px) {
+  .employeeInfoLine {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+  
+  .employeeInfoSeparator {
+    display: none;
+  }
+}
 .infoRow {
   display: flex;
   justify-content: space-between;
@@ -861,7 +902,7 @@
 
 .calendarDay {
   width: 90%;
-  min-height: 70px; // ✅ Slightly taller
+  min-height: 75px; // ✅ Slightly taller
   max-height: 70px;
   border-radius: 10px; // ✅ More rounded
   padding: 6px;
@@ -926,6 +967,7 @@
   align-items: center;
   width: 100%;
   z-index: 2;
+  margin-bottom: -1px;
 }
 
 .dayNumber {
@@ -2085,6 +2127,113 @@
     background: #E3F2FD;
     border-color: #2196F3;
   }
+}
+
+
+
+// ============================================================================
+// SECTION 12: Add missing CSS classes definition (if they don't exist)
+// Add this to TimesheetModern.module.scss if these classes are missing:
+// ============================================================================
+
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modalClose {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.detailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detailLabel {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.detailValue {
+  color: var(--text-primary);
+}
+
+.reasonBox {
+  background: var(--bg-secondary);
+  padding: 0.75rem;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+.commentBox {
+  background: var(--warning-light);
+  padding: 0.75rem;
+  border-radius: 4px;
+  border-left: 3px solid var(--warning);
+}
+
+.punchDataBox {
+  background: var(--bg-secondary);
+  padding: 0.75rem;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.btnSecondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.btnSecondary:hover {
+  background: var(--bg-hover);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badgePending {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.badgeApproved {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.badgeRejected {
+  background: var(--danger-light);
+  color: var(--danger);
 }
 
 // ============================================================================

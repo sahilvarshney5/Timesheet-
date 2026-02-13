@@ -1,10 +1,12 @@
 // services/UserService.ts
+// ENHANCED VERSION - Added Microsoft Graph support for manager email
 // Service for user-related operations
 // Handles current user info and user lookups
 
 import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { HttpClientService } from './HttpClientService';
 import { IUserInfo } from '../models';
+import { MSGraphClientV3 } from '@microsoft/sp-http';
 
 export interface IUserPermissions {
   isManager: boolean;
@@ -16,11 +18,13 @@ export class UserService {
   private httpService: HttpClientService;
   private spHttpClient: SPHttpClient;
   private siteUrl: string;
+  private graphClient: MSGraphClientV3 | null;
 
-  constructor(spHttpClient: SPHttpClient, siteUrl: string) {
+  constructor(spHttpClient: SPHttpClient, siteUrl: string, graphClient?: MSGraphClientV3) {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
     this.spHttpClient = spHttpClient;
     this.siteUrl = siteUrl;
+    this.graphClient = graphClient || null;
   }
 
   /**
@@ -49,8 +53,29 @@ export class UserService {
       };
       
     } catch (error) {
-      console.error('[UserService] Error getting current user:', error);
       throw error;
+    }
+  }
+
+  /**
+   * NEW: Get current user's manager email using Microsoft Graph
+   * Returns manager email or empty string if not found
+   */
+  public async getCurrentUserManagerEmail(): Promise<string> {
+    try {
+      if (!this.graphClient) {
+        return '';
+      }
+
+      const manager: any = await this.graphClient
+        .api('/me/manager')
+        .select('mail,userPrincipalName')
+        .get();
+
+      return manager?.mail || manager?.userPrincipalName || '';
+
+    } catch (error) {
+      return '';
     }
   }
 
@@ -59,22 +84,18 @@ export class UserService {
    */
   public async getUserPermissions(): Promise<IUserPermissions> {
     try {
-      // Check group membership for determining permissions
       const [isManager, isAdmin] = await Promise.all([
         this.isUserInGroup('Timesheet_Managers'),
         this.isUserInGroup('Timesheet_Admins')
       ]);
 
       return {
-        isManager: isManager || isAdmin, // Admins are also considered managers
+        isManager: isManager || isAdmin,
         isAdmin: isAdmin,
-        isMember: !isAdmin && !isManager // Regular members
+        isMember: !isAdmin && !isManager
       };
       
     } catch (error) {
-      console.error('[UserService] Error getting user permissions:', error);
-      
-      // Return default permissions on error
       return {
         isManager: false,
         isAdmin: false,
@@ -99,8 +120,7 @@ export class UserService {
       }
       
     } catch (error) {
-      console.error('[UserService] Error getting user role:', error);
-      return 'Member'; // Default to Member on error
+      return 'Member';
     }
   }
 
@@ -134,7 +154,6 @@ export class UserService {
       };
       
     } catch (error) {
-      console.error(`[UserService] Error getting user ${userId}:`, error);
       throw error;
     }
   }
@@ -172,7 +191,6 @@ export class UserService {
       };
       
     } catch (error) {
-      console.error(`[UserService] Error getting user by email ${email}:`, error);
       throw error;
     }
   }
@@ -183,7 +201,6 @@ export class UserService {
    */
   public async getUserManager(loginName: string): Promise<IUserInfo | null> {
     try {
-      // Note: This requires User Profile Service to be configured
       const endpoint = `${this.siteUrl}/_api/SP.UserProfiles.PeopleManager/GetPropertiesFor(accountName=@v)?@v='${encodeURIComponent(loginName)}'`;
       
       const response: SPHttpClientResponse = await this.spHttpClient.get(
@@ -192,13 +209,11 @@ export class UserService {
       );
       
       if (!response.ok) {
-        console.warn(`[UserService] Could not get manager for ${loginName}: ${response.statusText}`);
         return null;
       }
       
       const data = await response.json();
       
-      // Extract manager from extended properties
       const managerProperty = data.UserProfileProperties?.find(
         (prop: any) => prop.Key === 'Manager'
       );
@@ -207,11 +222,9 @@ export class UserService {
         return null;
       }
       
-      // Get manager details
       return await this.getUserByEmail(managerProperty.Value);
       
     } catch (error) {
-      console.error(`[UserService] Error getting manager for ${loginName}:`, error);
       return null;
     }
   }
@@ -238,7 +251,6 @@ export class UserService {
       return data.value && data.value.length > 0;
       
     } catch (error) {
-      console.error(`[UserService] Error checking group membership for ${groupName}:`, error);
       return false;
     }
   }
@@ -270,7 +282,6 @@ export class UserService {
       }));
       
     } catch (error) {
-      console.error(`[UserService] Error getting users in group ${groupName}:`, error);
       throw error;
     }
   }

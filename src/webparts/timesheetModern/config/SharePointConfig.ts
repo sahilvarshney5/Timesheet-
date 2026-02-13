@@ -235,7 +235,12 @@ export const SharePointConfig: ISharePointConfig = {
       LockedBy: {
         displayName: 'Locked By',
         internalName: 'LockedBy'
-      }
+      },
+      ManagerEmail: {
+    displayName: 'Manager Email',
+    internalName: 'ManagerEmail'
+  }
+
     },
     // TimesheetLines columns
     TimesheetLines: {
@@ -309,7 +314,11 @@ export const SharePointConfig: ISharePointConfig = {
       ManagerComment: {
         displayName: 'Manager Comment',
         internalName: 'ManagerComments'
-      }
+      },
+      ManagerEmail: {
+    displayName: 'Manager Email',
+    internalName: 'ManagerEmail'
+  }
     },
     // ProjectTaskMaster columns
     ProjectTaskMaster: {

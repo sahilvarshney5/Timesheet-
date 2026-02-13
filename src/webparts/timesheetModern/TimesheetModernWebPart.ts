@@ -7,6 +7,7 @@ import {
 } from '@microsoft/sp-property-pane';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
 import { IReadonlyTheme } from '@microsoft/sp-component-base';
+import { MSGraphClientV3 } from '@microsoft/sp-http';
 
 import * as strings from 'TimesheetModernWebPartStrings';
 import TimesheetModern from './components/TimesheetModern';
@@ -19,8 +20,18 @@ export interface ITimesheetModernWebPartProps {
 export default class TimesheetModernWebPart extends BaseClientSideWebPart<ITimesheetModernWebPartProps> {
 
   private _isDarkTheme: boolean = false;
+  private _graphClient: MSGraphClientV3 | undefined;
 
-  public render(): void {
+  public async render(): Promise<void> {
+    // Get graph client asynchronously
+    if (!this._graphClient) {
+      try {
+        this._graphClient = await this.context.msGraphClientFactory.getClient('3');
+      } catch (error) {
+        // Silent fail - graph client is optional
+      }
+    }
+
     const element: React.ReactElement<ITimesheetModernProps> = React.createElement(
       TimesheetModern,
       {
@@ -32,16 +43,24 @@ export default class TimesheetModernWebPart extends BaseClientSideWebPart<ITimes
         siteUrl: this.context.pageContext.web.absoluteUrl,
         currentUserEmail: this.context.pageContext.user.email,
         currentUserDisplayName: this.context.pageContext.user.displayName,
-        userLoginName: this.context.pageContext.user.loginName
+        userLoginName: this.context.pageContext.user.loginName,
+        graphClient: this._graphClient
       }
     );
 
     ReactDom.render(element, this.domElement);
   }
 
-  protected onInit(): Promise<void> {
+  protected async onInit(): Promise<void> {
+    // Initialize graph client on init
+    try {
+      this._graphClient = await this.context.msGraphClientFactory.getClient('3');
+    } catch (error) {
+      // Silent fail - graph client is optional
+    }
+
     return this._getEnvironmentMessage().then(message => {
-      console.log('TimesheetModern WebPart initialized');
+      // Environment message loaded
     });
   }
 

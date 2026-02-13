@@ -22,6 +22,72 @@ export class TimesheetService {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
   
+  // TimesheetService.ts - ENHANCEMENT PATCH
+// Add this method to TimesheetService class to support manager email
+
+/**
+ * ENHANCED: Submit timesheet for approval with manager email
+ * @param timesheetId Timesheet header ID
+ * @param managerEmail Manager email address
+ */
+public async submitTimesheetWithManagerEmail(timesheetId: number, managerEmail?: string): Promise<void> {
+  try {
+    const listName = getListInternalName('timesheetHeader');
+    
+    const itemData: any = {
+      [getColumnInternalName('TimesheetHeader', 'Status')]: 'Submitted',
+      [getColumnInternalName('TimesheetHeader', 'SubmissionDate')]: new Date().toISOString()
+    };
+
+    if (managerEmail) {
+      itemData.ManagerEmail = managerEmail;
+    }
+    
+    await this.httpService.updateListItem(listName, timesheetId, itemData);
+    
+  } catch (error) {
+    throw error;
+  }
+}
+
+// ALSO UPDATE: Modify createTimesheetHeader to accept optional managerEmail parameter
+/**
+ * ENHANCED: Create a new timesheet header with manager email
+ * @param employeeId Employee ID
+ * @param weekStartDate Week start date (Monday, ISO format)
+ * @param managerEmail Optional manager email
+ */
+public async createTimesheetHeaderWithManagerEmail(
+  employeeId: string, 
+  weekStartDate: string,
+  managerEmail?: string
+): Promise<ITimesheetHeader> {
+  try {
+    const normalizedWeekStart = normalizeDateToString(weekStartDate);
+    
+    const listName = getListInternalName('timesheetHeader');
+    
+    const itemData: any = {
+      [getColumnInternalName('TimesheetHeader', 'EmployeeID')]: employeeId,
+      [getColumnInternalName('TimesheetHeader', 'WeekStartDate')]: normalizedWeekStart,
+      [getColumnInternalName('TimesheetHeader', 'Status')]: 'Draft'
+    };
+
+    if (managerEmail) {
+      itemData.ManagerEmail = managerEmail;
+    }
+    
+    const newHeader = await this.httpService.createListItem<ITimesheetHeader>(
+      listName,
+      itemData
+    );
+    
+    return newHeader;
+    
+  } catch (error) {
+    throw error;
+  }
+}
   /**
    * Map SharePoint response to canonical ITimesheetLines format
    * FIXED: Normalizes all date fields to YYYY-MM-DD format
