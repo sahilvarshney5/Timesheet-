@@ -22,6 +22,7 @@ export interface ISharePointConfig {
     attendanceRegularization: IListConfig;
     projectTaskMaster: IListConfig;
     projectAssignment: IListConfig; // NEW: Project Assignment list
+    defaultPunchTimes:IListConfig;
   };
   columns: {
     [listName: string]: {
@@ -75,7 +76,11 @@ export const SharePointConfig: ISharePointConfig = {
     projectAssignment: {
       displayName: 'Project Assignment',
       internalName: 'Project%20Task%20Master'
-    }
+    },
+    defaultPunchTimes: {
+    displayName: 'Default Punch Times',
+    internalName: 'Default%20Punch%20Times'
+  }
   },
   columns: {
     // EmployeeMaster columns

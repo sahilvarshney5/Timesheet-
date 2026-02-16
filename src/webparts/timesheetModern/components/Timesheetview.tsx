@@ -180,7 +180,7 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     taskType: 'Development',
     description: ''
   });
-
+const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssignment[]>([]);
   // ============================================================================
   // VALIDATION HELPERS - 8 HOUR DAILY LIMIT
   // ============================================================================
@@ -229,7 +229,11 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
         const projects = await projectTaskService.getActiveProjects(
           props.employeeMaster.EmployeeID
         );
-        setActiveProjects(projects);
+        // ✅ DEDUPLICATION: Remove duplicate projects based on ProjectID
+        const uniqueProjects = Array.from(
+          new Map(projects.map(p => [p.ProjectID || p.ProjectNumber, p])).values()
+        );
+        setActiveProjects(uniqueProjects);
       } catch (error) {
         console.error('[TimesheetView] Error loading projects:', error);
       }
@@ -434,54 +438,83 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   };
 
   const handleAddEntry = async (date?: string): Promise<void> => {
-    const weekDays = getCurrentWeekDays();
-    const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
+  
+  const weekDays = getCurrentWeekDays();
+  const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
 
-    // ✅ FIX: Block future dates (silently)
-    const today = getTodayString();
-    if (normalizedDate > today) {
-      return; // Silently block - no alert
-    }
-    const validation = await validateTimesheetDate(normalizedDate);
+  // ✅ FIX: Block future dates (silently)
+  const today = getTodayString();
+  if (normalizedDate > today) {
+    return; // Silently block - no alert
+  }
+  const validation = await validateTimesheetDate(normalizedDate);
 
-    if (!validation.isValid) {
-      alert(validation.message);
-      return;
-    }
+  if (!validation.isValid) {
+    alert(validation.message);
+    return;
+  }
 
-    setFormData({
-      date: normalizedDate,
-      project: '',
-      hours: 0,
-      taskType: 'Development',
-      description: ''
-    });
-    setIsModalOpen(true);
-  };
+  // ✅ RESET: Clear filtered milestones on modal open
+  setFilteredMilestones([]);
+  setAvailableTaskTypes([]);
 
-  const handleEditEntry = (entry: ITimesheetEntry): void => {
-    setEditingEntry(entry);
-    setFormData({
-      date: entry.date,
-      project: entry.project,
-      hours: entry.hours,
-      taskType: entry.taskType,
-      description: entry.description
-    });
-    setIsModalOpen(true);
-  };
+  setFormData({
+    date: normalizedDate,
+    project: '',
+    hours: 0,
+    taskType: '', // ✅ CHANGED: Start with empty milestone
+    description: ''
+  });
+  setIsModalOpen(true);
+};
 
-  const handleCloseModal = (): void => {
-    setIsModalOpen(false);
-    setEditingEntry(null);
-    setFormData({
-      date: '',
-      project: '',
-      hours: 0,
-      taskType: 'Development',
-      description: ''
-    });
-  };
+ const handleEditEntry = (entry: ITimesheetEntry): void => {
+  setEditingEntry(entry);
+  
+  // ✅ FILTER MILESTONES: Pre-populate filtered milestones for editing
+  if (entry.project) {
+    const filteredTasks = activeProjectstype.filter(
+      task => task.ProjectNumber === entry.project
+    );
+    setFilteredMilestones(filteredTasks);
+    
+    setAvailableTaskTypes(filteredTasks.map(task => ({
+      taskType: task.TaskName,
+      duration: parseFloat(task.DurationTask || '0'),
+      projectNumber: task.ProjectNumber,
+      taskNumber: task.TaskNumber
+    })));
+  } else {
+    setFilteredMilestones([]);
+    setAvailableTaskTypes([]);
+  }
+  
+  setFormData({
+    date: entry.date,
+    project: entry.project,
+    hours: entry.hours,
+    taskType: entry.taskType,
+    description: entry.description
+  });
+  setIsModalOpen(true);
+};
+
+const handleCloseModal = (): void => {
+  setIsModalOpen(false);
+  setEditingEntry(null);
+  
+  // ✅ RESET: Clear filtered milestones on modal close
+  setFilteredMilestones([]);
+  setAvailableTaskTypes([]);
+  
+  setFormData({
+    date: '',
+    project: '',
+    hours: 0,
+    taskType: '', // ✅ CHANGED: Clear milestone
+    description: ''
+  });
+};
 
   const handleInputChange = (field: string, value: unknown): void => {
   // VALIDATION: Future date check (NO ALERT - just block)
@@ -490,33 +523,39 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   }
   
   // NEW: Project change - filter milestones
-  if (field === 'project' && typeof value === 'string') {
-    setSelectedProjectNumber(value);
+if (field === 'project' && typeof value === 'string') {
+  setSelectedProjectNumber(value);
+  
+  // ✅ FILTER MILESTONES: Only show milestones for selected project
+  if (value) {
+    const filteredTasks = activeProjectstype.filter(
+      task => task.ProjectNumber === value
+    );
     
-    // Filter tasks for selected project
-    if (value) {
-      const filteredTasks = activeProjectstype.filter(
-        task => task.ProjectNumber === value
-      );
-      setAvailableTaskTypes(filteredTasks.map(task => ({
-        taskType: task.TaskName,
-        duration: parseFloat(task.DurationTask || '0'),
-        projectNumber: task.ProjectNumber,
-        taskNumber: task.TaskNumber
-      })));
-      
-      // Reset taskType when project changes
-      setFormData(prev => ({
-        ...prev,
-        project: value,
-        taskType: '', // Reset task selection
-        hours: 0 // Reset hours
-      }));
-      return;
-    } else {
-      setAvailableTaskTypes([]);
-    }
+    // ✅ UPDATE: Set filtered milestones state
+    setFilteredMilestones(filteredTasks);
+    
+    setAvailableTaskTypes(filteredTasks.map(task => ({
+      taskType: task.TaskName,
+      duration: parseFloat(task.DurationTask || '0'),
+      projectNumber: task.ProjectNumber,
+      taskNumber: task.TaskNumber
+    })));
+    
+    // Reset taskType when project changes
+    setFormData(prev => ({
+      ...prev,
+      project: value,
+      taskType: '', // Reset task selection
+      hours: 0 // Reset hours
+    }));
+    return;
+  } else {
+    // ✅ CLEAR: No project selected → clear filtered milestones
+    setFilteredMilestones([]);
+    setAvailableTaskTypes([]);
   }
+}
   
   // NEW: Task type change - auto-populate hours
   if (field === 'taskType' && typeof value === 'string') {
@@ -1212,27 +1251,31 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
                 </div>
 
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Milestone</label>
-                  <select
-                    className={styles.formSelect}
-                    value={formData.taskType}
-                    onChange={(e) => {
-                      handleInputChange('taskType', e.target.value);
-                      void LoadtimeData(e.target.value);
-                    }}
-                  >
-                    {/* <option value="Development">Development</option>
-                    <option value="Testing">Testing</option>
-                    <option value="Meeting">Meeting</option>
-                    <option value="Planning">Planning</option>
-                    <option value="Documentation">Documentation</option> */}
-                    {activeProjectstype.map(task => (
-                      <option key={task.TaskName} value={task.TaskName}>
-                        {task.TaskName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+  <label className={styles.formLabel}>Milestone</label>
+  <select
+    className={styles.formSelect}
+    value={formData.taskType}
+    onChange={(e) => {
+      handleInputChange('taskType', e.target.value);
+      void LoadtimeData(e.target.value);
+    }}
+    disabled={!formData.project} // ✅ DISABLE if no project selected
+  >
+    <option value="">
+      {!formData.project 
+        ? 'Select a project first...' 
+        : filteredMilestones.length === 0 
+          ? 'No milestones available' 
+          : 'Select Milestone...'
+      }
+    </option>
+    {filteredMilestones.map(task => (
+      <option key={`${task.ProjectNumber}-${task.TaskNumber}-${task.TaskName}`} value={task.TaskName}>
+        {task.TaskName}
+      </option>
+    ))}
+  </select>
+</div>
               </div>
 
               {/* <div className={styles.formGroup}>
