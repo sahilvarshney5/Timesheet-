@@ -110,7 +110,7 @@ public async createTimesheetHeaderWithManagerEmail(
       TaskId: 0,    // Not available in current schema
       Hours: spItem.HoursBooked || spItem.Hours,
       Comments: spItem.Description || spItem.Comments,
-      
+      TaskName:spItem.TaskName,
       // SharePoint internal names (as-is)
       TimesheetID: spItem.TimesheetHeaderId || spItem.TimesheetID,
       EntryDate: workDate, // ✅ NORMALIZED DATE
@@ -193,6 +193,7 @@ public async createTimesheetHeaderWithManagerEmail(
         getColumnInternalName('TimesheetLines', 'BLA_No'),
         getColumnInternalName('TimesheetLines', 'HoursBooked'),
         getColumnInternalName('TimesheetLines', 'Description'),
+        getColumnInternalName('TimesheetLines', 'TaskName'),
         'Created',
         'Modified'
       ];
@@ -300,7 +301,8 @@ public async createTimesheetHeaderWithManagerEmail(
         [getColumnInternalName('TimesheetLines', 'TaskNo')]: timesheetLine.TaskNo || timesheetLine.Title || '',
         [getColumnInternalName('TimesheetLines', 'BLA_No')]: timesheetLine.BLA_No || timesheetLine.BLANumber || '',
         [getColumnInternalName('TimesheetLines', 'HoursBooked')]: timesheetLine.HoursBooked || timesheetLine.Hours,
-        [getColumnInternalName('TimesheetLines', 'Description')]: timesheetLine.Description || timesheetLine.Comments || ''
+        [getColumnInternalName('TimesheetLines', 'Description')]: timesheetLine.Description || timesheetLine.Comments || '',
+        [getColumnInternalName('TimesheetLines', 'TaskName')]: timesheetLine.TaskName || timesheetLine.Comments || ''
       };
       
       const createdItem = await this.httpService.createListItem<any>(
@@ -375,6 +377,9 @@ public async createTimesheetHeaderWithManagerEmail(
       if (timesheetLine.Description !== undefined || timesheetLine.Comments !== undefined) {
         itemData[getColumnInternalName('TimesheetLines', 'Description')] = timesheetLine.Description || timesheetLine.Comments;
       }
+       if (timesheetLine.TaskName !== undefined || timesheetLine.TaskName !== undefined) {
+        itemData[getColumnInternalName('TimesheetLines', 'TaskName')] = timesheetLine.TaskName || timesheetLine.TaskName;
+      }
       
       await this.httpService.updateListItem<any>(
         listName,
@@ -393,6 +398,7 @@ public async createTimesheetHeaderWithManagerEmail(
         getColumnInternalName('TimesheetLines', 'BLA_No'),
         getColumnInternalName('TimesheetLines', 'HoursBooked'),
         getColumnInternalName('TimesheetLines', 'Description'),
+        getColumnInternalName('TimesheetLines', 'TaskName'),
         'Created',
         'Modified'
       ];

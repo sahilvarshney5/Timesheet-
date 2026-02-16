@@ -12,7 +12,7 @@ export interface ITimesheetLines extends IBaseModel {
   /* ===============================
      SharePoint / BC internal aliases
      =============================== */
-
+TaskName:string;
   TimesheetID?: number;
    EntryDate?: string;          // ✅ ACTUAL SharePoint column name
   ProjectNumber?: string;      // ✅ ACTUAL SharePoint column name

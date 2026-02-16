@@ -14,15 +14,15 @@
 //  */
 // const isDateDisabled = (date: Date | null | undefined): boolean => {
 //   if (!date) return false;
-  
+
 //   // ✅ FIX: Get today at midnight (ignore time)
 //   const today = new Date();
 //   today.setHours(0, 0, 0, 0);
-  
+
 //   // ✅ FIX: Get comparison date at midnight
 //   const checkDate = new Date(date);
 //   checkDate.setHours(0, 0, 0, 0);
-  
+
 //   // ✅ FIX: ONLY disable if date is AFTER today (future dates only)
 //   // CHANGED FROM: checkDate !== today (was blocking past dates)
 //   // CHANGED TO: checkDate > today (only blocks future)
@@ -42,20 +42,20 @@
 //   max={getTodayString()} // ✅ This is correct - prevents future selection in native picker
 //   onChange={(e) => {
 //     const selectedDate = new Date(e.target.value + 'T00:00:00');
-    
+
 //     // ✅ FIX: Only validate FUTURE dates, allow past dates
 //     const today = new Date();
 //     today.setHours(0, 0, 0, 0);
-    
+
 //     const checkDate = new Date(selectedDate);
 //     checkDate.setHours(0, 0, 0, 0);
-    
+
 //     // ✅ CHANGED: Only block if AFTER today (not equal to today)
 //     if (checkDate > today) {
 //       alert('Cannot select future dates. Please select today or a past date.');
 //       return;
 //     }
-    
+
 //     // ✅ Allow: today OR past dates
 //     handleInputChange('date', e.target.value);
 //   }}
@@ -88,16 +88,20 @@ import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
 import { SPHttpClient } from '@microsoft/sp-http';
 import { TimesheetService } from '../services/TimesheetService';
-import { ProjectTaskService,IProjectTask } from '../services/ProjectTaskService';
+import { ProjectTaskService, IProjectTask } from '../services/ProjectTaskService';
 import { ProjectAssignmentService, IProjectAssignment, ITaskTypeOption } from '../services/ProjectAssignmentService'; // FIXED: Import added
 import { AttendanceService } from '../services/AttendanceService'; // FIXED: Import added
 import { IEmployeeMaster, ITimesheetHeader } from '../models';
-import { 
-  normalizeDateToString, 
-  formatDateForDisplay, 
+import {
+  normalizeDateToString,
+  formatDateForDisplay,
   isToday as checkIsToday,
   getWeekDays,
-  getTodayString
+  getTodayString,
+  // START: 30 days restriction
+  getMinAllowedDate,
+  isOlderThan30Days
+  // END: 30 days restriction
 } from '../utils/DateUtils';
 import { MSGraphClientV3 } from '@microsoft/sp-http';
 import { UserService } from '../services/UserService';
@@ -105,9 +109,11 @@ import { UserService } from '../services/UserService';
 interface ITimesheetEntry {
   id: number;
   date: string; // Always normalized to YYYY-MM-DD
-  project: string;
+  project: string; // Project Number (e.g., "PRJ001")
+  projectName: string; // NEW: Project Name for display
   hours: number;
-  taskType: string;
+  taskType: string; // Task/Milestone name
+  taskNumber: string; // NEW: Task Number
   description: string;
 }
 
@@ -118,8 +124,8 @@ export interface ITimesheetViewProps {
   currentUserDisplayName: string;
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
-    navigationData?: any; // Optional navigation context for passing data between views
-      graphClient?: MSGraphClientV3;  // ADD THIS
+  navigationData?: any; // Optional navigation context for passing data between views
+  graphClient?: MSGraphClientV3;  // ADD THIS
 
 
 }
@@ -127,7 +133,7 @@ export interface ITimesheetViewProps {
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { spHttpClient, siteUrl } = props;
   const MAX_DAILY_HOURS = 9;
-const MAX_WEEKLY_HOURS = 45; // Configurable
+  const MAX_WEEKLY_HOURS = 45; // Configurable
 
   // Services
   const timesheetService = React.useMemo(
@@ -136,22 +142,22 @@ const MAX_WEEKLY_HOURS = 45; // Configurable
   );
 
   const projectAssignmentService = React.useMemo(
-  () => new ProjectAssignmentService(spHttpClient, siteUrl),
-  [spHttpClient, siteUrl]
-);
+    () => new ProjectAssignmentService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
 
   // FIXED: Add attendance service for validation
   const attendanceService = React.useMemo(
     () => new AttendanceService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
-// Add service and state
-const projectTaskService = React.useMemo(
-  () => new ProjectTaskService(spHttpClient, siteUrl),
-  [spHttpClient, siteUrl]
-);
+  // Add service and state
+  const projectTaskService = React.useMemo(
+    () => new ProjectTaskService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
 
-const [activeProjects, setActiveProjects] = React.useState<IProjectTask[]>([]);
+  const [activeProjects, setActiveProjects] = React.useState<IProjectTask[]>([]);
   // State management
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false);
   const [entries, setEntries] = React.useState<ITimesheetEntry[]>([]);
@@ -159,13 +165,13 @@ const [activeProjects, setActiveProjects] = React.useState<IProjectTask[]>([]);
   const [currentWeekOffset, setCurrentWeekOffset] = React.useState<number>(0);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
   const [clipboard, setClipboard] = React.useState<ITimesheetEntry | null>(null);
-// In Timesheetview.tsx
+  // In Timesheetview.tsx
 
-const [timesheetStatus, setTimesheetStatus] = React.useState<'Draft' | 'Submitted' | 'Approved'>('Draft');
-const [activeProjectstype, setActiveProjectstype] = React.useState<IProjectAssignment[]>([]);
-const [availableTaskTypes, setAvailableTaskTypes] = React.useState<ITaskTypeOption[]>([]);
-const [selectedProjectNumber, setSelectedProjectNumber] = React.useState<string>('');
-const [currentTimesheetHeader, setCurrentTimesheetHeader] = React.useState<ITimesheetHeader | null>(null);
+  const [timesheetStatus, setTimesheetStatus] = React.useState<'Draft' | 'Submitted' | 'Approved'>('Draft');
+  const [activeProjectstype, setActiveProjectstype] = React.useState<IProjectAssignment[]>([]);
+  const [availableTaskTypes, setAvailableTaskTypes] = React.useState<ITaskTypeOption[]>([]);
+  const [selectedProjectNumber, setSelectedProjectNumber] = React.useState<string>('');
+  const [currentTimesheetHeader, setCurrentTimesheetHeader] = React.useState<ITimesheetHeader | null>(null);
   // Form state
   const [formData, setFormData] = React.useState({
     date: '',
@@ -209,37 +215,37 @@ const [currentTimesheetHeader, setCurrentTimesheetHeader] = React.useState<ITime
   const isFutureDate = (dateString: string): boolean => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const checkDate = new Date(dateString + 'T00:00:00');
     checkDate.setHours(0, 0, 0, 0);
-    
+
     return checkDate > today;
   };
 
   // Load projects on mount
-React.useEffect(() => {
-  const loadProjects = async (): Promise<void> => {
-    try {
-      const projects = await projectTaskService.getActiveProjects(
+  React.useEffect(() => {
+    const loadProjects = async (): Promise<void> => {
+      try {
+        const projects = await projectTaskService.getActiveProjects(
+          props.employeeMaster.EmployeeID
+        );
+        setActiveProjects(projects);
+      } catch (error) {
+        console.error('[TimesheetView] Error loading projects:', error);
+      }
+    };
+
+    loadProjects().catch(console.error);
+  }, [props.employeeMaster.EmployeeID]);
+  React.useEffect(() => {
+    const loadProjectAssignments = async () => {
+      const projects = await projectAssignmentService.getActiveProjectAssignments(
         props.employeeMaster.EmployeeID
       );
-      setActiveProjects(projects);
-    } catch (error) {
-      console.error('[TimesheetView] Error loading projects:', error);
-    }
-  };
-  
-  loadProjects().catch(console.error);
-}, [props.employeeMaster.EmployeeID]);
-React.useEffect(() => {
-  const loadProjectAssignments = async () => {
-    const projects = await projectAssignmentService.getActiveProjectAssignments(
-      props.employeeMaster.EmployeeID
-    );
-    setActiveProjectstype(projects);
-  };
- void loadProjectAssignments();
-}, [props.employeeMaster.EmployeeID]);
+      setActiveProjectstype(projects);
+    };
+    void loadProjectAssignments();
+  }, [props.employeeMaster.EmployeeID]);
   // ============================================================================
   // HELPER FUNCTIONS - DEFINED FIRST
   // ============================================================================
@@ -265,67 +271,87 @@ React.useEffect(() => {
     const today = new Date();
     const adjustedDate = new Date(today);
     adjustedDate.setDate(today.getDate() + (currentWeekOffset * 7));
-    
+
     return getWeekDays(adjustedDate);
   }, [currentWeekOffset]);
-const handleProjectChange = async (projectNumber: string) => {
-  setSelectedProjectNumber(projectNumber);
-  
-  if (projectNumber) {
-    const taskTypes = await projectAssignmentService.getTaskTypeOptionsForProject(
-      props.employeeMaster.EmployeeID,
-      projectNumber
-    );
-    setAvailableTaskTypes(taskTypes);
-  }
-};
+  const handleProjectChange = async (projectNumber: string) => {
+    setSelectedProjectNumber(projectNumber);
 
-const handleTaskTypeChange = (taskType: string) => {
-  const selectedTask = availableTaskTypes.find(t => t.taskType === taskType);
-  
-  if (selectedTask) {
-    setFormData(prev => ({
-      ...prev,
-      taskType: taskType,
-      hours: selectedTask.duration  // ✅ Auto-populate!
-    }));
-  }
-};
+    if (projectNumber) {
+      const taskTypes = await projectAssignmentService.getTaskTypeOptionsForProject(
+        props.employeeMaster.EmployeeID,
+        projectNumber
+      );
+      setAvailableTaskTypes(taskTypes);
+    }
+  };
+
+  const handleTaskTypeChange = (taskType: string) => {
+    const selectedTask = availableTaskTypes.find(t => t.taskType === taskType);
+
+    if (selectedTask) {
+      setFormData(prev => ({
+        ...prev,
+        taskType: taskType,
+        hours: selectedTask.duration  // ✅ Auto-populate!
+      }));
+    }
+  };
   const loadTimesheetData = React.useCallback(async (): Promise<void> => {
     try {
       setIsLoading(true);
-      
+
       const weekDays = getCurrentWeekDays();
       const startDate = weekDays[0];
       const endDate = weekDays[6];
       const empId = props.employeeMaster.EmployeeID;
-      
+
       console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
-      
+
       let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
       if (timesheetHeader) {
-  setTimesheetStatus(timesheetHeader.Status as 'Draft' | 'Submitted' | 'Approved');
-}
+        setTimesheetStatus(timesheetHeader.Status as 'Draft' | 'Submitted' | 'Approved');
+      }
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
         console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
       }
-      
+
       const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
-      
-      const convertedEntries: ITimesheetEntry[] = lines.map(line => ({
-        id: line.Id!,
-        date: line.WorkDate || line.EntryDate || '',
-        project: line.ProjectNo || line.ProjectNumber || '',
-        hours: line.HoursBooked || line.Hours || 0,
-        taskType: 'Development',
-        description: line.Description || line.Comments || ''
-      }));
-      
+
+      // Map lines to entries with project names
+      const convertedEntries: ITimesheetEntry[] = await Promise.all(
+        lines.map(async (line) => {
+          const projectNumber = line.ProjectNo || line.ProjectNumber || '';
+          const taskNumber = line.TaskNo || '';
+
+          // Find project name from active projects
+          const project = activeProjects.find(p => p.ProjectNumber === projectNumber);
+          const projectName = project ? project.ProjectName : projectNumber;
+
+          // Find task name from active project assignments
+          const taskAssignment = activeProjectstype.find(
+            t => t.ProjectNumber === projectNumber && t.TaskNumber === taskNumber
+          );
+          const taskName = taskAssignment ? taskAssignment.TaskName : taskNumber;
+
+          return {
+            id: line.Id!,
+            date: line.WorkDate || line.EntryDate || '',
+            project: projectNumber,
+            projectName: projectName,
+            hours: line.HoursBooked || line.Hours || 0,
+            taskType: line.TaskName,
+            taskNumber: taskNumber,
+            description: line.Description || line.Comments || ''
+          };
+        })
+      );
+
       setEntries(convertedEntries);
-      
+
       console.log(`[TimesheetView] Loaded ${convertedEntries.length} timesheet entries`);
-      
+
     } catch (error) {
       console.error('[TimesheetView] Error loading timesheet data:', error);
       alert('Failed to load timesheet data. Please try again.');
@@ -344,13 +370,13 @@ const handleTaskTypeChange = (taskType: string) => {
     const weekDays = getCurrentWeekDays();
     const startDate = new Date(weekDays[0] + 'T00:00:00');
     const endDate = new Date(weekDays[6] + 'T00:00:00');
-    
+
     const options = { month: 'short', day: 'numeric' } as const;
     const startStr = startDate.toLocaleDateString('en-US', options);
     const endStr = endDate.toLocaleDateString('en-US', options);
-    
+
     let weekText = `Week of ${startStr}-${endStr}, ${startDate.getFullYear()}`;
-    
+
     if (currentWeekOffset < 0) {
       weekText += ` (Previous Week)`;
     } else if (currentWeekOffset > 0) {
@@ -358,13 +384,13 @@ const handleTaskTypeChange = (taskType: string) => {
     } else {
       weekText += ` (Current Week)`;
     }
-    
+
     return weekText;
   };
   // Helper function
-const isReadOnly = (): boolean => {
-  return timesheetStatus === 'Submitted' || timesheetStatus === 'Approved';
-};
+  const isReadOnly = (): boolean => {
+    return timesheetStatus === 'Submitted' || timesheetStatus === 'Approved';
+  };
 
   const handleChangeWeek = (direction: number): void => {
     setCurrentWeekOffset(prev => prev + direction);
@@ -372,38 +398,38 @@ const isReadOnly = (): boolean => {
 
   const validateTimesheetDate = async (date: string): Promise<{ isValid: boolean; message: string }> => {
     const normalizedDate = normalizeDateToString(date);
-    
+
     if (isWeekend(normalizedDate)) {
       return {
         isValid: false,
         message: 'Cannot add timesheet entry for weekends (Saturday/Sunday)'
       };
     }
-    
+
     // Simplified validation - in production, check actual attendance
     const dayStatus = getDayStatus(normalizedDate);
-    
+
     if (dayStatus === 'absent') {
       return {
         isValid: false,
         message: 'You are absent, you cannot fill timesheet for this day'
       };
     }
-    
+
     if (dayStatus === 'leave') {
       return {
         isValid: false,
         message: 'You are on leave for this day, timesheet entry not allowed'
       };
     }
-    
+
     if (dayStatus === 'holiday') {
       return {
         isValid: false,
         message: 'Cannot add timesheet entry for holidays'
       };
     }
-    
+
     return { isValid: true, message: '' };
   };
 
@@ -411,18 +437,18 @@ const isReadOnly = (): boolean => {
     const weekDays = getCurrentWeekDays();
     const normalizedDate = date ? normalizeDateToString(date) : weekDays[0];
 
-     // ✅ FIX: Block future dates (silently)
-  const today = getTodayString();
-  if (normalizedDate > today) {
-    return; // Silently block - no alert
-  }
+    // ✅ FIX: Block future dates (silently)
+    const today = getTodayString();
+    if (normalizedDate > today) {
+      return; // Silently block - no alert
+    }
     const validation = await validateTimesheetDate(normalizedDate);
-    
+
     if (!validation.isValid) {
       alert(validation.message);
       return;
     }
-    
+
     setFormData({
       date: normalizedDate,
       project: '',
@@ -458,88 +484,138 @@ const isReadOnly = (): boolean => {
   };
 
   const handleInputChange = (field: string, value: unknown): void => {
-    // VALIDATION: Future date check (NO ALERT - just block)
-    if (field === 'date' && typeof value === 'string' && isFutureDate(value)) {
-      return; // Silently block future dates
-    }
+  // VALIDATION: Future date check (NO ALERT - just block)
+  if (field === 'date' && typeof value === 'string' && isFutureDate(value)) {
+    return; // Silently block future dates
+  }
+  
+  // NEW: Project change - filter milestones
+  if (field === 'project' && typeof value === 'string') {
+    setSelectedProjectNumber(value);
     
-    // VALIDATION: Hours limit check
-    if (field === 'hours') {
-      const newMinutes = convertToMinutes(value as number);
-      const currentDate = formData.date;
+    // Filter tasks for selected project
+    if (value) {
+      const filteredTasks = activeProjectstype.filter(
+        task => task.ProjectNumber === value
+      );
+      setAvailableTaskTypes(filteredTasks.map(task => ({
+        taskType: task.TaskName,
+        duration: parseFloat(task.DurationTask || '0'),
+        projectNumber: task.ProjectNumber,
+        taskNumber: task.TaskNumber
+      })));
       
-      if (currentDate) {
-        const usedMinutes = getTotalMinutesForDate(currentDate, editingEntry?.id);
-        const totalMinutes = usedMinutes + newMinutes;
-        
-        // Block if exceeds 480 minutes (8 hours)
-        if (totalMinutes > 480) {
-          console.log('[Validation] Cannot exceed 8 hours per day');
-          return; // Block the change
-        }
+      // Reset taskType when project changes
+      setFormData(prev => ({
+        ...prev,
+        project: value,
+        taskType: '', // Reset task selection
+        hours: 0 // Reset hours
+      }));
+      return;
+    } else {
+      setAvailableTaskTypes([]);
+    }
+  }
+  
+  // NEW: Task type change - auto-populate hours
+  if (field === 'taskType' && typeof value === 'string') {
+    const selectedTask = availableTaskTypes.find(t => t.taskType === value);
+    
+    if (selectedTask) {
+      setFormData(prev => ({
+        ...prev,
+        taskType: value,
+        hours: selectedTask.duration // Auto-populate duration
+      }));
+      return;
+    }
+  }
+  
+  // VALIDATION: Hours limit check
+  if (field === 'hours') {
+    const newMinutes = convertToMinutes(value as number);
+    const currentDate = formData.date;
+    
+    if (currentDate) {
+      const usedMinutes = getTotalMinutesForDate(currentDate, editingEntry?.id);
+      const totalMinutes = usedMinutes + newMinutes;
+      
+      // Block if exceeds 480 minutes (8 hours)
+      if (totalMinutes > 480) {
+        console.log('[Validation] Cannot exceed 8 hours per day');
+        return; // Block the change
       }
     }
-    
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  }
+  
+  setFormData(prev => ({
+    ...prev,
+    [field]: value
+  }));
+};
 
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
-    
+
     try {
       setIsLoading(true);
-      
+
       const normalizedDate = normalizeDateToString(formData.date);
-      
+
       // VALIDATION: Final safety check before save
       // 1. Check future date
       if (isFutureDate(normalizedDate)) {
         setIsLoading(false);
         return; // Silently block
       }
-      
+      if (isOlderThan30Days(formData.date)) {
+        alert('Cannot create timesheet entry for dates older than 30 days. Please select a date within the last 30 days.');
+        return;
+      }
+
       // 2. Check 8-hour limit
       const newMinutes = convertToMinutes(formData.hours);
       const usedMinutes = getTotalMinutesForDate(normalizedDate, editingEntry?.id);
       const totalMinutes = usedMinutes + newMinutes;
-      
+
       if (totalMinutes > 480) {
         console.log('[Validation] Save blocked: Exceeds 8 hour daily limit');
         alert('Cannot save entry: Exceeds 8 hour limit for the day.');
         setIsLoading(false);
         return; // Block save - DO NOT call API
       }
-      
+
+
+
       const validation = await validateTimesheetDate(normalizedDate);
-      
+
       if (!validation.isValid) {
         alert(validation.message);
         setIsLoading(false);
         return;
       }
-      
+
       const empId = props.employeeMaster.EmployeeID;
       const weekDays = getCurrentWeekDays();
       const startDate = weekDays[0];
       const endDate = weekDays[6];
 
       let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
-      
+
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
       }
-      
+
       if (editingEntry) {
         await timesheetService.updateTimesheetLine(editingEntry.id, {
           WorkDate: normalizedDate,
           ProjectNo: formData.project,
           HoursBooked: formData.hours,
-          Description: formData.description
+          Description: formData.description,
+          TaskName: formData.taskType
         });
-        
+
         alert(`✓ Entry updated successfully!\n${formData.hours}h for ${formData.project}`);
       } else {
         await timesheetService.createTimesheetLine({
@@ -548,12 +624,13 @@ const isReadOnly = (): boolean => {
           ProjectNo: formData.project,
           TaskNo: '',
           HoursBooked: formData.hours,
-          Description: formData.description
+          Description: formData.description,
+          TaskName: formData.taskType
         });
-        
+
         alert(`✓ Entry added successfully!\n${formData.hours}h for ${formData.project}`);
       }
-      
+
       await loadTimesheetData();
 
       setEditingEntry(null);
@@ -564,7 +641,7 @@ const isReadOnly = (): boolean => {
         taskType: 'Development',
         description: ''
       });
-      
+
     } catch (error) {
       console.error('[TimesheetView] Error saving entry:', error);
       alert('Error saving timesheet entry. Please try again.');
@@ -577,16 +654,16 @@ const isReadOnly = (): boolean => {
     if (confirm('Are you sure you want to delete this timesheet entry?')) {
       try {
         setIsLoading(true);
-        
+
         const deletedEntry = entries.find(e => e.id === entryId);
-        
+
         await timesheetService.deleteTimesheetLine(entryId);
         setEntries(prev => prev.filter(e => e.id !== entryId));
-        
+
         if (deletedEntry) {
           alert(`Timesheet entry deleted: ${deletedEntry.hours} hours for ${deletedEntry.project}`);
         }
-        
+
       } catch (error) {
         console.error('[TimesheetView] Error deleting entry:', error);
         alert('Error deleting timesheet entry. Please try again.');
@@ -600,183 +677,183 @@ const isReadOnly = (): boolean => {
     setClipboard(entry);
     alert(`Entry copied: ${entry.hours}h for ${entry.project}\n\nClick "Paste" on any day to create a copy.`);
   };
-/**
- * Check if a date should be disabled in the date picker
- * Rule: Only FUTURE dates are disabled (past + today = enabled)
- */
-const isDateDisabled = (date: Date | null | undefined): boolean => {
-  if (!date) return false;
-  
-  // Get today at midnight (ignore time)
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  // Get comparison date at midnight
-  const checkDate = new Date(date);
-  checkDate.setHours(0, 0, 0, 0);
-  
-  // ✅ FIXED: Disable ONLY if date is AFTER today (future dates)
-  // Past dates and today are ENABLED
-  return checkDate > today;
-};
+  /**
+   * Check if a date should be disabled in the date picker
+   * Rule: Only FUTURE dates are disabled (past + today = enabled)
+   */
+  const isDateDisabled = (date: Date | null | undefined): boolean => {
+    if (!date) return false;
+
+    // Get today at midnight (ignore time)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Get comparison date at midnight
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    // ✅ FIXED: Disable ONLY if date is AFTER today (future dates)
+    // Past dates and today are ENABLED
+    return checkDate > today;
+  };
 
 
-const handlePasteEntry = async (targetDate: string): Promise<void> => {
-  if (!clipboard) {
-    alert('No entry copied. Please copy an entry first.');
-    return;
-  }
-  
-  const normalizedDate = normalizeDateToString(targetDate);
-  
-  // VALIDATION: Check future date (NO ALERT)
-  if (isFutureDate(normalizedDate)) {
-    return; // Silently block paste to future dates
-  }
-  
-  // VALIDATION: Check 8-hour limit for target date
-  const pasteMinutes = convertToMinutes(clipboard.hours);
-  const usedMinutes = getTotalMinutesForDate(normalizedDate);
-  const totalMinutes = usedMinutes + pasteMinutes;
-  
-  if (totalMinutes > 480) {
-    console.log('[Validation] Paste blocked: Would exceed 8 hour limit');
-    return; // Block paste - no state update
-  }
-  
-  const validation = await validateTimesheetDate(normalizedDate);
-  
-  if (!validation.isValid) {
-    alert(`Cannot paste to this date:\n${validation.message}`);
-    return;
-  }
-
-  // ✅ FIX: Check if paste would exceed available hours
-  const existingEntries = entries.filter(e => e.date === normalizedDate);
-  const existingHours = existingEntries.reduce((sum, e) => sum + e.hours, 0);
-  const newTotalHours = existingHours + clipboard.hours;
-  
-  // ✅ FIX: Get available hours from punch data via service
-  let availableHours = 0;
-  try {
-    const empId = props.employeeMaster.EmployeeID;
-    const punchData = await attendanceService.getPunchData(empId, normalizedDate, normalizedDate);
-    availableHours = punchData.length > 0 ? (punchData[0].TotalHours || 0) : 0;
-  } catch (error) {
-    console.error(`[TimesheetView] Error getting punch data for ${normalizedDate}:`, error);
-    availableHours = MAX_DAILY_HOURS; // Fallback to max daily hours
-  }
-  
-  // ✅ FIX: Block paste if exceeds
-  if (newTotalHours > availableHours && availableHours > 0) {
-    alert(
-      `Cannot paste entry!\n\n` +
-      `Current hours: ${existingHours.toFixed(1)}h\n` +
-      `Paste hours: ${clipboard.hours.toFixed(1)}h\n` +
-      `Total would be: ${newTotalHours.toFixed(1)}h\n\n` +
-      `Available hours: ${availableHours.toFixed(1)}h\n\n` +
-      `Exceeds limit by ${(newTotalHours - availableHours).toFixed(1)}h`
-    );
-    return;
-  }
-  
-  try {
-    setIsLoading(true);
-    
-    const empId = props.employeeMaster.EmployeeID;
-    const weekDays = getCurrentWeekDays();
-    const startDate = weekDays[0];
-    const endDate = weekDays[6];
-    
-    let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
-    
-    if (!timesheetHeader) {
-      timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
-    }
-    
-    await timesheetService.createTimesheetLine({
-      TimesheetID: timesheetHeader.Id,
-      WorkDate: normalizedDate,
-      ProjectNo: clipboard.project,
-      TaskNo: '',
-      HoursBooked: clipboard.hours,
-      Description: clipboard.description
-    });
-    
-    alert(`Entry pasted successfully!\n${clipboard.hours}h for ${clipboard.project} on ${formatDateForDisplay(normalizedDate)}`);
-    
-    await loadTimesheetData();
-    
-  } catch (error) {
-    console.error('[TimesheetView] Error pasting entry:', error);
-    alert('Error pasting entry. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
-const LoadtimeData = async (taskType: string): Promise<void> => {
-  const value = Number(
-    activeProjectstype.find(p => p.TaskName === taskType)?.DurationTask ?? 0
-  );
-
-  setFormData(prev => ({
-    ...prev,
-    hours: value
-  }));
-};
-
-// In Timesheetview.tsx, add clear clipboard function
-
-const handleClearPaste = (): void => {
-  if (clipboard) {
-    if (confirm('Clear copied entry? This will stop paste operations.')) {
-      setClipboard(null);
-      alert('Clipboard cleared successfully.');
-    }
-  } else {
-    alert('No entry copied to clipboard.');
-  }
-};
-const handleSubmitTimesheet = async (): Promise<void> => {
-  try {
-    setIsLoading(true);
-
-    if (!currentTimesheetHeader || !currentTimesheetHeader.Id) {
-      alert('No timesheet header found. Please create a timesheet first.');
+  const handlePasteEntry = async (targetDate: string): Promise<void> => {
+    if (!clipboard) {
+      alert('No entry copied. Please copy an entry first.');
       return;
     }
 
-    // FIXED: Get manager email using graphClient from props
-    let managerEmail = '';
-    if (props.graphClient) {
-      try {
-        const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
-        managerEmail = await userService.getCurrentUserManagerEmail();
-      } catch (error) {
-        // Silent fail - submission will continue without manager email
-      }
+    const normalizedDate = normalizeDateToString(targetDate);
+
+    // VALIDATION: Check future date (NO ALERT)
+    if (isFutureDate(normalizedDate)) {
+      return; // Silently block paste to future dates
     }
 
-    // Submit timesheet with manager email
-    await timesheetService.submitTimesheetWithManagerEmail(
-      currentTimesheetHeader.Id,
-      managerEmail
+    // VALIDATION: Check 8-hour limit for target date
+    const pasteMinutes = convertToMinutes(clipboard.hours);
+    const usedMinutes = getTotalMinutesForDate(normalizedDate);
+    const totalMinutes = usedMinutes + pasteMinutes;
+
+    if (totalMinutes > 480) {
+      console.log('[Validation] Paste blocked: Would exceed 8 hour limit');
+      return; // Block paste - no state update
+    }
+
+    const validation = await validateTimesheetDate(normalizedDate);
+
+    if (!validation.isValid) {
+      alert(`Cannot paste to this date:\n${validation.message}`);
+      return;
+    }
+
+    // ✅ FIX: Check if paste would exceed available hours
+    const existingEntries = entries.filter(e => e.date === normalizedDate);
+    const existingHours = existingEntries.reduce((sum, e) => sum + e.hours, 0);
+    const newTotalHours = existingHours + clipboard.hours;
+
+    // ✅ FIX: Get available hours from punch data via service
+    let availableHours = 0;
+    try {
+      const empId = props.employeeMaster.EmployeeID;
+      const punchData = await attendanceService.getPunchData(empId, normalizedDate, normalizedDate);
+      availableHours = punchData.length > 0 ? (punchData[0].TotalHours || 0) : 0;
+    } catch (error) {
+      console.error(`[TimesheetView] Error getting punch data for ${normalizedDate}:`, error);
+      availableHours = MAX_DAILY_HOURS; // Fallback to max daily hours
+    }
+
+    // ✅ FIX: Block paste if exceeds
+    if (newTotalHours > availableHours && availableHours > 0) {
+      alert(
+        `Cannot paste entry!\n\n` +
+        `Current hours: ${existingHours.toFixed(1)}h\n` +
+        `Paste hours: ${clipboard.hours.toFixed(1)}h\n` +
+        `Total would be: ${newTotalHours.toFixed(1)}h\n\n` +
+        `Available hours: ${availableHours.toFixed(1)}h\n\n` +
+        `Exceeds limit by ${(newTotalHours - availableHours).toFixed(1)}h`
+      );
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      const empId = props.employeeMaster.EmployeeID;
+      const weekDays = getCurrentWeekDays();
+      const startDate = weekDays[0];
+      const endDate = weekDays[6];
+
+      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+
+      if (!timesheetHeader) {
+        timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
+      }
+
+      await timesheetService.createTimesheetLine({
+        TimesheetID: timesheetHeader.Id,
+        WorkDate: normalizedDate,
+        ProjectNo: clipboard.project,
+        TaskNo: '',
+        HoursBooked: clipboard.hours,
+        Description: clipboard.description
+      });
+
+      alert(`Entry pasted successfully!\n${clipboard.hours}h for ${clipboard.project} on ${formatDateForDisplay(normalizedDate)}`);
+
+      await loadTimesheetData();
+
+    } catch (error) {
+      console.error('[TimesheetView] Error pasting entry:', error);
+      alert('Error pasting entry. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  const LoadtimeData = async (taskType: string): Promise<void> => {
+    const value = Number(
+      activeProjectstype.find(p => p.TaskName === taskType)?.DurationTask ?? 0
     );
 
-    alert('Timesheet submitted successfully for approval!');
-    
-    // Reload timesheet data
-    await loadTimesheetData();
+    setFormData(prev => ({
+      ...prev,
+      hours: value
+    }));
+  };
 
-  } catch (error) {
-    alert('Failed to submit timesheet. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  // In Timesheetview.tsx, add clear clipboard function
+
+  const handleClearPaste = (): void => {
+    if (clipboard) {
+      if (confirm('Clear copied entry? This will stop paste operations.')) {
+        setClipboard(null);
+        alert('Clipboard cleared successfully.');
+      }
+    } else {
+      alert('No entry copied to clipboard.');
+    }
+  };
+  const handleSubmitTimesheet = async (): Promise<void> => {
+    try {
+      setIsLoading(true);
+
+      if (!currentTimesheetHeader || !currentTimesheetHeader.Id) {
+        alert('No timesheet header found. Please create a timesheet first.');
+        return;
+      }
+
+      // FIXED: Get manager email using graphClient from props
+      let managerEmail = '';
+      if (props.graphClient) {
+        try {
+          const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
+          managerEmail = await userService.getCurrentUserManagerEmail();
+        } catch (error) {
+          // Silent fail - submission will continue without manager email
+        }
+      }
+
+      // Submit timesheet with manager email
+      await timesheetService.submitTimesheetWithManagerEmail(
+        currentTimesheetHeader.Id,
+        managerEmail
+      );
+
+      alert('Timesheet submitted successfully for approval!');
+
+      // Reload timesheet data
+      await loadTimesheetData();
+
+    } catch (error) {
+      alert('Failed to submit timesheet. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
 
-  const calculateWeekTotals = (): { 
+  const calculateWeekTotals = (): {
     totalHours: number;
     availableHours: number;
     daysWithEntries: number;
@@ -785,31 +862,31 @@ const handleSubmitTimesheet = async (): Promise<void> => {
   } => {
     const weekDays = getCurrentWeekDays();
     const weekEntries = entries.filter(entry => weekDays.indexOf(entry.date) !== -1);
-    
+
     const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
     const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
 
     // Calculate available hours (working days only)
-  const workingDays = weekDays.filter(date => {
-    const dayStatus = getDayStatus(date);
-    return dayStatus === 'present'; // Only count present days
-  });
+    const workingDays = weekDays.filter(date => {
+      const dayStatus = getDayStatus(date);
+      return dayStatus === 'present'; // Only count present days
+    });
     const availableHours = workingDays.length * MAX_DAILY_HOURS;
-// ✅ NEW: Check if weekly requirement is met
-  const REQUIRED_WEEKLY_HOURS = 45;
-  const isWeekComplete = totalHours >= REQUIRED_WEEKLY_HOURS;
-    
-return { 
-    totalHours, 
-    availableHours,
-    daysWithEntries, 
-    totalDays: weekDays.length,
-    isWeekComplete 
-  };
+    // ✅ NEW: Check if weekly requirement is met
+    const REQUIRED_WEEKLY_HOURS = 45;
+    const isWeekComplete = totalHours >= REQUIRED_WEEKLY_HOURS;
+
+    return {
+      totalHours,
+      availableHours,
+      daysWithEntries,
+      totalDays: weekDays.length,
+      isWeekComplete
+    };
   };
   const totals = calculateWeekTotals();
 
-const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete } = totals;
+  const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete } = totals;
 
   const getEntriesForDate = React.useCallback((date: string): ITimesheetEntry[] => {
     const normalizedDate = normalizeDateToString(date);
@@ -833,24 +910,24 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
         <h1>Timesheet Entries</h1>
         <p>Log your daily work hours and project allocations</p>
       </div>
-      
+
       <div className={styles.timesheetContainer}>
         <div className={styles.weekNavigation}>
-          <button 
+          <button
             className={styles.weekNavBtn}
             onClick={() => handleChangeWeek(-1)}
           >
             ← Previous Week
           </button>
           <div className={styles.weekDisplay}>{weekRangeText}</div>
-          <button 
+          <button
             className={styles.weekNavBtn}
             onClick={() => handleChangeWeek(1)}
           >
             Next Week →
           </button>
         </div>
-        
+
         <div className={styles.timesheetHeader}>
           <div>
             <h3>{weekRangeText}</h3>
@@ -859,26 +936,28 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
           <div className={styles.timesheetActions}>
             <div className={styles.availableHoursDisplay}>
               <span>Weekly Hours:</span>
-  <span>{totalHours.toFixed(1)}</span> / {availableHours} hours
+              <span>{totalHours.toFixed(1)}</span> / {availableHours} hours
             </div>
-            <button 
+            <button
               className={`${styles.btn} ${styles.btnPurple}`}
               onClick={() => { handleAddEntry().catch(console.error); }}
+              disabled={isReadOnly() || isOlderThan30Days(weekDays[0])}
+              title={isOlderThan30Days(weekDays[0]) ? 'Cannot add entries for dates older than 30 days' : ''}
             >
               + Add Entry
             </button>
             {/* Add after "Add Entry" button */}
-{clipboard && (
-  <button 
-    className={`${styles.btn} ${styles.btnDanger}`}
-    onClick={handleClearPaste}
-  >
-    🗑️ Clear Paste
-  </button>
-)}
+            {clipboard && (
+              <button
+                className={`${styles.btn} ${styles.btnDanger}`}
+                onClick={handleClearPaste}
+              >
+                🗑️ Clear Paste
+              </button>
+            )}
           </div>
         </div>
-        
+
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: '2rem' }}>
             Loading timesheet data...
@@ -888,141 +967,152 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
             {weekDays
               .filter(date => new Date(date + 'T00:00:00') <= new Date(new Date().toDateString()))
               .map((date) => {
-              const dateEntries = getEntriesForDate(date);
-              const dateTotalHours = getTotalHoursForDate(date);
-              const isTodayDate = isToday(date);
-              const isWeekendDate = isWeekend(date);
-              const dayStatus = getDayStatus(date);
-              const canAddTimesheet = !isWeekendDate && 
-                                     dayStatus !== 'absent' && 
-                                     dayStatus !== 'leave' && 
-                                     dayStatus !== 'holiday';
-              
-              return (
-                <div 
-                  key={date}
-                  className={`${styles.timesheetDay} ${isTodayDate ? styles.todayHighlight : ''} ${!canAddTimesheet ? styles.disabledDay : ''}`}
-                >
-                  <div className={styles.timesheetDayHeader}>
-                    <div className={styles.dayInfo}>
-                      <div className={styles.dayDate}>
-                        {formatDateForDisplay(date)} {isTodayDate && '(Today)'} (Present)
-                      </div>
-                      <span className={`${styles.dayStatusBadge} ${styles.pending}`}>
-                        Pending
-                      </span>
-                    </div>
-                    <div className={styles.dayTotal}>
-                      {dateTotalHours.toFixed(1)}h / 8.0h
-                    </div>
-                  </div>
-                  
-                  <div className={styles.timesheetEntries}>
-                    {dateEntries.map(entry => (
-                      <div key={entry.id} className={styles.timesheetEntry}>
-                        <div className={styles.entryHeader}>
-                          <div className={styles.projectName}>{entry.project}</div>
-                          <div className={styles.entryHours}>{entry.hours}h</div>
-                        </div>
-                        <div className={styles.entryDescription}>
-                          {entry.description}
-                        </div>
-                        <div className={styles.entryActions}>
-                          <button 
-                            className={`${styles.entryActionBtn} ${styles.copyBtn}`}
-                            onClick={() => handleCopyEntry(entry)}
-                                                          disabled={isReadOnly()} // DISABLE if submitted
+                const dateEntries = getEntriesForDate(date);
+                const dateTotalHours = getTotalHoursForDate(date);
+                const isTodayDate = isToday(date);
+                const isWeekendDate = isWeekend(date);
+                const dayStatus = getDayStatus(date);
+                const canAddTimesheet = !isWeekendDate &&
+                  dayStatus !== 'absent' &&
+                  dayStatus !== 'leave' &&
+                  dayStatus !== 'holiday';
 
-                          >
-                            <span>📋</span> Copy
-                          </button>
-                          <button 
-                            className={`${styles.entryActionBtn} ${styles.editBtn}`}
-                            onClick={() => handleEditEntry(entry)}
+                return (
+                  <div
+                    key={date}
+                    className={`${styles.timesheetDay} ${isTodayDate ? styles.todayHighlight : ''} ${!canAddTimesheet ? styles.disabledDay : ''}`}
+                  >
+                    <div className={styles.timesheetDayHeader}>
+                      <div className={styles.dayInfo}>
+                        <div className={styles.dayDate}>
+                          {formatDateForDisplay(date)} {isTodayDate && '(Today)'} (Present)
+                        </div>
+                        <span className={`${styles.dayStatusBadge} ${styles.pending}`}>
+                          Pending
+                        </span>
+                      </div>
+                      <div className={styles.dayTotal}>
+                        {dateTotalHours.toFixed(1)}h / 8.0h
+                      </div>
+                    </div>
+
+                    <div className={styles.timesheetEntries}>
+                      {dateEntries.map(entry => (
+                        <div key={entry.id} className={styles.timesheetEntry}>
+                          <div className={styles.entryHeader}>
+                            <div className={styles.projectInfo}>
+                              <div className={styles.projectName}>{entry.projectName}</div>
+                              <div className={styles.projectNumber}>({entry.project})</div>
+                            </div>
+                            <div className={styles.entryHours}>{entry.hours}h</div>
+                          </div>
+                          <div className={styles.entryMilestone}>
+                            <span className={styles.milestoneLabel}>Milestone:</span> {entry.taskType}
+                          </div>
+                          {entry.description && (
+                            <div className={styles.entryDescription}>
+                              {entry.description}
+                            </div>
+                          )}
+                          <div className={styles.entryActions}>
+                            <button
+                              className={`${styles.entryActionBtn} ${styles.copyBtn}`}
+                              onClick={() => handleCopyEntry(entry)}
                               disabled={isReadOnly()} // DISABLE if submitted
 
-                          >
-                            <span>✏️</span> Edit
-                          </button>
-                          <button 
-                            className={`${styles.entryActionBtn} ${styles.deleteBtn}`}
-                            onClick={() => { handleDeleteEntry(entry.id).catch(console.error); }}
+                            >
+                              <span>📋</span> Copy
+                            </button>
+                            <button
+                              className={`${styles.entryActionBtn} ${styles.editBtn}`}
+                              onClick={() => handleEditEntry(entry)}
                               disabled={isReadOnly()} // DISABLE if submitted
 
-                          >
-                            <span>🗑️</span> Delete
-                          </button>
+                            >
+                              <span>✏️</span> Edit
+                            </button>
+                            <button
+                              className={`${styles.entryActionBtn} ${styles.deleteBtn}`}
+                              onClick={() => { handleDeleteEntry(entry.id).catch(console.error); }}
+                              disabled={isReadOnly()} // DISABLE if submitted
+
+                            >
+                              <span>🗑️</span> Delete
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {clipboard && canAddTimesheet && (
-                    <button 
-                      className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
-                      onClick={() => { handlePasteEntry(date).catch(console.error); }}
-                      style={{ marginLeft: '0.5rem', marginBottom: '0.5rem' }}
-                    >
-                      📋 Paste
-                    </button>
-                  )}
-                  
-                  {canAddTimesheet ? (
-                    <button 
-                      className={styles.addEntryBtn}
-                      onClick={() => { handleAddEntry(date).catch(console.error); }}
+                      ))}
+                    </div>
+
+                    {clipboard && canAddTimesheet && !isOlderThan30Days(date) && (
+                      <button
+                        className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
+                        onClick={() => { handlePasteEntry(date).catch(console.error); }}
+                        style={{ marginLeft: '0.5rem', marginBottom: '0.5rem' }}
+                      >
+                        📋 Paste
+                      </button>
+                    )}
+
+                    {canAddTimesheet && !isOlderThan30Days(date) ? (
+                      <button
+                        className={styles.addEntryBtn}
+                        onClick={() => { handleAddEntry(date).catch(console.error); }}
                         disabled={
-                          isReadOnly() || 
+                          isReadOnly() ||
                           getTotalMinutesForDate(date) >= 480 // DISABLE if 8 hours reached
                         }
 
-                    >
-                      + Add Entry for {formatDateForDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
-                    </button>
-                  ) : (
-                    <div className={styles.disabledMessage}>
-                      {isWeekendDate && 'Week Off - No timesheet entry allowed'}
-                      {dayStatus === 'absent' && 'You are absent, you cannot fill timesheet'}
-                      {dayStatus === 'leave' && 'You are on leave for this day'}
-                      {dayStatus === 'holiday' && 'Holiday - No timesheet entry allowed'}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      >
+                        + Add Entry for {formatDateForDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
+                      </button>
+                    ) : (
+                      <div className={styles.disabledMessage}>
+                        {isWeekendDate && 'Week Off - No timesheet entry allowed'}
+                        {dayStatus === 'absent' && 'You are absent, you cannot fill timesheet'}
+                        {dayStatus === 'leave' && 'You are on leave for this day'}
+                        {dayStatus === 'holiday' && 'Holiday - No timesheet entry allowed'}
+                        {/* START: 30 days restriction */}
+                        {!isWeekendDate && dayStatus === 'present' && isOlderThan30Days(date) && 'Date is older than 30 days - Cannot add timesheet entry'}
+                        {/* END: 30 days restriction */}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
 
-        <button 
+        <button
           className={styles.submitTimesheetBtn}
           onClick={() => { handleSubmitTimesheet().catch(console.error); }}
-  disabled={
-    isReadOnly() || // Already submitted
-    !totals.isWeekComplete || // ✅ NEW: Less than 45 hours
-    isLoading
-  } // DISABLE if already submitted
+          disabled={
+            isReadOnly() || // Already submitted
+            !totals.isWeekComplete || // ✅ NEW: Less than 45 hours
+            isLoading
+          } // DISABLE if already submitted
         >
-          {timesheetStatus === 'Submitted' 
-    ? '✓ Submitted' 
-    : totals.isWeekComplete 
-      ? '✓ Submit Timesheet' 
-      : `⏳ ${totals.totalHours.toFixed(1)} / 45 hours (${(45 - totals.totalHours).toFixed(1)}h remaining)`
-  }
-           {/* {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'} */}
+          {timesheetStatus === 'Submitted'
+            ? '✓ Submitted'
+            : totals.isWeekComplete
+              ? '✓ Submit Timesheet'
+              : `⏳ ${totals.totalHours.toFixed(1)} / 45 hours (${(45 - totals.totalHours).toFixed(1)}h remaining)`
+          }
+          {/* {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'} */}
         </button>
         {/* ✅ NEW: Warning message if incomplete */}
-{!totals.isWeekComplete && totals.totalHours > 0 && (
-  <div style={{ 
-    textAlign: 'center', 
-    color: 'var(--danger)', 
-    fontSize: 'var(--font-sm)',
-    marginTop: '0.5rem'
-  }}>
-    Please fill at least 45 hours before submitting timesheet
-  </div>
-)}
+        {!totals.isWeekComplete && totals.totalHours > 0 && (
+          <div style={{
+            textAlign: 'center',
+            color: 'var(--danger)',
+            fontSize: 'var(--font-sm)',
+            marginTop: '0.5rem'
+          }}>
+            Please fill at least 45 hours before submitting timesheet
+          </div>
+        )}
       </div>
-      
+
       <div className={styles.timesheetSummary}>
         <div className={styles.summaryItem}>
           <div className={styles.summaryValue}>{totalHours.toFixed(1)}</div>
@@ -1045,61 +1135,71 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
               <h3>{editingEntry ? 'Edit Timesheet Entry' : 'Add Timesheet Entry'}</h3>
               <button className={styles.closeBtn} onClick={handleCloseModal}>×</button>
             </div>
-            
+
             <form className={styles.timesheetForm} onSubmit={(e) => { handleSubmit(e).catch(console.error); }}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Date *</label>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   className={styles.formInput}
                   value={formData.date}
-                  max={getTodayString()} // ✅ NEW: Prevent future dates in native date picker
-
-                  onChange={(e) =>{ 
+                  max={getTodayString()} // ✅ Prevent future dates in native date picker
+                  // START: 30 days restriction
+                  min={getMinAllowedDate()} // ✅ NEW: Prevent dates older than 30 days
+                  // END: 30 days restriction
+                  onChange={(e) => {
                     const selectedDate = new Date(e.target.value + 'T00:00:00');
-      // ✅ FIX: Only validate FUTURE dates, allow past dates
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const checkDate = new Date(selectedDate);
-    checkDate.setHours(0, 0, 0, 0);
-    
-    // ✅ CHANGED: Only block if AFTER today (no alert - silent block)
-    if (checkDate > today) {
-      return; // Silently block - no alert
-    }
-    handleInputChange('date', e.target.value);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
 
-  }}
+                    const checkDate = new Date(selectedDate);
+                    checkDate.setHours(0, 0, 0, 0);
+
+                    // ✅ Block future dates
+                    if (checkDate > today) {
+                      return; // Silently block - no alert
+                    }
+
+                    // START: 30 days restriction
+                    // ✅ NEW: Block dates older than 30 days
+                    if (isOlderThan30Days(e.target.value)) {
+                      alert('Cannot select dates older than 30 days. Please select a date within the last 30 days.');
+                      return;
+                    }
+                    // END: 30 days restriction
+
+                    handleInputChange('date', e.target.value);
+
+                  }}
                   required
                 />
               </div>
-              
+
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Project *</label>
-                <select 
-  className={styles.formSelect}
-  value={formData.project}
-  onChange={(e) => handleInputChange('project', e.target.value)}
-  required
->
-  <option value="">Select Project...</option>
-  {activeProjects.map(proj => (
-    <option 
-      key={proj.Id} 
-      value={proj.ProjectNumber}
-    >
-      {proj.ProjectName} ({proj.ProjectNumber})
-    </option>
-  ))}
-</select>
+                <select
+                  className={styles.formSelect}
+                  value={formData.project}
+                  onChange={(e) => handleInputChange('project', e.target.value)}
+                  required
+                >
+                  <option value="">Select Project...</option>
+                  {activeProjects.map(proj => (
+                    <option
+                      key={proj.Id}
+                      value={proj.ProjectNumber}
+                    >
+                      {proj.ProjectName} ({proj.ProjectNumber})
+                    </option>
+                  ))}
+                </select>
               </div>
-              
+
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Hours * (Max 8 per day)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     className={styles.formInput}
                     min="0.5"
                     max="8"
@@ -1110,14 +1210,16 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                     required
                   />
                 </div>
-                
+
                 <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Task Type</label>
-                  <select 
+                  <label className={styles.formLabel}>Milestone</label>
+                  <select
                     className={styles.formSelect}
                     value={formData.taskType}
-                    onChange={(e) =>{ handleInputChange('taskType', e.target.value); 
-                      void LoadtimeData(e.target.value); }}
+                    onChange={(e) => {
+                      handleInputChange('taskType', e.target.value);
+                      void LoadtimeData(e.target.value);
+                    }}
                   >
                     {/* <option value="Development">Development</option>
                     <option value="Testing">Testing</option>
@@ -1132,7 +1234,7 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                   </select>
                 </div>
               </div>
-              
+
               {/* <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Description *</label>
                 <textarea 
@@ -1144,17 +1246,17 @@ const { totalHours, availableHours, daysWithEntries, totalDays, isWeekComplete }
                   required
                 />
               </div> */}
-              
+
               <div className={styles.formActions}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={`${styles.btn} ${styles.btnOutline}`}
                   onClick={handleCloseModal}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className={`${styles.btn} ${styles.btnPrimary}`}
                 >
                   {editingEntry ? 'Update Entry' : 'Add Entry'}

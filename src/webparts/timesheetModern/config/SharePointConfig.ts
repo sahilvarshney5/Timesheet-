@@ -271,6 +271,10 @@ export const SharePointConfig: ISharePointConfig = {
       Description: {
         displayName: 'Description',
         internalName: 'Description'
+      },
+      TaskName: {
+        displayName: 'Task Name',
+        internalName: 'TaskName'
       }
     },
     // AttendanceRegularization columns

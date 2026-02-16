@@ -306,3 +306,31 @@ export function getMonthStartDate(year: number, month: number): string {
 export function getMonthEndDate(year: number, month: number): string {
   return normalizeDateToString(new Date(year, month, 0));
 }
+
+// START: 30 days restriction
+/**
+ * Get the minimum allowed date (30 days before today)
+ * Used for timesheet entry validation
+ * @returns Date string 30 days before today in YYYY-MM-DD format
+ */
+export function getMinAllowedDate(): string {
+  return addDays(getTodayString(), -30);
+}
+
+/**
+ * Check if a date is older than 30 days from today
+ * @param dateInput Date to check
+ * @returns True if date is older than 30 days
+ */
+export function isOlderThan30Days(dateInput: string | Date | null | undefined): boolean {
+  if (!dateInput) return false;
+  
+  const normalized = normalizeDateToString(dateInput);
+  if (!normalized) return false;
+  
+  const minDate = getMinAllowedDate();
+  
+  // Compare strings directly (YYYY-MM-DD format)
+  return normalized < minDate;
+}
+// END: 30 days restriction
