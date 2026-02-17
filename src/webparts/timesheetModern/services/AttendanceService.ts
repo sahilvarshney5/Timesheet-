@@ -513,4 +513,61 @@ public getAttendanceStatus(
       return timeString;
     }
   }
+  // ============================================================================
+// ATTENDANCESERVICE PATCH
+// Add this method INSIDE the AttendanceService class in AttendanceService.ts
+// Placement: after the existing getPunchDataForMonth() method (~line 233)
+// ============================================================================
+
+/**
+ * Get the punch record for a specific employee on a single date.
+ *
+ * Used exclusively by RegularizationView to enforce the business rule:
+ *   "Regularization timings MUST come from Punch Data, never from user input."
+ *
+ * @param employeeId  Employee ID string (e.g. "R0398")
+ * @param date        Date string in YYYY-MM-DD format
+ * @returns           The matching IPunchData record, or null if none found
+ *
+ * Architecture note:
+ *   This is a thin convenience wrapper around getPunchData().
+ *   It passes the same date for both startDate and endDate to constrain
+ *   the SharePoint OData query to a single day, then returns the first
+ *   (and ordinarily only) matching record.
+ *   No new SharePoint list queries, no new columns, no schema impact.
+ */
+public async getPunchByDate(
+  employeeId: string,
+  date: string
+): Promise<IPunchData | null> {
+  try {
+    const records: IPunchData[] = await this.getPunchData(
+      employeeId,
+      date,   // startDate = selected date
+      date    // endDate   = same date → single-day filter
+    );
+
+    if (records.length === 0) {
+      console.warn(
+        `[AttendanceService] No punch record found for employee ${employeeId} on ${date}`
+      );
+      return null;
+    }
+
+    const record = records[0];
+    console.log(
+      `[AttendanceService] Punch found for ${employeeId} on ${date}: ` +
+      `in=${record.FirstPunchIn ?? 'N/A'}, out=${record.LastPunchOut ?? 'N/A'}`
+    );
+
+    return record;
+  } catch (error) {
+    console.error(
+      `[AttendanceService] Error in getPunchByDate for ${employeeId} on ${date}:`,
+      error
+    );
+    // Re-throw so RegularizationView can handle it explicitly
+    throw error;
+  }
+}
 }

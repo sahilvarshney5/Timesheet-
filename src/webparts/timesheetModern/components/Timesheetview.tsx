@@ -103,8 +103,7 @@ import {
   isOlderThan30Days
   // END: 30 days restriction
 } from '../utils/DateUtils';
-import { MSGraphClientV3 } from '@microsoft/sp-http';
-import { UserService } from '../services/UserService';
+
 
 interface ITimesheetEntry {
   id: number;
@@ -125,10 +124,8 @@ export interface ITimesheetViewProps {
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
   navigationData?: any; // Optional navigation context for passing data between views
-  graphClient?: MSGraphClientV3;  // ADD THIS
-
-
 }
+
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { spHttpClient, siteUrl } = props;
@@ -994,16 +991,10 @@ const handleSubmitTimesheet = async (): Promise<void> => {
 
     setCurrentTimesheetHeader(header);
 
-    // Get manager email
-    let managerEmail = '';
-    if (props.graphClient) {
-      try {
-        const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
-        managerEmail = await userService.getCurrentUserManagerEmail();
-      } catch (error) {
-        // Silent fail
-      }
-    }
+    // Get manager email: sourced exclusively from EmployeeMaster
+    // Graph API call removed — ManagerEmail is maintained in the EmployeeMaster
+    // SharePoint list, keeping manager resolution consistent across all pages.
+    const managerEmail = props.employeeMaster.Manager?.EMail || '';
 
     // Submit with 5 parameters
     await timesheetService.submitTimesheet(

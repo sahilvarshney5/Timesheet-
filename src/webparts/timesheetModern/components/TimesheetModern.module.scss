@@ -1571,7 +1571,48 @@
   align-items: flex-start;
   gap: 0.5rem;
 }
+//   // const bannerStyle = (bg: string, color: string, borderColor: string): React.CSSProperties => ({
 
+.bannerStyle{
+   background: #FFF3E0;
+    border: 1px solid #FFA726;
+    border-radius: '6px';
+    padding: '0.75rem';
+    margin-bottom: '1rem';
+    font-size: 'var(--font-sm)';
+    color:#E65100;
+    line-height: 1.5;
+}
+.bannerStylesearch{
+   background: #E3F2FD;
+    border: 1px solid #1565C0;
+    border-radius: '6px';
+    padding: '0.75rem';
+    margin-bottom: '1rem';
+    font-size: 'var(--font-sm)';
+    color:#1565C0;
+    line-height: 1.5;
+}
+.bannerStylestatuspunchbar{
+   background: #FFEBEE;
+    border: 1px solid #C62828;
+    border-radius: '6px';
+    padding: '0.75rem';
+    margin-bottom: '1rem';
+    font-size: 'var(--font-sm)';
+    color:#C62828;
+    line-height: 1.5;
+}
+.bannerStylestatusresult{
+   background: #E8F5E9;
+    border: 1px solid #2E7D32;
+    border-radius: '6px';
+    padding: '0.75rem';
+    margin-bottom: '1rem';
+    font-size: 'var(--font-sm)';
+    color:#2E7D32;
+    line-height: 1.5;
+}
 .projectInfo {
   display: flex;
   flex-direction: column;

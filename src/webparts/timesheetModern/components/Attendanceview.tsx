@@ -1084,14 +1084,14 @@ React.useEffect(() => {
                   : '-'}
               </strong>
             </div>
-            <div className={styles.infoRow}>
+            {/* <div className={styles.infoRow}>
               <span>Total Hours</span>
               <strong>
                 {selectedDay.rawDay?.totalHours 
                   ? selectedDay.rawDay.totalHours.toFixed(1) 
                   : '0.0'} hrs
               </strong>
-            </div>
+            </div> */}
           </>
         )}
 
@@ -1103,7 +1103,8 @@ React.useEffect(() => {
         <div className={styles.infoRow}>
           <span>Logged Hours</span>
           <strong>
-            {selectedDay.loggedHours} / {selectedDay.expectedHours}
+            {selectedDay.loggedHours}
+            {/* {selectedDay.loggedHours} / {selectedDay.expectedHours} */}
           </strong>
         </div>
       </div>

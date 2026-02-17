@@ -43,8 +43,8 @@ export default class TimesheetModernWebPart extends BaseClientSideWebPart<ITimes
         siteUrl: this.context.pageContext.web.absoluteUrl,
         currentUserEmail: this.context.pageContext.user.email,
         currentUserDisplayName: this.context.pageContext.user.displayName,
-        userLoginName: this.context.pageContext.user.loginName,
-        graphClient: this._graphClient
+        userLoginName: this.context.pageContext.user.loginName
+        // graphClient: this._graphClient
       }
     );
 

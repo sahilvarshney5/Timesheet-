@@ -1,8 +1,7 @@
 import * as React from 'react';
 import styles from './TimesheetModern.module.scss';
-import { SPHttpClient, MSGraphClientV3 } from '@microsoft/sp-http';
+import { SPHttpClient } from '@microsoft/sp-http';
 import { ApprovalService } from '../services/ApprovalService';
-import { UserService } from '../services/UserService';
 import { AttendanceService } from '../services/AttendanceService';
 import { IApprovalQueueItem, IEmployeeMaster, IRegularizationRequest } from '../models';
 import { getListInternalName, getColumnInternalName } from '../config/SharePointConfig';
@@ -15,7 +14,6 @@ export interface IApprovalViewProps {
   currentUserDisplayName: string;
   employeeMaster: IEmployeeMaster;
   userRole: 'Admin' | 'Manager' | 'Member';
-  graphClient?: MSGraphClientV3;
 }
 
 const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
@@ -59,20 +57,14 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
     setPunchData(null);
   };
 
-  // Fetch current user email
+  // Set current user email from EmployeeMaster — no Graph API call needed.
+  // EmployeeEmail is already loaded in employeeMaster by AppShell on startup.
   React.useEffect(() => {
-    const fetchCurrentUserEmail = async (): Promise<void> => {
-      try {
-        const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
-        const currentUser = await userService.getCurrentUser();
-        setCurrentUserEmail(currentUser.Email);
-      } catch (error) {
-        // Silent fail
-      }
-    };
-
-    void fetchCurrentUserEmail();
-  }, [spHttpClient, siteUrl, props.graphClient]);
+    const email = props.employeeMaster.EmployeeEmail ||
+                  props.employeeMaster.Employee?.EMail ||
+                  '';
+    setCurrentUserEmail(email);
+  }, [props.employeeMaster]);
 
   const loadPendingRequests = React.useCallback(async (): Promise<void> => {
     try {

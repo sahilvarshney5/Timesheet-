@@ -10,7 +10,7 @@ import ApprovalView from './Approvalview';
 import styles from './TimesheetModern.module.scss';
 import { EmployeeService } from '../services/EmployeeService';
 import { IEmployeeMaster } from '../models/IEmployeeMaster';
-import { MSGraphClientV3 } from '@microsoft/sp-http';
+
 
 export interface IAppShellState {
   activeView: string;
@@ -81,19 +81,11 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
     userRole: 'Member',
     navigationData: undefined
   });
-const [graphClient, setGraphClient] = React.useState<MSGraphClientV3 | null>(null);
-
   // Employee Service
   const employeeService = React.useMemo(
     () => new EmployeeService(httpClient, siteUrl),
     [httpClient, siteUrl]
   );
-// Initialize graph client on mount
-React.useEffect(() => {
-  if (props.graphClient) {
-    setGraphClient(props.graphClient);
-  }
-}, [props.graphClient]);
   // ============================================================================
   // URL ENFORCEMENT - Run on mount
   // ============================================================================
@@ -246,8 +238,6 @@ React.useEffect(() => {
       currentUserDisplayName: currentUserDisplayName,
       employeeMaster: state.employeeMaster!,
       userRole: state.userRole,
-        graphClient: graphClient || undefined  // ADD THIS
-
     };
 
     switch (state.activeView) {
