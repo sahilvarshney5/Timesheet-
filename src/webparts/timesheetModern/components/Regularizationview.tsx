@@ -527,7 +527,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     (request: IRegularizationRequest): void => {
       setEditingRequest(request);
       setIsEditMode(true);
-      setRegularizationType(request.requestType);
+      // Normalise legacy 'Day' value to 'day_based' so radio buttons work correctly
+      const normalizedType = request.requestType === 'Day' ? 'day_based' : request.requestType;
+      setRegularizationType(normalizedType);
       setDuration(calculateDuration(request.fromDate, request.toDate));
       // Re-lookup punch for the draft's date so timings stay current
       void lookupPunchForDate(request.fromDate);
@@ -757,12 +759,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                     type="radio"
                     name="regularization-type"
                     value="day_based"
-                    checked={
-                      isEditMode && editingRequest
-                        ? editingRequest.requestType === 'day_based' ||
-                          editingRequest.requestType === 'Day'
-                        : regularizationType === 'day_based'
-                    }
+                    checked={regularizationType === 'day_based'}
                     onChange={handleTypeChange}
                     disabled={isSaving}
                   />
@@ -773,11 +770,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                     type="radio"
                     name="regularization-type"
                     value="time_based"
-                    checked={
-                      isEditMode && editingRequest
-                        ? editingRequest.requestType === 'time_based'
-                        : regularizationType === 'time_based'
-                    }
+                    checked={regularizationType === 'time_based'}
                     onChange={handleTypeChange}
                     disabled={isSaving}
                   />
@@ -1204,7 +1197,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 </strong>
               </div>
 
-              {selectedRequest.approvedBy && (
+              {selectedRequest.status === "approved" &&selectedRequest.approvedBy && (
                 <>
                   <div className={styles.infoRow}>
                     <span>Approved By</span>
