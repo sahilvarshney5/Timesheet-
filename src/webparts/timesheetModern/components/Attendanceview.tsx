@@ -323,16 +323,39 @@ const loadHolidaysForMonth = React.useCallback(
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
 
-      // Get or create timesheet header for this week/month
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDateStr, endDateStr);
+      // Get timesheet headers for this month (returns ITimesheetHeader[])
+      const timesheetHeaders = await timesheetService.getTimesheetHeader(empId, startDateStr, endDateStr);
 
-      if (!timesheetHeader) {
+      // ✅ FIX: Guard – if no headers found return empty array
+      if (!timesheetHeaders || timesheetHeaders.length === 0) {
         console.log(`[AttendanceView] No timesheet header found for ${empId} at ${startDateStr}`);
         return [];
       }
 
-      const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
-      
+      // ✅ FIX ERROR 1 + ERROR 2:
+      //   OLD (broken):
+      //     let lines = timesheetHeader.map(eq => await timesheetService.getTimesheetLines(eq.Id!));
+      //   Problems:
+      //     • `await` inside a NON-async `.map()` callback → TS2801 "await only in async"
+      //     • `.map()` returns Promise<ITimesheetLines[]>[] → type becomes ITimesheetLines[][]
+      //
+      //   FIX: Use Promise.all() with an EXPLICITLY async arrow callback so every await is
+      //   inside an async function, then flatten the resulting ITimesheetLines[][] → ITimesheetLines[]
+      const nestedLines: ITimesheetLines[][] = await Promise.all(
+        timesheetHeaders.map(async (header) => {
+          // Each callback is async → await is valid here
+          return timesheetService.getTimesheetLines(header.Id!);
+        })
+      );
+
+      // ✅ FIX ERROR 2: Flatten ITimesheetLines[][] → ITimesheetLines[]
+      // Using reduce+concat instead of .flat() for ES2015 compatibility
+      // (SPFx targets ES2015 by default; Array.flat() requires ES2019+)
+      const lines: ITimesheetLines[] = nestedLines.reduce(
+        (acc: ITimesheetLines[], chunk: ITimesheetLines[]) => acc.concat(chunk),
+        []
+      );
+
       console.log(`[AttendanceView] Loaded ${lines.length} timesheet lines for month ${month + 1}/${year}`);
       
       return lines;
@@ -793,15 +816,16 @@ onDayClick(day);
                 let displayHours = fillStatus.totalFilledHours;
                 
                 // For regularized days: calculate and cap at 8h
-                if (isRegularized && regularizationData?.startTime && regularizationData?.endTime) {
-                  const calculatedHours = calculateWorkingHours(
-                    regularizationData.startTime, 
-                    regularizationData.endTime
-                  );
-                  displayHours = Math.min(calculatedHours, 8.0);
-                }
-                
-                return `${displayHours.toFixed(1)}h / ${fillStatus.expectedDailyHours.toFixed(1)}h`;
+                // if (isRegularized && regularizationData?.startTime && regularizationData?.endTime) {
+                //   const calculatedHours = calculateWorkingHours(
+                //     regularizationData.startTime, 
+                //     regularizationData.endTime
+                //   );
+                //   displayHours = Math.min(calculatedHours, 8.0);
+                // }
+                return `${displayHours.toFixed(1)}h`;
+
+                // return `${displayHours.toFixed(1)}h / ${fillStatus.expectedDailyHours.toFixed(1)}h`;
               })()}
             </div>
           )}

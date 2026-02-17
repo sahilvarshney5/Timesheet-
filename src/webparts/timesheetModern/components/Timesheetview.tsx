@@ -132,8 +132,8 @@ export interface ITimesheetViewProps {
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { spHttpClient, siteUrl } = props;
-  const MAX_DAILY_HOURS = 9;
-  const MAX_WEEKLY_HOURS = 45; // Configurable
+  const MAX_DAILY_HOURS = 8;
+  const MAX_WEEKLY_HOURS = 40; // Configurable
 
   // Services
   const timesheetService = React.useMemo(
@@ -312,16 +312,31 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
 
       console.log(`[TimesheetView] Loading timesheet for Employee ID: ${empId}, Week: ${startDate} to ${endDate}`);
 
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+      // getTimesheetHeader returns ITimesheetHeader[] — take the first element safely.
+      const loadHeaders = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+      let timesheetHeader: ITimesheetHeader | null =
+        loadHeaders && loadHeaders.length > 0 ? loadHeaders[0] : null;
+
+      // Access .Status only after null-check (fixes TS2339 on ITimesheetHeader[])
       if (timesheetHeader) {
         setTimesheetStatus(timesheetHeader.Status as 'Draft' | 'Submitted' | 'Approved');
       }
+
+      // No header found — create one (returns single ITimesheetHeader)
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
         console.log(`[TimesheetView] Created new timesheet header with ID: ${timesheetHeader.Id}`);
       }
 
-      const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id!);
+      // Store in state — type is now ITimesheetHeader | null, matching useState type (fixes TS2345)
+      setCurrentTimesheetHeader(timesheetHeader);
+
+      // Null + undefined guard before accessing .Id (fixes TS18047, TS2339)
+      if (!timesheetHeader || timesheetHeader.Id === undefined) {
+        throw new Error('[TimesheetView] loadTimesheetData: Timesheet header missing Id');
+      }
+
+      const lines = await timesheetService.getTimesheetLines(timesheetHeader.Id);
 
       // Map lines to entries with project names
       const convertedEntries: ITimesheetEntry[] = await Promise.all(
@@ -640,10 +655,19 @@ if (field === 'project' && typeof value === 'string') {
       const startDate = weekDays[0];
       const endDate = weekDays[6];
 
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+      // getTimesheetHeader returns ITimesheetHeader[] — take the first element safely.
+      const submitHeaders = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+      let timesheetHeader: ITimesheetHeader | null =
+        submitHeaders && submitHeaders.length > 0 ? submitHeaders[0] : null;
 
+      // No header found — create one (returns single ITimesheetHeader, fixes TS2740)
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
+      }
+
+      // Null + undefined guard before accessing .Id (fixes TS18047, TS2339)
+      if (!timesheetHeader || timesheetHeader.Id === undefined) {
+        throw new Error('[TimesheetView] handleSubmit: Timesheet header missing Id');
       }
 
       if (editingEntry) {
@@ -804,10 +828,19 @@ if (field === 'project' && typeof value === 'string') {
       const startDate = weekDays[0];
       const endDate = weekDays[6];
 
-      let timesheetHeader = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+      // getTimesheetHeader returns ITimesheetHeader[] — take the first element safely.
+      const pasteHeaders = await timesheetService.getTimesheetHeader(empId, startDate, endDate);
+      let timesheetHeader: ITimesheetHeader | null =
+        pasteHeaders && pasteHeaders.length > 0 ? pasteHeaders[0] : null;
 
+      // No header found — create one (returns single ITimesheetHeader, fixes TS2740)
       if (!timesheetHeader) {
         timesheetHeader = await timesheetService.createTimesheetHeader(empId, startDate);
+      }
+
+      // Null + undefined guard before accessing .Id (fixes TS18047, TS2339)
+      if (!timesheetHeader || timesheetHeader.Id === undefined) {
+        throw new Error('[TimesheetView] handlePasteEntry: Timesheet header missing Id');
       }
 
       await timesheetService.createTimesheetLine({
@@ -853,45 +886,144 @@ if (field === 'project' && typeof value === 'string') {
       alert('No entry copied to clipboard.');
     }
   };
-  const handleSubmitTimesheet = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
+  // const handleSubmitTimesheet = async (): Promise<void> => {
+  //   try {
+  //     setIsLoading(true);
 
-      if (!currentTimesheetHeader || !currentTimesheetHeader.Id) {
-        alert('No timesheet header found. Please create a timesheet first.');
-        return;
-      }
+  //     if (!currentTimesheetHeader || !currentTimesheetHeader.Id) {
+  //       alert('No timesheet header found. Please create a timesheet first.');
+  //       return;
+  //     }
 
-      // FIXED: Get manager email using graphClient from props
-      let managerEmail = '';
-      if (props.graphClient) {
-        try {
-          const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
-          managerEmail = await userService.getCurrentUserManagerEmail();
-        } catch (error) {
-          // Silent fail - submission will continue without manager email
-        }
-      }
+  //     // FIXED: Get manager email using graphClient from props
+  //     let managerEmail = '';
+  //     if (props.graphClient) {
+  //       try {
+  //         const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
+  //         managerEmail = await userService.getCurrentUserManagerEmail();
+  //       } catch (error) {
+  //         // Silent fail - submission will continue without manager email
+  //       }
+  //     }
 
-      // Submit timesheet with manager email
-      await timesheetService.submitTimesheetWithManagerEmail(
-        currentTimesheetHeader.Id,
-        managerEmail
-      );
+  //     // Submit timesheet with manager email
+  //     await timesheetService.submitTimesheetWithManagerEmail(
+  //       currentTimesheetHeader.Id,
+  //       managerEmail
+  //     );
 
-      alert('Timesheet submitted successfully for approval!');
+  //     alert('Timesheet submitted successfully for approval!');
 
-      // Reload timesheet data
-      await loadTimesheetData();
+  //     // Reload timesheet data
+  //     await loadTimesheetData();
 
-    } catch (error) {
-      alert('Failed to submit timesheet. Please try again.');
-    } finally {
-      setIsLoading(false);
+  //   } catch (error) {
+  //     alert('Failed to submit timesheet. Please try again.');
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
+
+// const handleSubmitTimesheet = async (): Promise<void> => {
+//   try {
+//     setIsLoading(true);
+
+//     // ✅ STEP 1: Calculate current week dates
+//     const weekDays = getCurrentWeekDays();
+//     const weekStartDate = weekDays[0]; // Monday
+//     const weekEndDate = weekDays[6];   // Sunday
+
+//     console.log('[TimesheetView] Submit - Week:', weekStartDate, 'to', weekEndDate);
+
+//     // ✅ STEP 2: Get manager email (optional)
+//     let managerEmail = '';
+//     if (props.graphClient) {
+//       try {
+//         const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
+//         managerEmail = await userService.getCurrentUserManagerEmail();
+//         console.log('[TimesheetView] Manager email:', managerEmail);
+//       } catch (error) {
+//         console.warn('[TimesheetView] Could not fetch manager email:', error);
+//         // Silent fail - submission will continue without manager email
+//       }
+//     }
+
+//     // ✅ STEP 3: Submit timesheet (NEW API with 5 parameters)
+//     // This will auto-create header if it doesn't exist
+//     await timesheetService.submitTimesheet(
+//       currentTimesheetHeader?.Id,        // Optional: existing header ID (undefined if no header)
+//       props.employeeMaster.EmployeeID,   // Required: employee ID
+//       weekStartDate,                     // Required: week start (Monday)
+//       weekEndDate,                       // Required: week end (Sunday)
+//       managerEmail || undefined          // Optional: manager email
+//     );
+
+//     alert('Timesheet submitted successfully for approval!');
+
+//     // ✅ STEP 4: Reload timesheet data to reflect new status
+//     await loadTimesheetData();
+
+//   } catch (error) {
+//     console.error('[TimesheetView] Submit error:', error);
+//     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//     alert(`Failed to submit timesheet: ${errorMessage}`);
+//   } finally {
+//     setIsLoading(false);
+//   }
+// };
+
+const handleSubmitTimesheet = async (): Promise<void> => {
+  try {
+    setIsLoading(true);
+
+    const weekDays = getCurrentWeekDays();
+    const weekStartDate = weekDays[0];
+    const weekEndDate = weekDays[6];
+    const empId = props.employeeMaster.EmployeeID;
+
+    // Get or create header
+    const header = await timesheetService.getOrCreateTimesheetHeader(
+      empId,
+      weekStartDate,
+      weekEndDate
+    );
+
+    if (!header?.Id) {
+      throw new Error('Failed to get or create timesheet header');
     }
-  };
 
+    setCurrentTimesheetHeader(header);
 
+    // Get manager email
+    let managerEmail = '';
+    if (props.graphClient) {
+      try {
+        const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
+        managerEmail = await userService.getCurrentUserManagerEmail();
+      } catch (error) {
+        // Silent fail
+      }
+    }
+
+    // Submit with 5 parameters
+    await timesheetService.submitTimesheet(
+      header.Id,
+      empId,
+      weekStartDate,
+      weekEndDate,
+      managerEmail || undefined
+    );
+
+    alert('Timesheet submitted successfully for approval!');
+    await loadTimesheetData();
+
+  } catch (error) {
+    console.error('[TimesheetView] Submit error:', error);
+    alert(`Failed to submit: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
   const calculateWeekTotals = (): {
     totalHours: number;
     availableHours: number;
@@ -912,7 +1044,7 @@ if (field === 'project' && typeof value === 'string') {
     });
     const availableHours = workingDays.length * MAX_DAILY_HOURS;
     // ✅ NEW: Check if weekly requirement is met
-    const REQUIRED_WEEKLY_HOURS = 45;
+    const REQUIRED_WEEKLY_HOURS = 40;
     const isWeekComplete = totalHours >= REQUIRED_WEEKLY_HOURS;
 
     return {
@@ -975,7 +1107,7 @@ if (field === 'project' && typeof value === 'string') {
           <div className={styles.timesheetActions}>
             <div className={styles.availableHoursDisplay}>
               <span>Weekly Hours:</span>
-              <span>{totalHours.toFixed(1)}</span> / {availableHours} hours
+              <span>{totalHours.toFixed(1)}</span>
             </div>
             <button
               className={`${styles.btn} ${styles.btnPurple}`}
@@ -1031,7 +1163,7 @@ if (field === 'project' && typeof value === 'string') {
                         </span>
                       </div>
                       <div className={styles.dayTotal}>
-                        {dateTotalHours.toFixed(1)}h / 8.0h
+                        {dateTotalHours.toFixed(1)}h
                       </div>
                     </div>
 
@@ -1135,21 +1267,23 @@ if (field === 'project' && typeof value === 'string') {
             ? '✓ Submitted'
             : totals.isWeekComplete
               ? '✓ Submit Timesheet'
-              : `⏳ ${totals.totalHours.toFixed(1)} / 45 hours (${(45 - totals.totalHours).toFixed(1)}h remaining)`
+                : `⏳ ${totals.totalHours.toFixed(1)}`
+
+              // : `⏳ ${totals.totalHours.toFixed(1)} / 40 hours (${(40 - totals.totalHours).toFixed(1)}h remaining)`
           }
           {/* {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'} */}
         </button>
         {/* ✅ NEW: Warning message if incomplete */}
-        {!totals.isWeekComplete && totals.totalHours > 0 && (
+        {/* {!totals.isWeekComplete && totals.totalHours > 0 && (
           <div style={{
             textAlign: 'center',
             color: 'var(--danger)',
             fontSize: 'var(--font-sm)',
             marginTop: '0.5rem'
           }}>
-            Please fill at least 45 hours before submitting timesheet
+            Please fill at least 40 hours before submitting timesheet
           </div>
-        )}
+        )} */}
       </div>
 
       <div className={styles.timesheetSummary}>

@@ -1,6 +1,7 @@
 import { IBaseModel } from './IBaseModel';
 
 export interface ITimesheetHeader extends IBaseModel {
+  Id:number;
   /* Canonical */
   EmployeeId: number;
   WeekStartDate: string;

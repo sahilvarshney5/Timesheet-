@@ -617,7 +617,7 @@ const autoFillPunchTimes = React.useCallback(async (
     try {
       setIsLoading(true);
 
-      await approvalService.recallRegularization(requestId, 'recall');
+      await approvalService.recallRegularization(requestId, 'cancel');
 
       setRegularizationHistory((prev: IRegularizationRequest[]) => prev.map((req: IRegularizationRequest) =>
         req.id === requestId
@@ -1049,8 +1049,8 @@ const autoFillPunchTimes = React.useCallback(async (
             </div>
             <div className={styles.modalBody}>
               <div className={styles.infoRow}>
-                <span>Request ID</span>
-                <strong>#{selectedRequest.id}</strong>
+                <span>AR Request ID</span>
+                <strong>{selectedRequest.RequestID}</strong>
               </div>
 
               <div className={styles.infoRow}>

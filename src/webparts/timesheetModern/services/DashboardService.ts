@@ -64,47 +64,56 @@ export class DashboardService {
       punch.Status === 'Synced' || punch.FirstPunchIn
     ).length;
     
-    // ✅ FIX: Calculate actual hours from timesheet
-    const timesheetHeader = await this.timesheetService.getTimesheetHeader(employeeId, monthStart,monthEnd);
+    // ✅ FIX TS2339: getTimesheetHeader returns ITimesheetHeader[] — extract first element safely.
+    //   Old code used `timesheetHeader.Id` directly on the array → "Property 'Id' does not exist
+    //   on type 'ITimesheetHeader[]'" (TS2339 at lines 72 and 101).
+    const timesheetHeaders = await this.timesheetService.getTimesheetHeader(employeeId, monthStart, monthEnd);
+    const timesheetHeader = timesheetHeaders && timesheetHeaders.length > 0 ? timesheetHeaders[0] : null;
+
+    // ✅ Fetch lines ONCE (null + undefined guard on .Id before use).
+    //   Also fixes the N+1 bug: old code called getTimesheetLines() inside a per-punch loop
+    //   (line 101), issuing a new SharePoint request for every punch day.
+    //   Now we fetch once and reuse the in-memory array for both calculations below.
+    let allLines: import('../models').ITimesheetLines[] = [];
     let hoursThisWeek = 0;
-    
-    if (timesheetHeader) {
-      const lines = await this.timesheetService.getTimesheetLines(timesheetHeader.Id!);
-      hoursThisWeek = lines.reduce((sum, line) => sum + (line.HoursBooked || line.Hours || 0), 0);
+
+    if (timesheetHeader && timesheetHeader.Id !== undefined) {
+      allLines = await this.timesheetService.getTimesheetLines(timesheetHeader.Id);
+      hoursThisWeek = allLines.reduce((sum, line) => sum + (line.HoursBooked || line.Hours || 0), 0);
     }
-    
+
     // ✅ FIX: Get actual leave balance
     const leaveDaysLeft = await this.leaveService.getTotalLeaveDaysLeft(employeeId);
-    
+
     // ✅ FIX: Get actual pending approvals
-    const pendingApprovals = permissions.isManager 
-      ? await this.approvalService.getPendingApprovals() 
+    const pendingApprovals = permissions.isManager
+      ? await this.approvalService.getPendingApprovals()
       : [];
-    
+
     // ✅ FIX: Get actual regularizations for current month
     const regularizations = await this.approvalService.getEmployeeRegularizations(employeeId);
     const thisMonthRegularizations = regularizations.filter(reg => {
       const submittedDate = new Date(reg.submittedOn);
-      return submittedDate.getMonth() === (currentMonth - 1) && 
+      return submittedDate.getMonth() === (currentMonth - 1) &&
              submittedDate.getFullYear() === currentYear;
     });
-    
+
     const pendingRegularizations = regularizations.filter(r => r.status === 'pending').length;
 
-    // ✅ FIX: Calculate pending timesheet entries (days without full hours)
+    // ✅ FIX: Calculate pending timesheet entries (days without full hours).
+    //   Uses the already-fetched allLines — no extra SharePoint calls inside the loop.
     let pendingTimesheetEntries = 0;
     for (const punch of weekPunchData) {
       const dayOfWeek = new Date(punch.AttendanceDate).getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) continue; // Skip weekends
-      
-      const dayLines = timesheetHeader ? 
-        (await this.timesheetService.getTimesheetLines(timesheetHeader.Id!))
-          .filter(line => line.WorkDate === punch.AttendanceDate || line.EntryDate === punch.AttendanceDate) 
-        : [];
-      
-      const loggedHours = dayLines.reduce((sum, line) => sum + (line.HoursBooked || line.Hours || 0), 0);
+      if (dayOfWeek === 0 || dayOfWeek === 6) { continue; } // Skip weekends
+
+      const dayLines = allLines.filter(
+        line => line.WorkDate === punch.AttendanceDate || line.EntryDate === punch.AttendanceDate
+      );
+
+      const loggedHours   = dayLines.reduce((sum, line) => sum + (line.HoursBooked || line.Hours || 0), 0);
       const availableHours = punch.TotalHours || 0;
-      
+
       if (loggedHours < availableHours) {
         pendingTimesheetEntries++;
       }

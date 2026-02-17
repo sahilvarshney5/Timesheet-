@@ -22,6 +22,117 @@ export class TimesheetService {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
   }
   
+
+  /**
+ * PRODUCTION FIX: Get or create timesheet header (idempotent)
+ * 
+ * This method ensures a header exists before submission.
+ * It prevents duplicate headers and handles race conditions.
+ * 
+ * @param employeeId Employee ID
+ * @param weekStartDate Week start date (Monday, YYYY-MM-DD or ISO format)
+ * @param weekEndDate Week end date (Sunday, YYYY-MM-DD or ISO format)
+ * @param managerEmail Optional manager email
+ * @returns Timesheet header (existing or newly created)
+ */
+public async getOrCreateTimesheetHeader(
+  employeeId: string,
+  weekStartDate: string,
+  weekEndDate: string,
+  managerEmail?: string
+): Promise<ITimesheetHeader> {
+  try {
+    console.log(`[TimesheetService] getOrCreateTimesheetHeader - Employee: ${employeeId}, Week: ${weekStartDate} to ${weekEndDate}`);
+
+    // ✅ STEP 1: Try to fetch existing headers (returns ITimesheetHeader[])
+    const existingHeaders = await this.getTimesheetHeader(employeeId, weekStartDate, weekEndDate);
+
+    // ✅ FIX: getTimesheetHeader returns ITimesheetHeader[] - take the first element safely.
+    //         Previous code did `return [existingHeader]` which produced ITimesheetHeader[][]
+    //         and broke the Promise<ITimesheetHeader> return contract.
+    if (existingHeaders && existingHeaders.length > 0) {
+      const first = existingHeaders[0];
+      console.log(`[TimesheetService] Found existing header - ID: ${first.Id}`);
+      return first; // ✅ Single ITimesheetHeader, not wrapped in another array
+    }
+
+    // ✅ STEP 2: No header found - create new one
+    console.warn(`[TimesheetService] No header found for week ${weekStartDate}. Creating new header...`);
+
+    const normalizedWeekStart = normalizeDateToString(weekStartDate);
+    const normalizedWeekEnd   = normalizeDateToString(weekEndDate);
+
+    const listName = getListInternalName('timesheetHeader');
+
+    const itemData: Record<string, string> = {
+      [getColumnInternalName('TimesheetHeader', 'EmployeeID')]:    employeeId,
+      [getColumnInternalName('TimesheetHeader', 'WeekStartDate')]: normalizedWeekStart,
+      [getColumnInternalName('TimesheetHeader', 'Status')]:        'Draft'
+    };
+
+    if (managerEmail) {
+      itemData['ManagerEmail'] = managerEmail;
+    }
+
+    // ✅ STEP 3: Create header in SharePoint
+    const newHeader = await this.httpService.createListItem<ITimesheetHeader>(
+      listName,
+      itemData
+    );
+
+    console.log(`[TimesheetService] ✅ Created new timesheet header - ID: ${newHeader.Id}`);
+
+    // ✅ STEP 4: Verify creation (handles race conditions)
+    const verifiedHeaders = await this.getTimesheetHeader(employeeId, weekStartDate, weekEndDate);
+
+    if (!verifiedHeaders || verifiedHeaders.length === 0) {
+      throw new Error('Failed to verify newly created timesheet header');
+    }
+
+    return verifiedHeaders[0]; // ✅ Return single ITimesheetHeader
+
+  } catch (error) {
+    console.error('[TimesheetService] ❌ Error in getOrCreateTimesheetHeader:', {
+      employeeId,
+      weekStartDate,
+      weekEndDate,
+      error: error instanceof Error ? error.message : error
+    });
+
+    // ✅ Duplicate header race-condition recovery
+    if (error instanceof Error && error.message.includes('duplicate')) {
+      console.warn('[TimesheetService] Duplicate header detected (race condition). Fetching existing...');
+      const retryHeaders = await this.getTimesheetHeader(employeeId, weekStartDate, weekEndDate);
+      if (retryHeaders && retryHeaders.length > 0) {
+        return retryHeaders[0]; // ✅ Return single ITimesheetHeader
+      }
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Convenience wrapper: returns a single header or null.
+ * Use this in any caller that expects exactly one header (UI, submit flow, etc.).
+ * Internally calls getTimesheetHeader() and takes the first element safely.
+ *
+ * @param employeeId   Employee ID
+ * @param weekStartDate Week start date (YYYY-MM-DD or ISO)
+ * @param weekEndDate   Week end date   (YYYY-MM-DD or ISO)
+ */
+public async getSingleTimesheetHeader(
+  employeeId: string,
+  weekStartDate: string,
+  weekEndDate: string
+): Promise<ITimesheetHeader | null> {
+  const headers = await this.getTimesheetHeader(employeeId, weekStartDate, weekEndDate);
+  if (!headers || headers.length === 0) {
+    return null;
+  }
+  return headers[0];
+}
+
   // TimesheetService.ts - ENHANCEMENT PATCH
 // Add this method to TimesheetService class to support manager email
 
@@ -133,7 +244,7 @@ public async createTimesheetHeaderWithManagerEmail(
    * @param weekStartDate Week start date (Monday, ISO format)
    * @param weekEndDate Week end date (Sunday, ISO format)
    */
-  public async getTimesheetHeader(employeeId: string, weekStartDate: string,weekEndDate:string): Promise<ITimesheetHeader | null> {
+  public async getTimesheetHeader(employeeId: string, weekStartDate: string,weekEndDate:string): Promise<ITimesheetHeader[] | null> {
     try {
       // ✅ Normalize input date
       const normalizedWeekStart = normalizeDateToString(weekStartDate);
@@ -163,12 +274,65 @@ public async createTimesheetHeaderWithManagerEmail(
         filterQuery
       );
       
-      return items.length > 0 ? items[0] : null;
-      
+      // return items.length > 0 ? items[0] : null;
+       // ✅ CASE 1: No headers found
+    if (items.length === 0) {
+      console.log(`[TimesheetService] No header found for ${employeeId}, week ${normalizedWeekStart}`);
+      return [];
+    }
+    
+    // ✅ CASE 2: Single header found (expected scenario)
+    if (items.length === 1) {
+      console.log(`[TimesheetService] Found header ID: ${items[0].Id}, Status: ${items[0].Status}`);
+      return [this.maptotimesheetdata(items[0])];
+    }
+    
+    // ✅ CASE 3: Multiple headers found (DUPLICATE SCENARIO)
+    console.warn(`[TimesheetService] ⚠️ DUPLICATE HEADERS DETECTED!`);
+    console.warn(`[TimesheetService] Found ${items.length} headers for ${employeeId}, week ${normalizedWeekStart}`);
+    console.warn(`[TimesheetService] Header IDs:`, items.map(h => `${h.Id} (${h.Status})`).join(', '));
+    
+    // ✅ Priority logic for selecting the "best" header:
+    
+    // // Priority 1: Prefer Draft status (can be edited)
+    // const draftHeaders = items.filter(h => h.Status === 'Draft');
+    // if (draftHeaders.length > 0) {
+    //   console.warn(`[TimesheetService] → Selecting Draft header ID: ${draftHeaders[0].Id}`);
+    //   return draftHeaders[0]; // Most recent draft
+    // }
+    
+    // Priority 2: Prefer Submitted over Approved (might need changes)
+    const submittedHeaders = items.filter(h => h.Status === 'Submitted');
+    // let data = []
+    
+    
+    if (submittedHeaders.length>0) {
+      console.warn(`[TimesheetService] → Selecting Submitted header ID: ${submittedHeaders[0].Id}`);
+      return submittedHeaders.map(data=>
+        this.maptotimesheetdata(data)
+      );
+    }
+    
+    // Priority 3: Return most recent (already ordered by Created desc)
+    console.warn(`[TimesheetService] → Selecting most recent header ID: ${items[0].Id}`);
+
+      return items.map(h =>
+        this.maptotimesheetdata(h)
+      );      
     } catch (error) {
       console.error('[TimesheetService] Error getting timesheet header:', error);
       throw error;
     }
+  }
+private maptotimesheetdata(spItem: any): ITimesheetHeader {
+    return {
+      // SharePoint metadata
+      Id:spItem.Id,
+      EmployeeId:spItem.Title,
+      WeekStartDate:spItem.WeekStartDate,
+      WeekEndDate:spItem.WeekStartDate,
+      Status:spItem.Status
+    };
   }
 
   /**
@@ -433,27 +597,112 @@ public async createTimesheetHeaderWithManagerEmail(
     }
   }
 
-  /**
-   * Submit timesheet for approval
-   * @param timesheetId Timesheet header ID
-   */
-  public async submitTimesheet(timesheetId: number): Promise<void> {
-    try {
-      const listName = getListInternalName('timesheetHeader');
-      
-      const itemData = {
-        [getColumnInternalName('TimesheetHeader', 'Status')]: 'Submitted',
-        [getColumnInternalName('TimesheetHeader', 'SubmissionDate')]: new Date().toISOString()
-      };
-      
-      await this.httpService.updateListItem(listName, timesheetId, itemData);
-      console.log(`[TimesheetService] submitTimesheet ${timesheetId}`);
-      
-    } catch (error) {
-      console.error('[TimesheetService] Error submitting timesheet:', error);
-      throw error;
+ /**
+ * ENHANCED: Submit timesheet for approval (with auto-header creation)
+ * 
+ * Enhanced version that ensures header exists before submission.
+ * Prevents "No timesheet header found" error.
+ * 
+ * BACKWARD COMPATIBLE: Can be called with just timesheetId (old way)
+ * or with all parameters (new way with auto-create)
+ * 
+ * @param timesheetId Timesheet header ID (optional if other params provided)
+ * @param employeeId Employee ID (required if timesheetId not provided)
+ * @param weekStartDate Week start date (required if timesheetId not provided)
+ * @param weekEndDate Week end date (required if timesheetId not provided)
+ * @param managerEmail Optional manager email
+ */
+public async submitTimesheet(
+  timesheetId?: number,
+  employeeId?: string,
+  weekStartDate?: string,
+  weekEndDate?: string,
+  managerEmail?: string
+): Promise<void> {
+  try {
+    let headerIdToSubmit: number;
+    
+    // ✅ SCENARIO 1: Header ID provided directly (backward compatible)
+    if (timesheetId) {
+      console.log(`[TimesheetService] Submitting timesheet with provided ID: ${timesheetId}`);
+      headerIdToSubmit = timesheetId;
     }
+    // ✅ SCENARIO 2: No header ID - fetch or create (NEW LOGIC)
+    else if (employeeId && weekStartDate && weekEndDate) {
+      console.log(`[TimesheetService] No header ID provided. Fetching/creating header...`);
+      
+      // ✅ CRITICAL: Get or create header (idempotent operation)
+      const header = await this.getOrCreateTimesheetHeader(
+        employeeId,
+        weekStartDate,
+        weekEndDate,
+        managerEmail
+      );
+      
+      if (!header || !header.Id) {
+        throw new Error('Failed to get or create timesheet header');
+      }
+      
+      headerIdToSubmit = header.Id;
+      console.log(`[TimesheetService] Using header ID: ${headerIdToSubmit}`);
+    }
+    // ✅ SCENARIO 3: Invalid parameters
+    else {
+      throw new Error(
+        'Invalid parameters: Either provide timesheetId OR (employeeId, weekStartDate, weekEndDate)'
+      );
+    }
+    
+    // ✅ Validate header exists before submission
+    const listName = getListInternalName('timesheetHeader');
+    const headerToSubmit = await this.httpService.getListItemById<ITimesheetHeader>(
+      listName,
+      headerIdToSubmit
+    );
+    
+    if (!headerToSubmit) {
+      throw new Error(`Timesheet header ${headerIdToSubmit} not found`);
+    }
+    
+    // ✅ Check if already submitted/approved
+    if (headerToSubmit.Status === 'Submitted') {
+      console.warn(`[TimesheetService] Timesheet ${headerIdToSubmit} already submitted`);
+      return; // Idempotent - don't fail if already submitted
+    }
+    
+    if (headerToSubmit.Status === 'Approved') {
+      throw new Error('Cannot submit an already approved timesheet');
+    }
+    
+    // ✅ Build update data
+    const itemData: any = {
+      [getColumnInternalName('TimesheetHeader', 'Status')]: 'Submitted',
+      [getColumnInternalName('TimesheetHeader', 'SubmissionDate')]: new Date().toISOString()
+    };
+    
+    // ✅ Add manager email if provided
+    if (managerEmail) {
+      itemData.ManagerEmail = managerEmail;
+    }
+    
+    // ✅ Submit the timesheet
+    await this.httpService.updateListItem(listName, headerIdToSubmit, itemData);
+    
+    console.log(`[TimesheetService] ✅ Successfully submitted timesheet ${headerIdToSubmit}`);
+    
+  } catch (error) {
+    // ✅ Enhanced error logging
+    console.error('[TimesheetService] ❌ Error submitting timesheet:', {
+      timesheetId,
+      employeeId,
+      weekStartDate,
+      weekEndDate,
+      error: error instanceof Error ? error.message : error
+    });
+    
+    throw error;
   }
+}
 
   /**
    * Calculate total hours for a timesheet

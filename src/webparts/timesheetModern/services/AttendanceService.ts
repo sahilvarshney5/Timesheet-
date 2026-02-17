@@ -177,7 +177,7 @@ public getAttendanceStatus(
       const listName = getListInternalName('punchData');
       
       const empIdCol = getColumnInternalName('PunchData', 'EmployeeID');
-      const dateCol = getColumnInternalName('PunchData', 'AttendanceDate');
+      const dateCol = getColumnInternalName('PunchData', 'FirstPunchIn');
       
       const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${dateCol} ge '${startDate}' and ${dateCol} le '${endDate}'`;
       
@@ -369,7 +369,7 @@ public getAttendanceStatus(
         }
         
         // Find punch data using AttendanceDate
-        const dayPunch = punchData.find(punch => punch.AttendanceDate === dateString);
+        const dayPunch = punchData.find(punch => normalizeDateToString(punch.FirstPunchIn) === dateString);
         if (dayPunch && !isWeekendDay && !isHolidayDay && !dayLeave) {
           status = 'present';
         }
