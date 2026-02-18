@@ -37,7 +37,8 @@ export class DashboardService {
    */
   public async getDashboardStats(): Promise<IDashboardStats> {
   try {
-    const user = await this.userService.getCurrentUser();
+    // const user = await this.userService.getCurrentUser();
+    const user = await this.userService.getCurrentEmployeeFromMaster();
     const permissions = await this.userService.getUserPermissions();
     const employeeId = user.Id.toString() || '';
     
@@ -87,7 +88,7 @@ export class DashboardService {
 
     // ✅ FIX: Get actual pending approvals
     const pendingApprovals = permissions.isManager
-      ? await this.approvalService.getPendingApprovals()
+      ? await this.approvalService.getPendingApprovals(user.manageremail)
       : [];
 
     // ✅ FIX: Get actual regularizations for current month

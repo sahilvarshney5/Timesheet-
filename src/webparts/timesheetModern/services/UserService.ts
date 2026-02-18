@@ -57,6 +57,60 @@ export class UserService {
     }
   }
 
+   /**
+   * Get current user information
+   */
+ public async getCurrentEmployeeFromMaster(): Promise<any> {
+  try {
+
+    // 1️⃣ Get Current Logged-in User
+    const currentUserResponse = await this.spHttpClient.get(
+      `${this.siteUrl}/_api/web/currentuser`,
+      SPHttpClient.configurations.v1
+    );
+
+    if (!currentUserResponse.ok) {
+      throw new Error("Failed to fetch current user");
+    }
+
+    const currentUser = await currentUserResponse.json();
+    const currentUserId = currentUser.Id;
+
+    // 2️⃣ Query Employee Master List where Employee column equals current user
+    const endpoint = `${this.siteUrl}/_api/web/lists/getbytitle('EmployeeMasterData')/items?$select=Id,Title,Employee/Id,Employee/Title,Employee/EMail,Manager/Id,Manager/Title,Manager/EMail&$expand=Employee,Manager&$filter=Employee/Id eq ${currentUserId}`;
+
+    const listResponse = await this.spHttpClient.get(
+      endpoint,
+      SPHttpClient.configurations.v1
+    );
+
+    if (!listResponse.ok) {
+      throw new Error("Failed to fetch Employee Master record");
+    }
+
+    const listData = await listResponse.json();
+
+    if (listData.value.length === 0) {
+      return null; // No employee record found
+    }
+
+    // return listData.value[0];
+     return {
+        Id: listData.value[0].Title,
+        DisplayName: listData.value[0].Employee.Title,
+        Email: listData.value[0].Employee.EMail,
+        EmployeeCode: listData.value[0].Title || undefined,
+        manageremail:listData.value[0].Manager.EMail
+      };
+
+  } catch (error) {
+    console.error("Error fetching employee master:", error);
+    throw error;
+  }
+}
+
+
+
   /**
    * NEW: Get current user's manager email using Microsoft Graph
    * Returns manager email or empty string if not found

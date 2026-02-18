@@ -1376,7 +1376,7 @@ const handleSubmitTimesheet = async (): Promise<void> => {
                 </div>
 
                 <div className={styles.formGroup}>
-  <label className={styles.formLabel}>Milestone</label>
+  <label className={styles.formLabel}>Milestone/Activity</label>
   <select
     className={styles.formSelect}
     value={formData.taskType}
