@@ -215,7 +215,52 @@ public getAttendanceStatus(
       throw error;
     }
   }
-
+ /**
+   * Get punch data for a specific employee and date range
+   */
+  public async getPunchDatabyregularization(employeeId: string, startDate: string, endDate: string): Promise<IPunchData[]> {
+    try {
+      const listName = getListInternalName('punchData');
+      
+      const empIdCol = getColumnInternalName('PunchData', 'EmployeeID');
+      const dateCol = getColumnInternalName('PunchData', 'FirstPunchIn');
+      
+      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${dateCol} ge '${startDate}T00:00:00' and ${dateCol} le '${endDate}T23:59:59'`;
+      
+      const selectFields = [
+        'Id',
+        'ID',
+        empIdCol,
+        dateCol,
+        getColumnInternalName('PunchData', 'FirstPunchIn'),
+        getColumnInternalName('PunchData', 'LastPunchOut'),
+        getColumnInternalName('PunchData', 'TotalHours'),
+        getColumnInternalName('PunchData', 'Status'),
+        getColumnInternalName('PunchData', 'Source'),
+        'Created',
+        'Modified'
+      ];
+      
+      const orderBy = dateCol;
+      
+      const rawItems = await this.httpService.getListItems<IPunchData>(
+        listName,
+        selectFields,
+        filterQuery,
+        orderBy,
+        ODataHelpers.DEFAULT_PAGE_SIZE
+      );
+      
+      const items = rawItems.map(item => this.mapToPunchData(item));
+      console.log(`[AttendanceService] Loaded ${items.length} punch records for ${employeeId}`);
+      
+      return items;
+      
+    } catch (error) {
+      console.error('[AttendanceService] Error getting punch data:', error);
+      throw error;
+    }
+  }
   /**
    * Get punch data for a specific employee and month
    */

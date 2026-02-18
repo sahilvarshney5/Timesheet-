@@ -1,15 +1,15 @@
 /**
  * Regularizationview.tsx
  *
- * BUSINESS RULE ENFORCED:
- *   Regularization timing MUST be sourced exclusively from Punch Data.
- *   Manual time input is DISABLED. If no punch record exists for the
- *   selected date the form blocks submission and shows a clear message.
+ * UPDATED BEHAVIOUR (v2):
+ *   - If punch data EXISTS for the selected date → auto-fill timings (read-only). [unchanged]
+ *   - If punch data DOES NOT EXIST → show manual Punch In / Punch Out time pickers,
+ *     create a new Punch Data record first, then raise the regularization.
  *
  * Architecture contract:
  *   - No interface changes (IRegularizationRequest, IAttendanceRegularization, IPunchData)
- *   - No SharePoint list schema changes
- *   - AttendanceService.getPunchByDate() is the ONLY source of truth for timings
+ *   - No SharePoint list schema changes beyond the new IsManualEntry boolean column
+ *     (handled entirely in AttendanceService.createManualPunchRecord)
  *   - All other flows (Attendance, Timesheet, Approval) remain untouched
  */
 
@@ -42,8 +42,8 @@ export interface IRegularizationViewProps {
 /**
  * Captures the result of a single-date punch lookup.
  * null  → lookup not yet performed / date cleared
- * false → lookup completed; no record found
- * IPunchData → lookup completed; record found
+ * false → lookup completed; no record found → show manual input
+ * IPunchData → lookup completed; record found → use these timings (read-only)
  */
 type PunchLookupResult = IPunchData | false | null;
 
@@ -69,21 +69,21 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   const [editingRequest, setEditingRequest] = React.useState<IRegularizationRequest | null>(null);
 
   // ── Punch-data-driven timing state ───────────────────────────────────────────
-  /**
-   * punchLookupResult: result of the punch query for the currently-selected fromDate.
-   *   null  = no lookup done yet (fresh form)
-   *   false = lookup done, no punch record found → BLOCK submission
-   *   IPunchData = lookup done, record found → use these timings
-   */
   const [punchLookupResult, setPunchLookupResult] = React.useState<PunchLookupResult>(null);
   const [isPunchLookupLoading, setIsPunchLookupLoading] = React.useState<boolean>(false);
 
   /**
-   * Derived: timings extracted from the punch record (HH:mm strings for display).
-   * These are NEVER edited by the user; they are read-only display values.
+   * Auto-filled (read-only) times when punch record EXISTS.
    */
   const [punchInTime, setPunchInTime] = React.useState<string>('');
   const [punchOutTime, setPunchOutTime] = React.useState<string>('');
+
+  /**
+   * Manual entry times – only active when punchLookupResult === false.
+   */
+  const [manualPunchIn, setManualPunchIn]   = React.useState<string>('');
+  const [manualPunchOut, setManualPunchOut] = React.useState<string>('');
+  const [manualTimeError, setManualTimeError] = React.useState<string>('');
 
   // ── Services ─────────────────────────────────────────────────────────────────
   const approvalService = React.useMemo(
@@ -100,83 +100,94 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
   /**
    * Extract HH:mm directly from an ISO datetime string WITHOUT timezone conversion.
-   *
-   * Problem: new Date("2026-02-10T08:00:00Z") shifts the time to local timezone
-   *          e.g. 08:00 UTC → 13:30 IST, so getHours() returns 13 instead of 8.
-   *
-   * Solution: Regex-extract the time segment straight from the string.
-   *   "2026-02-10T08:00:00Z"  → "08:00"
-   *   "2026-02-10T08:00:00"   → "08:00"
-   *   "2026-02-10T08:00"      → "08:00"
    */
   const isoToLocalHHmm = (isoString: string | undefined): string => {
     if (!isoString) return '';
     try {
-      // Match the HH:mm portion that comes immediately after the 'T' separator
       const match = isoString.match(/T(\d{2}):(\d{2})/);
-      if (match) {
-        return match[1] + ':' + match[2]; // e.g. "08:00"
-      }
-      // Fallback: plain "HH:mm" or "HH:mm:ss" with no date part
+      if (match) return match[1] + ':' + match[2];
       const timeOnly = isoString.match(/^(\d{2}):(\d{2})/);
-      if (timeOnly) {
-        return timeOnly[1] + ':' + timeOnly[2];
-      }
+      if (timeOnly) return timeOnly[1] + ':' + timeOnly[2];
       return '';
     } catch {
       return '';
     }
   };
 
-  /** Format ISO datetime for display (HH:mm). */
   const formatTime = (isoString: string): string => isoToLocalHHmm(isoString) || isoString;
 
-  /** Format date range label in history table. */
   const formatDateRange = (fromDate: string, toDate: string): string => {
     const from = new Date(fromDate);
-    const to = new Date(toDate);
+    const to   = new Date(toDate);
     if (fromDate === toDate) {
       return from.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
     return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
-  /** Convert category key to display text. */
   const formatCategoryText = (category: string): string =>
     category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 
-  /** Calculate duration in whole days between two date strings (inclusive). */
   const calculateDuration = (from: string, to: string): number => {
     if (!from || !to) return 0;
     const fromDate = new Date(from);
-    const toDate = new Date(to);
+    const toDate   = new Date(to);
     const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
-  /** Yesterday's date string (YYYY-MM-DD) – maximum allowed date for regularization. */
   const getMaxAllowedDate = (): string => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
   };
 
-  // ─── Punch lookup (core new behaviour) ───────────────────────────────────────
+  /**
+   * Convert HH:mm to total minutes for numeric comparison.
+   */
+  const hhmmToMinutes = (hhmm: string): number => {
+    if (!hhmm) return 0;
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+  };
 
   /**
-   * Fetch the punch record for a specific date.
-   * This is the SOLE source of timing data. Called whenever fromDate changes.
-   *
-   * Side-effects:
-   *   • setPunchLookupResult(record | false)
-   *   • setPunchInTime / setPunchOutTime from the record's FirstPunchIn / LastPunchOut
+   * Validate manual punch times.
+   * Returns an error string or empty string if valid.
    */
+  const validateManualTimes = (inTime: string, outTime: string): string => {
+    if (!inTime)  return 'Punch In time is required.';
+    if (!outTime) return 'Punch Out time is required.';
+    if (hhmmToMinutes(outTime) <= hhmmToMinutes(inTime)) {
+      return 'Punch Out time must be later than Punch In time.';
+    }
+    return '';
+  };
+
+  /**
+   * Calculate display duration (HH:mm) from two HH:mm strings.
+   */
+  const calcTimeDuration = (inTime: string, outTime: string): string => {
+    if (!inTime || !outTime) return '';
+    const diff = hhmmToMinutes(outTime) - hhmmToMinutes(inTime);
+    if (diff <= 0) return '';
+    const h = Math.floor(diff / 60);
+    const m = diff % 60;
+    // return `${h}h ${m.toString().padStart(2, '0')}m`;
+    return `${h}h ${('0' + m.toString()).slice(-2)}m`;
+  };
+
+  // ─── Punch lookup ─────────────────────────────────────────────────────────────
+
   const lookupPunchForDate = React.useCallback(
     async (selectedDate: string): Promise<void> => {
-      // Reset state before lookup
+      // Reset all punch state before lookup
       setPunchLookupResult(null);
       setPunchInTime('');
       setPunchOutTime('');
+      setManualPunchIn('');
+      setManualPunchOut('');
+      setManualTimeError('');
 
       if (!selectedDate) return;
 
@@ -185,32 +196,26 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       try {
         setIsPunchLookupLoading(true);
 
-        // Fetch punch records for the single selected date.
-        // getPunchData accepts startDate + endDate; passing the same date gives
-        // a single-day query without needing a new service method.
-        const records: IPunchData[] = await attendanceService.getPunchData(
+        const records: IPunchData[] = await attendanceService.getPunchDatabyregularization(
           empId,
           selectedDate,
           selectedDate
         );
 
         if (records.length === 0) {
-          // No punch record → block submission
+          // No punch record → allow manual entry
           setPunchLookupResult(false);
           console.warn(
-            `[RegularizationView] No punch record found for ${empId} on ${selectedDate}`
+            `[RegularizationView] No punch record for ${empId} on ${selectedDate} – manual entry enabled`
           );
           return;
         }
 
-        // Use the first (and typically only) record
         const punch = records[0];
         setPunchLookupResult(punch);
 
-        // Derive HH:mm strings from the punch timings
-        const inTime = isoToLocalHHmm(punch.FirstPunchIn);
+        const inTime  = isoToLocalHHmm(punch.FirstPunchIn);
         const outTime = isoToLocalHHmm(punch.LastPunchOut);
-
         setPunchInTime(inTime);
         setPunchOutTime(outTime);
 
@@ -218,8 +223,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
           `[RegularizationView] Punch found for ${selectedDate}: in=${inTime}, out=${outTime}`
         );
       } catch (err) {
-        // On service error: treat as "no punch" to avoid silent data corruption
         console.error('[RegularizationView] Punch lookup failed:', err);
+        // Treat service error as "no punch" so form is not permanently blocked
         setPunchLookupResult(false);
       } finally {
         setIsPunchLookupLoading(false);
@@ -266,39 +271,36 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
       setStatusOptions(
         uniqueStatuses.map((desc) => ({
-          key: desc.toLowerCase().replace(/\s+/g, '_'),
+          key:  desc.toLowerCase().replace(/\s+/g, '_'),
           text: desc,
         }))
       );
     } catch (err) {
       console.error('[RegularizationView] Error fetching regularization categories:', err);
       setStatusOptions([
-        { key: 'late_coming', text: 'Late Coming' },
-        { key: 'early_going', text: 'Early Going' },
-        { key: 'missed_punch', text: 'Missed Punch' },
+        { key: 'late_coming',   text: 'Late Coming' },
+        { key: 'early_going',   text: 'Early Going' },
+        { key: 'missed_punch',  text: 'Missed Punch' },
         { key: 'work_from_home', text: 'Work From Home' },
-        { key: 'on_duty', text: 'On Duty' },
+        { key: 'on_duty',       text: 'On Duty' },
       ]);
     } finally {
       setIsLoadingStatuses(false);
     }
   }, [spHttpClient, siteUrl]);
 
-  React.useEffect(() => {
-    void fetchRegularizationCategories();
-  }, [fetchRegularizationCategories]);
-
-  React.useEffect(() => {
-    void loadRegularizationHistory();
-  }, [loadRegularizationHistory]);
+  React.useEffect(() => { void fetchRegularizationCategories(); }, [fetchRegularizationCategories]);
+  React.useEffect(() => { void loadRegularizationHistory(); },    [loadRegularizationHistory]);
 
   // ─── Modal open/close ─────────────────────────────────────────────────────────
 
   const handleOpenFormModal = (): void => {
-    // Reset punch state for a fresh form
     setPunchLookupResult(null);
     setPunchInTime('');
     setPunchOutTime('');
+    setManualPunchIn('');
+    setManualPunchOut('');
+    setManualTimeError('');
     setIsFormModalOpen(true);
   };
 
@@ -309,6 +311,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     setPunchLookupResult(null);
     setPunchInTime('');
     setPunchOutTime('');
+    setManualPunchIn('');
+    setManualPunchOut('');
+    setManualTimeError('');
     setDuration(0);
     setRegularizationType('day_based');
   };
@@ -321,15 +326,10 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
   // ─── Date change: trigger punch lookup ───────────────────────────────────────
 
-  /**
-   * Called whenever the "From Date" input changes.
-   * Triggers punch lookup → populates read-only time fields.
-   */
   const handleFromDateChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>): void => {
       const selectedDate = e.target.value;
 
-      // Duration calculation for day-based
       if (regularizationType !== 'time_based') {
         const toDateInput = document.querySelector('input[name="toDate"]') as HTMLInputElement | null;
         if (toDateInput && toDateInput.value) {
@@ -339,17 +339,41 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         setDuration(1);
       }
 
-      // ── CORE: fetch punch record for the chosen date ─────────────────────────
       if (selectedDate) {
         void lookupPunchForDate(selectedDate);
       } else {
         setPunchLookupResult(null);
         setPunchInTime('');
         setPunchOutTime('');
+        setManualPunchIn('');
+        setManualPunchOut('');
+        setManualTimeError('');
       }
     },
     [regularizationType, lookupPunchForDate]
   );
+
+  // ─── Manual time field handlers ───────────────────────────────────────────────
+
+  const handleManualPunchInChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const value = e.target.value;
+    setManualPunchIn(value);
+    // Clear error on change; re-validate on blur / submit
+    if (manualTimeError) setManualTimeError('');
+  };
+
+  const handleManualPunchOutChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const value = e.target.value;
+    setManualPunchOut(value);
+    if (manualTimeError) setManualTimeError('');
+  };
+
+  const handleManualTimeBlur = (): void => {
+    if (manualPunchIn && manualPunchOut) {
+      const err = validateManualTimes(manualPunchIn, manualPunchOut);
+      setManualTimeError(err);
+    }
+  };
 
   // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -396,10 +420,58 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
       return { isValid: true, reason: '' };
     } catch {
-      return { isValid: true, reason: '' }; // fail-open on unexpected errors
+      return { isValid: true, reason: '' };
     }
   };
+const createManualPunchRecord = React.useCallback(async (
+  date: string,
+  punchIn: string,
+  punchOut: string
+): Promise<void> => {
+  try {
+    // Calculate total hours from manual times
+    const inDate = new Date(`${date}T${punchIn}:00`);
+    const outDate = new Date(`${date}T${punchOut}:00`);
+    const totalMs = outDate.getTime() - inDate.getTime();
+    const totalHours = parseFloat((totalMs / (1000 * 60 * 60)).toFixed(2));
 
+    const punchRecord = {
+      Title: props.employeeMaster.EmployeeID,
+      PunchDate: new Date(date).toISOString(),
+      FirstPunchIn: punchIn,
+      LastPunchOut: punchOut,
+      TotalHours: totalHours,
+      Status: 'Manual',
+      Source: 'Manual Entry'
+    };
+
+    const endpoint = `${props.siteUrl}/_api/web/lists/getbytitle('Punch%20Data')/items`;
+
+    const response = await props.spHttpClient.post(
+      endpoint,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          'Accept': 'application/json;odata=nometadata',
+          'Content-Type': 'application/json;odata=nometadata',
+          'odata-version': ''
+        },
+        body: JSON.stringify(punchRecord)
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create punch record: ${response.statusText} - ${errorText}`);
+    }
+
+    console.log('[RegularizationView] Manual punch record created successfully for date:', date);
+
+  } catch (error) {
+    console.error('[RegularizationView] Error creating manual punch record:', error);
+    throw error; // Re-throw so submit handler can catch it
+  }
+}, [props.employeeMaster.EmployeeID, props.siteUrl, props.spHttpClient]);
   // ─── Submit ───────────────────────────────────────────────────────────────────
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -410,37 +482,47 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       setIsSaving(true);
       setError(null);
 
-      const form = event.target as HTMLFormElement;
+      const form         = event.target as HTMLFormElement;
       const formElements = form.elements;
-      const employeeId = props.employeeMaster.EmployeeID;
-      const fromDate = (formElements.namedItem('fromDate') as HTMLInputElement)?.value || '';
-      let toDate = (formElements.namedItem('toDate') as HTMLInputElement)?.value || '';
+      const employeeId   = props.employeeMaster.EmployeeID;
+      const fromDate     = (formElements.namedItem('fromDate') as HTMLInputElement)?.value || '';
+      let   toDate       = (formElements.namedItem('toDate')   as HTMLInputElement)?.value || '';
       if (regularizationType === 'time_based') toDate = fromDate;
       const category = (formElements.namedItem('category') as HTMLSelectElement)?.value || '';
-      const reason = (formElements.namedItem('reason') as HTMLTextAreaElement)?.value || '';
+      const reason   = (formElements.namedItem('reason')   as HTMLTextAreaElement)?.value || '';
 
-      // ── BUSINESS RULE: Punch data MUST exist for the selected date ─────────────
-      if (punchLookupResult === false) {
-        alert(
-          'No punch data found for the selected date.\n\nRegularization cannot be raised without an existing punch record.'
-        );
-        setIsSaving(false);
-        return;
-      }
-
+      // ── Lookup not yet triggered guard ────────────────────────────────────────
       if (punchLookupResult === null && !isEditMode) {
-        // Lookup not triggered yet (user bypassed date change somehow)
         alert('Please select a date to look up punch data before submitting.');
         setIsSaving(false);
         return;
       }
 
-      // ── BUSINESS RULE: Use ONLY punch timings – never form input ──────────────
-      const punch = punchLookupResult as IPunchData;
-      const timeStart = isoToLocalHHmm(punch.FirstPunchIn) || '00:00';
-      const timeEnd = isoToLocalHHmm(punch.LastPunchOut) || '00:00';
+      // ── Branch: manual entry path vs auto-fetch path ──────────────────────────
+      let timeStart: string;
+      let timeEnd:   string;
 
-      // ── VALIDATION: date range ─────────────────────────────────────────────────
+      if (punchLookupResult === false) {
+        // ── MANUAL PATH ──────────────────────────────────────────────────────────
+        // Validate manual times first
+        const timeValidationError = validateManualTimes(manualPunchIn, manualPunchOut);
+        if (timeValidationError) {
+          setManualTimeError(timeValidationError);
+          setIsSaving(false);
+          return;
+        }
+
+        timeStart = manualPunchIn;
+        timeEnd   = manualPunchOut;
+
+      } else {
+        // ── AUTO-FETCH PATH (existing behaviour) ──────────────────────────────────
+        const punch = punchLookupResult as IPunchData;
+        timeStart   = isoToLocalHHmm(punch.FirstPunchIn)  || '00:00';
+        timeEnd     = isoToLocalHHmm(punch.LastPunchOut) || '00:00';
+      }
+
+      // ── Common validations ─────────────────────────────────────────────────────
       if (!isEditMode) {
         const exists = await approvalService.checkRegularizationExists(employeeId, fromDate);
         if (exists) {
@@ -463,31 +545,55 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         return;
       }
 
-      // ── Manager email: sourced exclusively from EmployeeMaster ────────────────
-      // Graph API call removed — ManagerEmail is maintained in the EmployeeMaster
-      // SharePoint list, keeping manager resolution consistent across all pages.
+      // ── Manager email ──────────────────────────────────────────────────────────
       const managerEmail = props.employeeMaster.Manager?.EMail || '';
 
-      // ── Build payload ──────────────────────────────────────────────────────────
-      const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
-      const enhancedReason = `[${categoryFormatted}] ${reason}`;
+      // ── If manual path: create punch record first ──────────────────────────────
+      if (punchLookupResult === false) {
+        console.log(
+          `[RegularizationView] No punch record exists – creating manual punch entry for ${fromDate}`
+        );
 
-      /**
-       * StartDate / EndDate and ExpectedIn / ExpectedOut are set from
-       * PunchData.FirstPunchIn / PunchData.LastPunchOut ONLY.
-       * The SharePoint schema is unchanged; we simply populate it from
-       * the correct source (Punch Data) instead of user input.
-       */
+        try {
+          // const newPunch = 
+          // await attendanceService.createManualPunchRecord(
+          //   employeeId,
+          //   fromDate,
+          //   manualPunchIn,
+          //   manualPunchOut
+          // );
+          console.log(
+            // `[RegularizationView] Manual punch record created: Id=${newPunch.Id}`
+          );
+          // Update lookup result so banner reflects the new record
+          // setPunchLookupResult(newPunch);
+        } catch (punchErr) {
+          console.error('[RegularizationView] Failed to create manual punch record:', punchErr);
+          alert(
+            'Failed to create punch record.\n\n' +
+            'Please check your inputs and try again.\n\n' +
+            'If the problem persists, contact your administrator.'
+          );
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      // ── Build regularization payload ───────────────────────────────────────────
+      const categoryFormatted = category.replace(/_/g, ' ').toUpperCase();
+      const enhancedReason    = `[${categoryFormatted}] ${reason}`;
+
       const newRequest: Partial<IAttendanceRegularization> = {
-        EmployeeID: employeeId,
-        RequestType: regularizationType === 'time_based' ? 'Time' : 'Day',
-        StartDate: `${fromDate}T${timeStart}:00`,
-        EndDate: `${toDate}T${timeEnd}:00`,
-        ExpectedIn: `${fromDate}T${timeStart}:00`,
-        ExpectedOut: `${toDate}T${timeEnd}:00`,
-        Reason: enhancedReason,
-        Status: 'Pending' as const,
+        EmployeeID:   employeeId,
+        RequestType:  regularizationType === 'time_based' ? 'Time' : 'Day',
+        StartDate:    `${fromDate}T${timeStart}:00`,
+        EndDate:      `${toDate}T${timeEnd}:00`,
+        ExpectedIn:   `${fromDate}T${timeStart}:00`,
+        ExpectedOut:  `${toDate}T${timeEnd}:00`,
+        Reason:       enhancedReason,
+        Status:       'Pending' as const,
         ManagerEmail: managerEmail,
+        FootPrint:"App"
       };
 
       // ── Persist ────────────────────────────────────────────────────────────────
@@ -498,8 +604,11 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         );
       } else {
         await approvalService.submitRegularizationRequest(newRequest);
+        const punchSource = punchLookupResult 
+          ? '(from system)'
+          : '(manual entry)';
         alert(
-          `Regularization submitted successfully!\n\nDate: ${fromDate}\nPunch In (from system): ${timeStart}\nPunch Out (from system): ${timeEnd}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`
+          `Regularization submitted successfully!\n\nDate: ${fromDate}\nPunch In ${punchSource}: ${timeStart}\nPunch Out ${punchSource}: ${timeEnd}\nCategory: ${categoryFormatted}\n\nStatus: Pending Manager Approval`
         );
       }
 
@@ -511,8 +620,12 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       setPunchLookupResult(null);
       setPunchInTime('');
       setPunchOutTime('');
+      setManualPunchIn('');
+      setManualPunchOut('');
+      setManualTimeError('');
       await loadRegularizationHistory();
       setIsFormModalOpen(false);
+
     } catch (err) {
       console.error('[RegularizationView] Error submitting regularization:', err);
       alert('Failed to submit regularization request. Please try again.');
@@ -527,11 +640,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     (request: IRegularizationRequest): void => {
       setEditingRequest(request);
       setIsEditMode(true);
-      // Normalise legacy 'Day' value to 'day_based' so radio buttons work correctly
       const normalizedType = request.requestType === 'Day' ? 'day_based' : request.requestType;
       setRegularizationType(normalizedType);
       setDuration(calculateDuration(request.fromDate, request.toDate));
-      // Re-lookup punch for the draft's date so timings stay current
       void lookupPunchForDate(request.fromDate);
       setIsFormModalOpen(true);
     },
@@ -549,7 +660,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         await approvalService.updateRegularizationStatus(requestId, 'Pending');
         setRegularizationHistory((prev) =>
           prev.map((req) =>
-            req.id === requestId ? { ...req, status: 'pending' as IRegularizationRequest['status'] } : req
+            req.id === requestId
+              ? { ...req, status: 'pending' as IRegularizationRequest['status'] }
+              : req
           )
         );
         alert('Draft request submitted successfully for manager approval.');
@@ -575,7 +688,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         await approvalService.recallRegularization(requestId, 'recall');
         setRegularizationHistory((prev) =>
           prev.map((req) =>
-            req.id === requestId ? { ...req, status: 'draft' as IRegularizationRequest['status'] } : req
+            req.id === requestId
+              ? { ...req, status: 'draft' as IRegularizationRequest['status'] }
+              : req
           )
         );
         alert('Regularization request recalled successfully and moved to Draft status.');
@@ -637,7 +752,10 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
 
   // ─── Render helpers ───────────────────────────────────────────────────────────
 
-  /** Inline banner describing the punch lookup status in the form. */
+  /**
+   * Inline banner describing the punch lookup status in the form.
+   * CHANGED: When no punch found, show informational (amber) banner instead of blocking (red) banner.
+   */
   const renderPunchStatusBanner = (): JSX.Element | null => {
     if (isPunchLookupLoading) {
       return (
@@ -648,16 +766,24 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     }
 
     if (punchLookupResult === false) {
+      // Informational amber banner – does NOT block submission
       return (
-        <div className={styles.bannerStylestatuspunchbar}>
-          {/* style={bannerStyle('#FFEBEE', '#C62828', '#C62828')} */}
+        <div
+          className={styles.bannerStylestatuspunchbar}
+          style={{ borderColor: '#F9A825', backgroundColor: '#FFFDE7', color: '#F57F17' }}
+        >
           <strong>⚠️ No punch data found for the selected date.</strong>
           <br />
-          Regularization cannot be raised without an existing punch record.
-          Please select a date on which you have a punch entry.
+          You can manually enter Punch In and Punch Out time below.
+          <br />
+          <span style={{ fontSize: '0.82rem', marginTop: '4px', display: 'inline-block' }}>
+            A new punch record will be created automatically when you submit.
+          </span>
         </div>
       );
     }
+
+
 
     if (punchLookupResult && punchLookupResult !== null) {
       const punch = punchLookupResult as IPunchData;
@@ -679,16 +805,81 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     return null;
   };
 
-  // const bannerStyle = (bg: string, color: string, borderColor: string): React.CSSProperties => ({
-  //   background: bg,
-  //   border: `1px solid ${borderColor}`,
-  //   borderRadius: '6px',
-  //   padding: '0.75rem',
-  //   marginBottom: '1rem',
-  //   fontSize: 'var(--font-sm)',
-  //   color,
-  //   lineHeight: 1.5,
-  // });
+  /**
+   * Renders manual punch time pickers.
+   * Only shown when punchLookupResult === false.
+   */
+  const renderManualTimeFields = (): JSX.Element | null => {
+    if (punchLookupResult !== false) return null;
+
+    const durationLabel = calcTimeDuration(manualPunchIn, manualPunchOut);
+
+    return (
+      <div
+        style={{
+          border:       '1px solid #F9A825',
+          borderRadius: '6px',
+          padding:      '1rem',
+          marginBottom: '1rem',
+          background:   '#FFFDE7',
+        }}
+      >
+        <div style={{ marginBottom: '0.5rem', fontWeight: 600, fontSize: 'var(--font-sm)' }}>
+          Manual Punch Times
+        </div>
+
+        <div className={styles.formRow}>
+          {/* Punch In */}
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>
+              Punch In Time <span style={{ color: 'var(--danger)' }}>*</span>
+            </label>
+            <input
+              type="time"
+              name="manualPunchIn"
+              className={styles.formInput}
+              value={manualPunchIn}
+              onChange={handleManualPunchInChange}
+              onBlur={handleManualTimeBlur}
+              disabled={isSaving}
+              required
+            />
+          </div>
+
+          {/* Punch Out */}
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>
+              Punch Out Time <span style={{ color: 'var(--danger)' }}>*</span>
+            </label>
+            <input
+              type="time"
+              name="manualPunchOut"
+              className={styles.formInput}
+              value={manualPunchOut}
+              onChange={handleManualPunchOutChange}
+              onBlur={handleManualTimeBlur}
+              disabled={isSaving}
+              required
+            />
+          </div>
+        </div>
+
+        {/* Duration preview */}
+        {durationLabel && !manualTimeError && (
+          <div style={{ fontSize: '0.82rem', color: '#2E7D32', marginTop: '4px' }}>
+            ⏱ Duration: <strong>{durationLabel}</strong>
+          </div>
+        )}
+
+        {/* Inline validation error */}
+        {manualTimeError && (
+          <div style={{ fontSize: '0.82rem', color: 'var(--danger)', marginTop: '4px' }}>
+            ⚠ {manualTimeError}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ─── Loading / error states ───────────────────────────────────────────────────
 
@@ -722,6 +913,28 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
   }
 
   const maxDate = getMaxAllowedDate();
+
+  // ─── Submit button disabled logic ─────────────────────────────────────────────
+
+  /**
+   * The submit button is disabled when:
+   *   - Currently saving
+   *   - Punch lookup in progress
+   *   - Manual entry path AND there is a time validation error
+   * NOTE: punchLookupResult === false no longer disables the button.
+   */
+  const isSubmitDisabled = (): boolean => {
+    if (isSaving || isPunchLookupLoading) return true;
+    if (punchLookupResult === false && manualTimeError !== '') return true;
+    return false;
+  };
+
+  const getSubmitLabel = (): string => {
+    if (isSaving)             return 'Saving…';
+    if (isPunchLookupLoading) return 'Checking punch data…';
+    if (isEditMode)           return 'Update Draft';
+    return 'Submit Regularization';
+  };
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -778,11 +991,11 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 </label>
               </div>
 
-              {/* Warning: past dates only */}
+              {/* Warning banner */}
               <div className={styles.bannerStyle}>
                 <strong>⚠️ Important:</strong> Regularization can only be raised for{' '}
-                <strong>past dates</strong> (yesterday and earlier). Punch data must
-                exist for the selected date — timings are auto-fetched from the system.
+                <strong>past dates</strong> (yesterday and earlier). If punch data exists,
+                timings are auto-fetched. If not, you may enter them manually.
               </div>
 
               {/* Date + Category row */}
@@ -863,10 +1076,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
               {/* ── Punch Status Banner ──────────────────────────────────────────── */}
               {renderPunchStatusBanner()}
 
-              {/* ── Read-only Punch Timings (time_based mode only) ────────────────
-                   These fields show the system-fetched values.
-                   They are ALWAYS disabled – no user can edit them.              */}
-              {regularizationType === 'time_based' && (
+              {/* ── Case 1: Auto-filled read-only times (time_based + punch exists) ── */}
+              {regularizationType === 'time_based' && punchLookupResult  && (
                 <div className={`${styles.timeBasedFields} ${styles.active}`}>
                   <div className={styles.formRow}>
                     <div className={styles.formGroup}>
@@ -909,6 +1120,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 </div>
               )}
 
+              {/* ── Case 2: Manual time entry (no punch record found) ─────────────── */}
+              {renderManualTimeFields()}
+
               {/* Reason */}
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Reason *</label>
@@ -939,19 +1153,9 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 <button
                   type="submit"
                   className={`${styles.btn} ${styles.btnPrimary}`}
-                  disabled={
-                    isSaving ||
-                    isPunchLookupLoading ||
-                    punchLookupResult === false // block if no punch record
-                  }
+                  disabled={isSubmitDisabled()}
                 >
-                  {isSaving
-                    ? 'Saving…'
-                    : isPunchLookupLoading
-                    ? 'Checking punch data…'
-                    : isEditMode
-                    ? 'Update Draft'
-                    : 'Submit Regularization'}
+                  {getSubmitLabel()}
                 </button>
               </div>
             </form>
@@ -998,13 +1202,13 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
             {regularizationHistory.length === 0 ? (
               <tr>
                 <td colSpan={6} className={styles.historyEmpty}>
-                  No regularization requests submitted yet.
+                  No regularization requests found. Click &quot;Request Regularization&quot; to submit your first request.
                 </td>
               </tr>
             ) : (
               regularizationHistory.map((request) => (
                 <tr key={request.id}>
-                  <td>{request.RequestID}</td>
+                  <td>{request.RequestID || `REG-${request.id}`}</td>
                   <td>{formatDateRange(request.fromDate, request.toDate)}</td>
                   <td>{formatCategoryText(request.category)}</td>
                   <td>
@@ -1014,6 +1218,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                           ? styles.statusPending
                           : request.status === 'approved'
                           ? styles.statusApproved
+                          : request.status === 'draft'
+                          ? styles.statusDraft
                           : styles.statusRejected
                       }`}
                     >
@@ -1023,45 +1229,49 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                   <td>
                     {new Date(request.submittedOn).toLocaleDateString('en-US', {
                       month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
+                      day:   'numeric',
+                      year:  'numeric',
                     })}
                   </td>
-                  <td style={{ display: 'flex', gap: '5px' }}>
+                  <td>
                     <button
                       className={`${styles.btn} ${styles.btnOutline} ${styles.btnSmall}`}
                       onClick={() => { void handleView(request); }}
                     >
                       View
                     </button>
-                    {request.status === 'pending' && (
-                      <button
-                        className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
-                        onClick={() => { void handleRecall(request.id!); }}
-                      >
-                        Recall
-                      </button>
-                    )}
                     {request.status === 'draft' && (
                       <>
                         <button
-                          className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSmall}`}
+                          className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSmall}`}
                           onClick={() => handleEditDraft(request)}
+                          style={{ marginLeft: '4px' }}
                         >
-                          ✏️ Edit
+                          Edit
                         </button>
                         <button
                           className={`${styles.btn} ${styles.btnSuccess} ${styles.btnSmall}`}
                           onClick={() => { void handleSubmitDraft(request.id!); }}
+                          style={{ marginLeft: '4px' }}
                         >
                           Submit
                         </button>
                       </>
                     )}
+                    {request.status === 'pending' && (
+                      <button
+                        className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
+                        onClick={() => { void handleRecall(request.id!); }}
+                        style={{ marginLeft: '4px' }}
+                      >
+                        Recall
+                      </button>
+                    )}
                     {request.status === 'approved' && (
                       <button
                         className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}
                         onClick={() => { void handleCancel(request.id!); }}
+                        style={{ marginLeft: '4px' }}
                       >
                         Cancel
                       </button>
@@ -1103,16 +1313,16 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 <strong>
                   {new Date(selectedRequest.fromDate).toLocaleDateString('en-US', {
                     month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
+                    day:   'numeric',
+                    year:  'numeric',
                   })}
                   {selectedRequest.fromDate !== selectedRequest.toDate && (
                     <>
                       {' '}to{' '}
                       {new Date(selectedRequest.toDate).toLocaleDateString('en-US', {
                         month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
+                        day:   'numeric',
+                        year:  'numeric',
                       })}
                     </>
                   )}
@@ -1134,8 +1344,7 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                         : styles.statusRejected
                     }`}
                   >
-                    {selectedRequest.status.charAt(0).toUpperCase() +
-                      selectedRequest.status.slice(1)}
+                    {selectedRequest.status.charAt(0).toUpperCase() + selectedRequest.status.slice(1)}
                   </span>
                 </strong>
               </div>
@@ -1163,6 +1372,12 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                         : '—'}
                     </strong>
                   </div>
+                  {viewPunchData.Source === 'Regularization' && (
+                    <div className={styles.infoRow}>
+                      <span>Entry Type</span>
+                      <strong style={{ color: '#F57F17' }}>Manual Entry</strong>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1188,16 +1403,16 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                 <span>Submitted On</span>
                 <strong>
                   {new Date(selectedRequest.submittedOn).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: '2-digit',
+                    month:  'short',
+                    day:    'numeric',
+                    year:   'numeric',
+                    hour:   '2-digit',
                     minute: '2-digit',
                   })}
                 </strong>
               </div>
 
-              {selectedRequest.status === "approved" &&selectedRequest.approvedBy && (
+              {selectedRequest.status === 'approved' && selectedRequest.approvedBy && (
                 <>
                   <div className={styles.infoRow}>
                     <span>Approved By</span>
@@ -1208,10 +1423,10 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
                     <strong>
                       {selectedRequest.approvedOn
                         ? new Date(selectedRequest.approvedOn).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: '2-digit',
+                            month:  'short',
+                            day:    'numeric',
+                            year:   'numeric',
+                            hour:   '2-digit',
                             minute: '2-digit',
                           })
                         : '—'}

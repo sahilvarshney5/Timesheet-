@@ -266,6 +266,7 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
           userDisplayName={currentUserDisplayName}
           userInitials={getUserInitials(currentUserDisplayName)}
           onViewChange={handleViewChange}
+             context={props.context} // NEW
         />
         <div style={{ 
           display: 'flex', 
@@ -292,6 +293,7 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
           userDisplayName={currentUserDisplayName}
           userInitials={getUserInitials(currentUserDisplayName)}
           onViewChange={handleViewChange}
+             context={props.context} // NEW
         />
         <div style={{ 
           display: 'flex', 
@@ -328,6 +330,8 @@ const AppShell: React.FC<ITimesheetModernProps> = (props) => {
         userDisplayName={state.employeeMaster.EmployeeDisplayName || currentUserDisplayName}
         userInitials={getUserInitials(state.employeeMaster.EmployeeDisplayName || currentUserDisplayName)}
         onViewChange={handleViewChange}
+          context={props.context} // NEW
+
       />
       
       <Sidebar 

@@ -434,7 +434,8 @@ export class ApprovalService {
         [getColumnInternalName('AttendanceRegularization', 'ExpectedIn')]: request.ExpectedIn || null,
         [getColumnInternalName('AttendanceRegularization', 'ExpectedOut')]: request.ExpectedOut || null,
         [getColumnInternalName('AttendanceRegularization', 'Reason')]: request.Reason,
-        [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Pending'
+        [getColumnInternalName('AttendanceRegularization', 'Status')]: 'Pending',
+         [getColumnInternalName('AttendanceRegularization', 'FootPrint')]: 'App'
       };
 
       if (managerEmail) {

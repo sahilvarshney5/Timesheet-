@@ -5,6 +5,7 @@ export interface ITopNavProps {
   userDisplayName: string;
   userInitials: string;
   onViewChange: (viewName: string) => void;
+  context?: import('@microsoft/sp-webpart-base').WebPartContext;
 }
 
 const TopNav: React.FC<ITopNavProps> = (props) => {
@@ -33,6 +34,26 @@ const TopNav: React.FC<ITopNavProps> = (props) => {
           <div className={styles.userName}>
             {userDisplayName}
           </div>
+          {props.context && (
+  <button
+    onClick={() => {
+      window.location.href = `${props.context!.pageContext.web.absoluteUrl}/_layouts/15/signout.aspx`;
+    }}
+    style={{
+      marginLeft: '12px',
+      padding: '6px 14px',
+      background: 'transparent',
+      border: '1px solid var(--border-color, #ccc)',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontSize: '13px',
+      color: 'var(--text-secondary, #666)',
+      whiteSpace: 'nowrap'
+    }}
+  >
+    Sign Out
+  </button>
+)}
         </div>
       </div>
     </nav>

@@ -51,7 +51,7 @@ export class ProjectAssignmentService {
       const filterQuery =
         `$filter=${getColumnInternalName('ProjectAssignment', 'ResourceID')} eq '${resourceId}' ` +
         `and ${getColumnInternalName('ProjectAssignment', 'BookingEnabled')} eq 1 ` +
-        `and ${getColumnInternalName('ProjectAssignment', 'ValidFrom')} le '${today}' ` +
+        // `and ${getColumnInternalName('ProjectAssignment', 'ValidFrom')} le '${today}' ` +
         `and (` +
         `${getColumnInternalName('ProjectAssignment', 'ValidTo')} ge '${today}' ` +
         `or ${getColumnInternalName('ProjectAssignment', 'ValidTo')} eq null` +

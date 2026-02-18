@@ -327,6 +327,10 @@ export const SharePointConfig: ISharePointConfig = {
       ManagerEmail: {
     displayName: 'Manager Email',
     internalName: 'ManagerEmail'
+  },
+  FootPrint:{
+    displayName:'Foot Print',
+    internalName:'FootPrint'
   }
     },
     // ProjectTaskMaster columns
