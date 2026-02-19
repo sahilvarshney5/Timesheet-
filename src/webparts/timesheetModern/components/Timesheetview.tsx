@@ -91,7 +91,8 @@ import { TimesheetService } from '../services/TimesheetService';
 import { ProjectTaskService, IProjectTask } from '../services/ProjectTaskService';
 import { ProjectAssignmentService, IProjectAssignment, ITaskTypeOption } from '../services/ProjectAssignmentService'; // FIXED: Import added
 import { AttendanceService } from '../services/AttendanceService'; // FIXED: Import added
-import { IEmployeeMaster, ITimesheetHeader } from '../models';
+import { HolidayService } from '../services/HolidayService'; // Holiday blocking
+import { IEmployeeMaster, ITimesheetHeader, IPunchData } from '../models';
 import {
   normalizeDateToString,
   formatDateForDisplay,
@@ -129,8 +130,17 @@ export interface ITimesheetViewProps {
 
 const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   const { spHttpClient, siteUrl } = props;
-  const MAX_DAILY_HOURS = 8;
-  const MAX_WEEKLY_HOURS = 40; // Configurable
+
+  // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+  // const MAX_DAILY_HOURS = 8;
+
+  // ============================================================================
+  // REQUIREMENT 2: Dynamic daily limit from Punch Data TotalHours
+  // MAX_DAILY_HOURS is now used only as a fallback when punch data is unavailable
+  // ============================================================================
+  const MAX_DAILY_HOURS_FALLBACK = 8; // Fallback only – used when no punch data found
+
+  const MAX_WEEKLY_HOURS = 40; // Kept for reference – no longer used for blocking (REQ 3)
 
   // Services
   const timesheetService = React.useMemo(
@@ -146,6 +156,11 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
   // FIXED: Add attendance service for validation
   const attendanceService = React.useMemo(
     () => new AttendanceService(spHttpClient, siteUrl),
+    [spHttpClient, siteUrl]
+  );
+
+  const holidayService = React.useMemo(
+    () => new HolidayService(spHttpClient, siteUrl),
     [spHttpClient, siteUrl]
   );
   // Add service and state
@@ -178,19 +193,47 @@ const TimesheetView: React.FC<ITimesheetViewProps> = (props) => {
     description: ''
   });
 const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssignment[]>([]);
+  // ✅ Real attendance status map for the current week: date (YYYY-MM-DD) → status
+  const [weekAttendanceMap, setWeekAttendanceMap] = React.useState<Map<string, 'present' | 'absent' | 'leave' | 'holiday' | 'weekend'>>(new Map());
+
   // ============================================================================
-  // VALIDATION HELPERS - 8 HOUR DAILY LIMIT
+  // REQUIREMENT 2 & 3: Punch hours map – date (YYYY-MM-DD) → TotalHours from Punch Data
+  // This replaces the fixed 8-hour daily cap with actual punch hours per day.
+  // ============================================================================
+  const [weekPunchHoursMap, setWeekPunchHoursMap] = React.useState<Map<string, number>>(new Map());
+
+  // ============================================================================
+  // VALIDATION HELPERS
   // ============================================================================
 
   /**
-   * Convert hours to minutes
+   * Convert hours to minutes (kept for backward compatibility with paste/copy checks)
+   * ISSUE 2 FIX: Use Math.round to avoid floating point drift, but all NEW validations
+   * below use parseFloat-based decimal comparison directly (not minute integers).
    */
   const convertToMinutes = (hours: number): number => {
     return Math.round(hours * 60);
   };
 
   /**
-   * Calculate total minutes for a specific date
+   * ISSUE 2 FIX: Calculate total hours (as decimal float) for a specific date.
+   * OLD LOGIC COMMENTED – Previously used convertToMinutes (integer math) which
+   * lost precision for small decimals like 0.1, 0.2, 0.3.
+   * OLD: return entries.filter(...).reduce((total, e) => total + convertToMinutes(e.hours), 0);
+   * ✅ NEW: Sum raw parseFloat hours directly to preserve decimal precision.
+   */
+  const getTotalHoursForDateDecimal = (date: string, excludeEntryId?: number): number => {
+    return entries
+      .filter(e => e.date === date && e.id !== excludeEntryId)
+      .reduce((total, e) => {
+        const h = parseFloat(String(e.hours)) || 0;
+        return Math.round((total + h) * 100) / 100; // Round to 2dp to avoid float drift
+      }, 0);
+  };
+
+  /**
+   * Keep getTotalMinutesForDate for any legacy internal use (copy/paste block checks).
+   * Not used for primary validation anymore (see handleInputChange and handleSubmit).
    */
   const getTotalMinutesForDate = (date: string, excludeEntryId?: number): number => {
     return entries
@@ -198,12 +241,56 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
       .reduce((total, e) => total + convertToMinutes(e.hours), 0);
   };
 
+  // ============================================================================
+  // REQUIREMENT 2: Get daily limit in MINUTES from Punch Data TotalHours
+  // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+  // const getRemainingMinutes = (date: string, excludeEntryId?: number): number => {
+  //   const used = getTotalMinutesForDate(date, excludeEntryId);
+  //   return Math.max(0, 480 - used); // 480 minutes = 8 hours (FIXED 8h cap – OLD)
+  // };
+  // ============================================================================
+
   /**
-   * Get remaining minutes available for a date
+   * REQUIREMENT 2: Get daily limit in HOURS (decimal) using Punch Data TotalHours.
+   * ISSUE 2 FIX: Renamed from getDailyLimitMinutes to getDailyLimitHours to use
+   * decimal float comparison directly. This prevents precision loss for small decimals.
+   * Falls back to MAX_DAILY_HOURS_FALLBACK (8h) when no punch data is available.
+   */
+  const getDailyLimitHours = (date: string): number => {
+    const punchHours = weekPunchHoursMap.get(date);
+    if (punchHours !== undefined && punchHours > 0) {
+      return parseFloat(punchHours.toFixed(2)); // Punch Data TotalHours as decimal
+    }
+    // Fallback: no punch record found for this date
+    return MAX_DAILY_HOURS_FALLBACK;
+  };
+
+  /**
+   * ISSUE 2 FIX: getDailyLimitMinutes kept for UI display helpers and legacy references.
+   * Uses getDailyLimitHours internally.
+   */
+  const getDailyLimitMinutes = (date: string): number => {
+    return Math.round(getDailyLimitHours(date) * 60);
+  };
+
+  /**
+   * REQUIREMENT 2: Get remaining hours available for a date based on TotalHours.
+   * ISSUE 2 FIX: Uses decimal hour comparison (not integer minutes) to preserve precision.
+   */
+  const getRemainingHours = (date: string, excludeEntryId?: number): number => {
+    const used = getTotalHoursForDateDecimal(date, excludeEntryId);
+    const limitHours = getDailyLimitHours(date);
+    return Math.max(0, Math.round((limitHours - used) * 100) / 100);
+  };
+
+  /**
+   * REQUIREMENT 2: Get remaining minutes available for a date based on TotalHours.
+   * Kept for backward compatibility with progress bar / button disable checks.
    */
   const getRemainingMinutes = (date: string, excludeEntryId?: number): number => {
     const used = getTotalMinutesForDate(date, excludeEntryId);
-    return Math.max(0, 480 - used); // 480 minutes = 8 hours
+    const limitMinutes = getDailyLimitMinutes(date);
+    return Math.max(0, limitMinutes - used);
   };
 
   /**
@@ -258,14 +345,22 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
     return dayOfWeek === 0 || dayOfWeek === 6; // Sunday = 0, Saturday = 6
   };
 
-  // FIXED: Helper function to get day status
+  // Real getDayStatus - reads from loaded attendance map for the week
   const getDayStatus = (dateString: string): 'present' | 'absent' | 'leave' | 'holiday' | 'weekend' | null => {
-    // This is a simplified version - in real implementation, fetch from attendance data
     if (isWeekend(dateString)) {
       return 'weekend';
     }
-    // Default to present for now - should fetch actual status from attendance service
-    return 'present';
+    // Return real status from attendance map if loaded
+    const mappedStatus = weekAttendanceMap.get(dateString);
+    if (mappedStatus) {
+      return mappedStatus;
+    }
+    // For future/unknown dates default to null (not blocking)
+    if (isFutureDate(dateString)) {
+      return null;
+    }
+    // Past working day with no punch record → absent
+    return 'absent';
   };
 
   const getCurrentWeekDays = React.useCallback((): string[] => {
@@ -366,6 +461,93 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
 
       setEntries(convertedEntries);
 
+      // ✅ Load real attendance status for every day in this week
+      try {
+        const [punchRecords, leaveRecords, holidayRecords] = await Promise.all([
+          attendanceService.getPunchData(empId, startDate, endDate),
+          attendanceService.getLeaveData(empId, startDate, endDate),
+          holidayService.getActiveHolidays()
+        ]);
+
+        // Build holiday date set (normalize to YYYY-MM-DD)
+        const holidayDateSet = new Set<string>();
+        holidayRecords.forEach(h => {
+          const d = h.HolidayDate ? h.HolidayDate.split('T')[0] : '';
+          if (d) holidayDateSet.add(d);
+        });
+
+        const attendanceMap = new Map<string, 'present' | 'absent' | 'leave' | 'holiday' | 'weekend'>();
+
+        // Step 1: Mark all weekdays as absent by default
+        weekDays.forEach(dateStr => {
+          if (!isWeekend(dateStr) && !isFutureDate(dateStr)) {
+            attendanceMap.set(dateStr, 'absent');
+          }
+        });
+
+        // Step 2: Mark present days from punch data (use PunchDate for date matching)
+        punchRecords.forEach(punch => {
+          const punchDateStr = punch.PunchDate
+            ? punch.PunchDate.split('T')[0]
+            : punch.AttendanceDate;
+          if (punchDateStr && (punch.PunchIn || punch.Status === 'Synced')) {
+            attendanceMap.set(punchDateStr, 'present');
+          }
+        });
+
+        // Step 3: Mark leave days — compare YYYY-MM-DD strings to avoid timezone mutation bugs
+        leaveRecords.forEach(leave => {
+          const leaveStartStr = leave.StartDate ? leave.StartDate.split('T')[0] : '';
+          const leaveEndStr = leave.EndDate ? leave.EndDate.split('T')[0] : '';
+          weekDays.forEach(dateStr => {
+            if (dateStr >= leaveStartStr && dateStr <= leaveEndStr && leave.Status !== 'Rejected') {
+              attendanceMap.set(dateStr, 'leave');
+            }
+          });
+        });
+
+        // Step 4: Mark holidays LAST — holidays override everything (present, leave, absent)
+        weekDays.forEach(dateStr => {
+          if (holidayDateSet.has(dateStr)) {
+            attendanceMap.set(dateStr, 'holiday');
+          }
+        });
+
+        setWeekAttendanceMap(attendanceMap);
+        console.log('[TimesheetView] Attendance map loaded, entries:', attendanceMap.size);
+
+        // ====================================================================
+        // REQUIREMENT 2 & 3: Build punch hours map from Punch Data TotalHours.
+        // Maps each date → TotalHours fetched from Punch Data list.
+        // This replaces the fixed 8-hour daily cap per day.
+        // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+        // (Previously no per-day punch hours map existed; daily cap was hardcoded to 8h)
+        // ====================================================================
+        const punchHoursMap = new Map<string, number>();
+        punchRecords.forEach((punch: IPunchData) => {
+          // Normalize date to YYYY-MM-DD for reliable key matching
+          const punchDateStr = punch.PunchDate
+            ? punch.PunchDate.split('T')[0]
+            : punch.AttendanceDate;
+          if (punchDateStr) {
+            // Use TotalHours from Punch Data; default to 0 if absent/null
+            const totalHours = (punch.TotalHours !== undefined && punch.TotalHours !== null)
+              ? punch.TotalHours
+              : 0;
+            punchHoursMap.set(punchDateStr, totalHours);
+          }
+        });
+        setWeekPunchHoursMap(punchHoursMap);
+        console.log('[TimesheetView] Punch hours map built, entries:', punchHoursMap.size);
+        // ====================================================================
+        // END REQUIREMENT 2 & 3 punch hours map
+        // ====================================================================
+
+      } catch (attendanceErr) {
+        console.warn('[TimesheetView] Could not load attendance data for status check:', attendanceErr);
+        // Non-fatal: keep existing map (does not break timesheet loading)
+      }
+
       console.log(`[TimesheetView] Loaded ${convertedEntries.length} timesheet entries`);
 
     } catch (error) {
@@ -409,6 +591,11 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
   };
 
   const handleChangeWeek = (direction: number): void => {
+    setWeekAttendanceMap(new Map()); // clear stale attendance data before loading new week
+    // ====================================================================
+    // REQUIREMENT 2 & 3: Clear punch hours map when changing week
+    // ====================================================================
+    setWeekPunchHoursMap(new Map());
     setCurrentWeekOffset(prev => prev + direction);
   };
 
@@ -422,7 +609,7 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
       };
     }
 
-    // Simplified validation - in production, check actual attendance
+    // Check real attendance status from loaded map
     const dayStatus = getDayStatus(normalizedDate);
 
     if (dayStatus === 'absent') {
@@ -583,19 +770,44 @@ if (field === 'project' && typeof value === 'string') {
     }
   }
   
-  // VALIDATION: Hours limit check
+  // ============================================================================
+  // REQUIREMENT 2: Validate hours against Punch Data TotalHours (not fixed 8h)
+  // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+  // if (field === 'hours') {
+  //   const newMinutes = convertToMinutes(value as number);
+  //   const currentDate = formData.date;
+  //   if (currentDate) {
+  //     const usedMinutes = getTotalMinutesForDate(currentDate, editingEntry?.id);
+  //     const totalMinutes = usedMinutes + newMinutes;
+  //     // Block if exceeds 480 minutes (8 hours) – OLD FIXED 8H CAP
+  //     if (totalMinutes > 480) {
+  //       console.log('[Validation] Cannot exceed 8 hours per day');
+  //       return; // Block the change
+  //     }
+  //   }
+  // }
+  // ============================================================================
+  // ISSUE 2 FIX: Use decimal float comparison (not integer minutes) so that
+  // small decimals like 0.1, 0.2, 0.3 are correctly validated.
+  // OLD LOGIC COMMENTED – Previously used convertToMinutes() which lost precision:
+  // const newMinutes = convertToMinutes(value as number);   // ❌ OLD – integer rounding
+  // const usedMinutes = getTotalMinutesForDate(...);        // ❌ OLD – integer sum
+  // const totalMinutes = usedMinutes + newMinutes;          // ❌ OLD – compared as integers
+  // ✅ NEW: All math is parseFloat-based decimal arithmetic.
   if (field === 'hours') {
-    const newMinutes = convertToMinutes(value as number);
+    // ISSUE 2 FIX: parseFloat preserves decimal precision (0.1, 0.2, 0.3 all valid)
+    const newHours = parseFloat(String(value)) || 0;
     const currentDate = formData.date;
-    
-    if (currentDate) {
-      const usedMinutes = getTotalMinutesForDate(currentDate, editingEntry?.id);
-      const totalMinutes = usedMinutes + newMinutes;
-      
-      // Block if exceeds 480 minutes (8 hours)
-      if (totalMinutes > 480) {
-        console.log('[Validation] Cannot exceed 8 hours per day');
-        return; // Block the change
+
+    if (currentDate && newHours > 0) {
+      const usedHours = getTotalHoursForDateDecimal(currentDate, editingEntry?.id);
+      const totalHours = Math.round((usedHours + newHours) * 100) / 100;
+      const limitHours = getDailyLimitHours(currentDate); // TotalHours from Punch Data
+
+      if (totalHours > limitHours) {
+        const remaining = Math.round((limitHours - usedHours) * 100) / 100;
+        console.log(`[Validation] Cannot exceed Punch Hours (${limitHours.toFixed(2)}h) per day. Remaining: ${remaining.toFixed(2)}h`);
+        return; // Block the change silently – alert shown on submit
       }
     }
   }
@@ -625,19 +837,41 @@ if (field === 'project' && typeof value === 'string') {
         return;
       }
 
-      // 2. Check 8-hour limit
-      const newMinutes = convertToMinutes(formData.hours);
-      const usedMinutes = getTotalMinutesForDate(normalizedDate, editingEntry?.id);
-      const totalMinutes = usedMinutes + newMinutes;
+      // ====================================================================
+      // REQUIREMENT 2: Validate against Punch Data TotalHours (not fixed 8h)
+      // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+      // // 2. Check 8-hour limit
+      // const newMinutes = convertToMinutes(formData.hours);
+      // const usedMinutes = getTotalMinutesForDate(normalizedDate, editingEntry?.id);
+      // const totalMinutes = usedMinutes + newMinutes;
+      // if (totalMinutes > 480) {
+      //   console.log('[Validation] Save blocked: Exceeds 8 hour daily limit');
+      //   alert('Cannot save entry: Exceeds 8 hour limit for the day.');
+      //   setIsLoading(false);
+      //   return; // Block save - DO NOT call API
+      // }
+      // ====================================================================
+      // ISSUE 2 FIX: Use decimal float comparison so that small values like
+      // 0.1, 0.2, 0.3 are accepted and only blocked when total > punchTotalHours.
+      // OLD LOGIC COMMENTED – Previously: convertToMinutes() caused integer rounding:
+      // const newMinutes = convertToMinutes(formData.hours);   // ❌ OLD – integer math
+      // const limitMinutes = getDailyLimitMinutes(normalizedDate);  // ❌ OLD – integer limit
+      // ✅ NEW: All comparison in parseFloat decimal hours.
+      const newHours = parseFloat(String(formData.hours)) || 0;
+      const usedHours = getTotalHoursForDateDecimal(normalizedDate, editingEntry?.id);
+      const totalHours = Math.round((usedHours + newHours) * 100) / 100;
+      const limitHours = getDailyLimitHours(normalizedDate); // Punch Data TotalHours
 
-      if (totalMinutes > 480) {
-        console.log('[Validation] Save blocked: Exceeds 8 hour daily limit');
-        alert('Cannot save entry: Exceeds 8 hour limit for the day.');
+      if (totalHours > limitHours) {
+        console.log(`[Validation] Save blocked: Exceeds Punch Hours (${limitHours.toFixed(2)}h) for the day`);
+        // REQUIREMENT 2: Show validation message with actual TotalHours from Punch Data
+        alert(`You cannot enter more than your Punch Hours (${limitHours.toFixed(2)}h) for this day.`);
         setIsLoading(false);
         return; // Block save - DO NOT call API
       }
-
-
+      // ====================================================================
+      // END REQUIREMENT 2 validation
+      // ====================================================================
 
       const validation = await validateTimesheetDate(normalizedDate);
 
@@ -771,15 +1005,31 @@ if (field === 'project' && typeof value === 'string') {
       return; // Silently block paste to future dates
     }
 
-    // VALIDATION: Check 8-hour limit for target date
+    // ====================================================================
+    // REQUIREMENT 2: Validate paste against Punch Data TotalHours (not fixed 8h)
+    // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+    // const pasteMinutes = convertToMinutes(clipboard.hours);
+    // const usedMinutes = getTotalMinutesForDate(normalizedDate);
+    // const totalMinutes = usedMinutes + pasteMinutes;
+    // if (totalMinutes > 480) {
+    //   console.log('[Validation] Paste blocked: Would exceed 8 hour limit');
+    //   return; // Block paste - no state update
+    // }
+    // ====================================================================
     const pasteMinutes = convertToMinutes(clipboard.hours);
     const usedMinutes = getTotalMinutesForDate(normalizedDate);
     const totalMinutes = usedMinutes + pasteMinutes;
+    const limitMinutes = getDailyLimitMinutes(normalizedDate); // TotalHours from Punch Data
 
-    if (totalMinutes > 480) {
-      console.log('[Validation] Paste blocked: Would exceed 8 hour limit');
-      return; // Block paste - no state update
+    if (totalMinutes > limitMinutes) {
+      const limitHours = (limitMinutes / 60).toFixed(1);
+      console.log(`[Validation] Paste blocked: Would exceed Punch Hours (${limitHours}h)`);
+      alert(`You cannot enter more than your Punch Hours (${limitHours}h) for this day.`);
+      return; // Block paste
     }
+    // ====================================================================
+    // END REQUIREMENT 2 paste validation
+    // ====================================================================
 
     const validation = await validateTimesheetDate(normalizedDate);
 
@@ -788,23 +1038,15 @@ if (field === 'project' && typeof value === 'string') {
       return;
     }
 
-    // ✅ FIX: Check if paste would exceed available hours
+    // ✅ FIX: Check if paste would exceed available hours (using punch data)
     const existingEntries = entries.filter(e => e.date === normalizedDate);
     const existingHours = existingEntries.reduce((sum, e) => sum + e.hours, 0);
     const newTotalHours = existingHours + clipboard.hours;
 
-    // ✅ FIX: Get available hours from punch data via service
-    let availableHours = 0;
-    try {
-      const empId = props.employeeMaster.EmployeeID;
-      const punchData = await attendanceService.getPunchData(empId, normalizedDate, normalizedDate);
-      availableHours = punchData.length > 0 ? (punchData[0].TotalHours || 0) : 0;
-    } catch (error) {
-      console.error(`[TimesheetView] Error getting punch data for ${normalizedDate}:`, error);
-      availableHours = MAX_DAILY_HOURS; // Fallback to max daily hours
-    }
+    // ✅ FIX: Get available hours from punch hours map (already loaded)
+    const availableHours = weekPunchHoursMap.get(normalizedDate) || 0;
 
-    // ✅ FIX: Block paste if exceeds
+    // ✅ FIX: Block paste if exceeds punch hours
     if (newTotalHours > availableHours && availableHours > 0) {
       alert(
         `Cannot paste entry!\n\n` +
@@ -883,91 +1125,6 @@ if (field === 'project' && typeof value === 'string') {
       alert('No entry copied to clipboard.');
     }
   };
-  // const handleSubmitTimesheet = async (): Promise<void> => {
-  //   try {
-  //     setIsLoading(true);
-
-  //     if (!currentTimesheetHeader || !currentTimesheetHeader.Id) {
-  //       alert('No timesheet header found. Please create a timesheet first.');
-  //       return;
-  //     }
-
-  //     // FIXED: Get manager email using graphClient from props
-  //     let managerEmail = '';
-  //     if (props.graphClient) {
-  //       try {
-  //         const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
-  //         managerEmail = await userService.getCurrentUserManagerEmail();
-  //       } catch (error) {
-  //         // Silent fail - submission will continue without manager email
-  //       }
-  //     }
-
-  //     // Submit timesheet with manager email
-  //     await timesheetService.submitTimesheetWithManagerEmail(
-  //       currentTimesheetHeader.Id,
-  //       managerEmail
-  //     );
-
-  //     alert('Timesheet submitted successfully for approval!');
-
-  //     // Reload timesheet data
-  //     await loadTimesheetData();
-
-  //   } catch (error) {
-  //     alert('Failed to submit timesheet. Please try again.');
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
-
-// const handleSubmitTimesheet = async (): Promise<void> => {
-//   try {
-//     setIsLoading(true);
-
-//     // ✅ STEP 1: Calculate current week dates
-//     const weekDays = getCurrentWeekDays();
-//     const weekStartDate = weekDays[0]; // Monday
-//     const weekEndDate = weekDays[6];   // Sunday
-
-//     console.log('[TimesheetView] Submit - Week:', weekStartDate, 'to', weekEndDate);
-
-//     // ✅ STEP 2: Get manager email (optional)
-//     let managerEmail = '';
-//     if (props.graphClient) {
-//       try {
-//         const userService = new UserService(spHttpClient, siteUrl, props.graphClient);
-//         managerEmail = await userService.getCurrentUserManagerEmail();
-//         console.log('[TimesheetView] Manager email:', managerEmail);
-//       } catch (error) {
-//         console.warn('[TimesheetView] Could not fetch manager email:', error);
-//         // Silent fail - submission will continue without manager email
-//       }
-//     }
-
-//     // ✅ STEP 3: Submit timesheet (NEW API with 5 parameters)
-//     // This will auto-create header if it doesn't exist
-//     await timesheetService.submitTimesheet(
-//       currentTimesheetHeader?.Id,        // Optional: existing header ID (undefined if no header)
-//       props.employeeMaster.EmployeeID,   // Required: employee ID
-//       weekStartDate,                     // Required: week start (Monday)
-//       weekEndDate,                       // Required: week end (Sunday)
-//       managerEmail || undefined          // Optional: manager email
-//     );
-
-//     alert('Timesheet submitted successfully for approval!');
-
-//     // ✅ STEP 4: Reload timesheet data to reflect new status
-//     await loadTimesheetData();
-
-//   } catch (error) {
-//     console.error('[TimesheetView] Submit error:', error);
-//     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-//     alert(`Failed to submit timesheet: ${errorMessage}`);
-//   } finally {
-//     setIsLoading(false);
-//   }
-// };
 
 const handleSubmitTimesheet = async (): Promise<void> => {
   try {
@@ -1015,6 +1172,7 @@ const handleSubmitTimesheet = async (): Promise<void> => {
     setIsLoading(false);
   }
 };
+
   const calculateWeekTotals = (): {
     totalHours: number;
     availableHours: number;
@@ -1028,15 +1186,45 @@ const handleSubmitTimesheet = async (): Promise<void> => {
     const totalHours = weekEntries.reduce((sum, entry) => sum + entry.hours, 0);
     const daysWithEntries = new Set(weekEntries.map(e => e.date)).size;
 
-    // Calculate available hours (working days only)
-    const workingDays = weekDays.filter(date => {
+    // ====================================================================
+    // REQUIREMENT 3: Remove weekly 40h block – validate per-day only.
+    // Calculate available hours from punch data TotalHours per day.
+    // Skip Holiday, Leave, Weekend days from available hours calculation.
+    //
+    // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+    // // Calculate available hours (present working days only)
+    // const workingDays = weekDays.filter(date => {
+    //   const dayStatus = getDayStatus(date);
+    //   return dayStatus === 'present'; // Only count present days
+    // });
+    // const availableHours = workingDays.length * MAX_DAILY_HOURS; // FIXED 8h × days – OLD
+    // const REQUIRED_WEEKLY_HOURS = availableHours; // dynamic, not hardcoded 40
+    // const isWeekComplete = availableHours === 0 || totalHours >= REQUIRED_WEEKLY_HOURS;
+    // ====================================================================
+
+    // REQUIREMENT 3: Sum actual TotalHours from Punch Data for present days only.
+    // Holiday/Leave/Weekend days are skipped – no validation against fixed 40h.
+    let availableHours = 0;
+    weekDays.forEach(date => {
       const dayStatus = getDayStatus(date);
-      return dayStatus === 'present'; // Only count present days
+      // Skip non-working days: Holiday, Leave, Weekend, Absent, Future
+      if (dayStatus !== 'present') return;
+
+      const punchHours = weekPunchHoursMap.get(date);
+      if (punchHours !== undefined && punchHours > 0) {
+        availableHours += punchHours; // Sum actual TotalHours from Punch Data
+      } else {
+        // Fallback: no punch record for a present day → use fallback
+        availableHours += MAX_DAILY_HOURS_FALLBACK;
+      }
     });
-    const availableHours = workingDays.length * MAX_DAILY_HOURS;
-    // ✅ NEW: Check if weekly requirement is met
-    const REQUIRED_WEEKLY_HOURS = 40;
-    const isWeekComplete = totalHours >= REQUIRED_WEEKLY_HOURS;
+
+    // REQUIREMENT 3: Week is complete when logged hours >= available punch hours
+    // No longer blocked by fixed 40h/week limit
+    const isWeekComplete = availableHours === 0 || totalHours >= availableHours;
+    // ====================================================================
+    // END REQUIREMENT 3
+    // ====================================================================
 
     return {
       totalHours,
@@ -1093,7 +1281,7 @@ const handleSubmitTimesheet = async (): Promise<void> => {
         <div className={styles.timesheetHeader}>
           <div>
             <h3>{weekRangeText}</h3>
-            <p>Log hours worked on each project daily (Max 9 hours per day)</p>
+            <p>Log hours worked on each project daily (Limit based on your Punch Hours)</p>
           </div>
           <div className={styles.timesheetActions}>
             <div className={styles.availableHoursDisplay}>
@@ -1139,6 +1327,30 @@ const handleSubmitTimesheet = async (): Promise<void> => {
                   dayStatus !== 'leave' &&
                   dayStatus !== 'holiday';
 
+                // ====================================================================
+                // REQUIREMENT 2 & 3: Get punch hours for this day from Punch Data.
+                // Used to display available hours in UI and enforce daily limit.
+                // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+                // const dayAvailableHours = 8.0; // FIXED 8h – OLD
+                // ====================================================================
+                const dayPunchHours = weekPunchHoursMap.get(date);
+                const dayAvailableHours = (dayPunchHours !== undefined && dayPunchHours > 0)
+                  ? dayPunchHours
+                  : MAX_DAILY_HOURS_FALLBACK;
+                // ====================================================================
+                // END REQUIREMENT 2 & 3 day punch hours
+                // ====================================================================
+
+                // ====================================================================
+                // REQUIREMENT 2: Disable "Add Entry" button when punch hours are full.
+                // OLD LOGIC COMMENTED – Replaced with TotalHours logic
+                // disabled={isReadOnly() || getTotalMinutesForDate(date) >= 480}
+                // ====================================================================
+                const dailyLimitMinutes = getDailyLimitMinutes(date); // TotalHours-based limit
+                const isEntryButtonDisabled = isReadOnly() ||
+                  getTotalMinutesForDate(date) >= dailyLimitMinutes;
+                // ====================================================================
+
                 return (
                   <div
                     key={date}
@@ -1147,10 +1359,16 @@ const handleSubmitTimesheet = async (): Promise<void> => {
                     <div className={styles.timesheetDayHeader}>
                       <div className={styles.dayInfo}>
                         <div className={styles.dayDate}>
-                          {formatDateForDisplay(date)} {isTodayDate && '(Today)'} (Present)
+                          {formatDateForDisplay(date)} {isTodayDate && '(Today)'} ({
+                            dayStatus === 'present' ? 'Present' :
+                            dayStatus === 'absent' ? 'Absent' :
+                            dayStatus === 'leave' ? 'On Leave' :
+                            dayStatus === 'holiday' ? 'Holiday' :
+                            dayStatus === 'weekend' ? 'Weekend' : 'Present'
+                          })
                         </div>
-                        <span className={`${styles.dayStatusBadge} ${styles.pending}`}>
-                          Pending
+                        <span className={`${styles.dayStatusBadge} ${timesheetStatus === 'Submitted' || timesheetStatus === 'Approved' ? styles.submitted : styles.pending}`}>
+                          {timesheetStatus === 'Submitted' ? 'Submitted' : timesheetStatus === 'Approved' ? 'Approved' : 'Pending'}
                         </span>
                       </div>
                       <div className={styles.dayTotal}>
@@ -1220,13 +1438,11 @@ const handleSubmitTimesheet = async (): Promise<void> => {
                       <button
                         className={styles.addEntryBtn}
                         onClick={() => { handleAddEntry(date).catch(console.error); }}
-                        disabled={
-                          isReadOnly() ||
-                          getTotalMinutesForDate(date) >= 480 // DISABLE if 8 hours reached
-                        }
-
+                        // REQUIREMENT 2: Disable when punch hours are exhausted (not fixed 480min)
+                        disabled={isEntryButtonDisabled}
                       >
-                        + Add Entry for {formatDateForDisplay(date)} ({(8.0 - dateTotalHours).toFixed(1)}h available)
+                        {/* REQUIREMENT 2: Show available hours from Punch Data, not fixed 8h */}
+                        + Add Entry for {formatDateForDisplay(date)} ({(dayAvailableHours - dateTotalHours).toFixed(1)}h available)
                       </button>
                     ) : (
                       <div className={styles.disabledMessage}>
@@ -1250,7 +1466,7 @@ const handleSubmitTimesheet = async (): Promise<void> => {
           onClick={() => { handleSubmitTimesheet().catch(console.error); }}
           disabled={
             isReadOnly() || // Already submitted
-            !totals.isWeekComplete || // ✅ NEW: Less than 45 hours
+            !totals.isWeekComplete || // ✅ NEW: Less than available punch hours
             isLoading
           } // DISABLE if already submitted
         >
@@ -1258,23 +1474,9 @@ const handleSubmitTimesheet = async (): Promise<void> => {
             ? '✓ Submitted'
             : totals.isWeekComplete
               ? '✓ Submit Timesheet'
-                : `⏳ ${totals.totalHours.toFixed(1)}`
-
-              // : `⏳ ${totals.totalHours.toFixed(1)} / 40 hours (${(40 - totals.totalHours).toFixed(1)}h remaining)`
+              : `⏳ ${totals.totalHours.toFixed(1)} / ${totals.availableHours.toFixed(1)}h`
           }
-          {/* {timesheetStatus === 'Submitted' ? '✓ Submitted' : '✓ Submit Timesheet'} */}
         </button>
-        {/* ✅ NEW: Warning message if incomplete */}
-        {/* {!totals.isWeekComplete && totals.totalHours > 0 && (
-          <div style={{
-            textAlign: 'center',
-            color: 'var(--danger)',
-            fontSize: 'var(--font-sm)',
-            marginTop: '0.5rem'
-          }}>
-            Please fill at least 40 hours before submitting timesheet
-          </div>
-        )} */}
       </div>
 
       <div className={styles.timesheetSummary}>
@@ -1360,14 +1562,35 @@ const handleSubmitTimesheet = async (): Promise<void> => {
               </div>
 
               <div className={styles.formRow}>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Hours * (Max 8 per day)</label>
+              <div className={styles.formGroup}>\
+                  {/*
+                    REQUIREMENT 2 / ISSUE 2 FIX: Hours input allows decimal values.
+                    OLD LOGIC COMMENTED – Replaced with decimal-safe settings:
+                    <label className={styles.formLabel}>Hours * (Max 8 per day)</label>
+                    OLD: min="0.5"  ← blocked 0.1, 0.2, 0.3 etc.
+                    OLD: step="0.5" ← forced increments of 0.5 only
+                    OLD: max="8"    ← hardcoded 8h cap
+                    ✅ NEW:
+                    min="0.01"  → allows 0.1, 0.2, 0.3 and any decimal
+                    step="0.01" → allows up to 2 decimal places
+                    max → from getDailyLimitHours (Punch Data TotalHours)
+                    value stored via parseFloat (not parseInt or Math.floor)
+                  */}
+                  <label className={styles.formLabel}>
+                    Hours * (Max: {formData.date
+                      ? getRemainingHours(formData.date, editingEntry?.id).toFixed(2)
+                      : '-'}h remaining)
+                  </label>
                   <input
                     type="number"
                     className={styles.formInput}
-                    min="0.5"
-                    max="8"
-                    step="0.5"
+                    min="0.01"
+                    // REQUIREMENT 2 / ISSUE 2 FIX: Max from Punch Data TotalHours (not hardcoded 8)
+                    // OLD LOGIC COMMENTED – max="8" (fixed 8h cap – replaced)
+                    max={formData.date
+                      ? getRemainingHours(formData.date, editingEntry?.id).toFixed(2)
+                      : MAX_DAILY_HOURS_FALLBACK}
+                    step="0.01"
                     placeholder="0.0"
                     value={formData.hours || ''}
                     onChange={(e) => handleInputChange('hours', parseFloat(e.target.value))}
@@ -1402,18 +1625,6 @@ const handleSubmitTimesheet = async (): Promise<void> => {
   </select>
 </div>
               </div>
-
-              {/* <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Description *</label>
-                <textarea 
-                  className={styles.formTextarea}
-                  placeholder="Describe the work you did..."
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
-                  required
-                />
-              </div> */}
 
               <div className={styles.formActions}>
                 <button

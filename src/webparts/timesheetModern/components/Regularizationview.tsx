@@ -214,8 +214,8 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
         const punch = records[0];
         setPunchLookupResult(punch);
 
-        const inTime  = isoToLocalHHmm(punch.FirstPunchIn);
-        const outTime = isoToLocalHHmm(punch.LastPunchOut);
+        const inTime  = isoToLocalHHmm(punch.PunchIn);
+        const outTime = isoToLocalHHmm(punch.PunchOut);
         setPunchInTime(inTime);
         setPunchOutTime(outTime);
 
@@ -438,8 +438,8 @@ const createManualPunchRecord = React.useCallback(async (
     const punchRecord = {
       Title: props.employeeMaster.EmployeeID,
       PunchDate: new Date(date).toISOString(),
-      FirstPunchIn: punchIn,
-      LastPunchOut: punchOut,
+      PunchIn: punchIn,
+      PunchOut: punchOut,
       TotalHours: totalHours,
       Status: 'Manual',
       Source: 'Manual Entry'
@@ -518,8 +518,8 @@ const createManualPunchRecord = React.useCallback(async (
       } else {
         // ── AUTO-FETCH PATH (existing behaviour) ──────────────────────────────────
         const punch = punchLookupResult as IPunchData;
-        timeStart   = isoToLocalHHmm(punch.FirstPunchIn)  || '00:00';
-        timeEnd     = isoToLocalHHmm(punch.LastPunchOut) || '00:00';
+        timeStart   = isoToLocalHHmm(punch.PunchIn)  || '00:00';
+        timeEnd     = isoToLocalHHmm(punch.PunchOut) || '00:00';
       }
 
       // ── Common validations ─────────────────────────────────────────────────────
@@ -792,9 +792,9 @@ const createManualPunchRecord = React.useCallback(async (
           <strong>✅ Punch record found.</strong> Timings are auto-filled from the system.
           <br />
           <span style={{ fontSize: '0.85rem', marginTop: '4px', display: 'inline-block' }}>
-            Punch In: <strong>{isoToLocalHHmm(punch.FirstPunchIn) || '—'}</strong>
+            Punch In: <strong>{isoToLocalHHmm(punch.PunchIn) || '—'}</strong>
             &nbsp;|&nbsp;
-            Punch Out: <strong>{isoToLocalHHmm(punch.LastPunchOut) || '—'}</strong>
+            Punch Out: <strong>{isoToLocalHHmm(punch.PunchOut) || '—'}</strong>
             &nbsp;|&nbsp;
             Total Hours: <strong>{punch.TotalHours !== undefined ? `${punch.TotalHours.toFixed(1)} hrs` : '—'}</strong>
           </span>
@@ -1355,13 +1355,13 @@ const createManualPunchRecord = React.useCallback(async (
                   <div className={styles.infoRow}>
                     <span>Actual Punch In</span>
                     <strong>
-                      {viewPunchData.FirstPunchIn ? formatTime(viewPunchData.FirstPunchIn) : '—'}
+                      {viewPunchData.PunchIn ? formatTime(viewPunchData.PunchIn) : '—'}
                     </strong>
                   </div>
                   <div className={styles.infoRow}>
                     <span>Actual Punch Out</span>
                     <strong>
-                      {viewPunchData.LastPunchOut ? formatTime(viewPunchData.LastPunchOut) : '—'}
+                      {viewPunchData.PunchOut ? formatTime(viewPunchData.PunchOut) : '—'}
                     </strong>
                   </div>
                   <div className={styles.infoRow}>

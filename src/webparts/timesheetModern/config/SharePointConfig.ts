@@ -120,13 +120,13 @@ export const SharePointConfig: ISharePointConfig = {
         displayName: 'Attendance Date',
         internalName: 'PunchDate'
       },
-      FirstPunchIn: {
-        displayName: 'First Punch In',
-        internalName: 'FirstPunchIn'
+      PunchIn: {
+        displayName: 'Punch In',
+        internalName: 'PunchIn'
       },
-      LastPunchOut: {
-        displayName: 'Last Punch Out',
-        internalName: 'LastPunchOut'
+      PunchOut: {
+        displayName: 'Punch Out',
+        internalName: 'PunchOut'
       },
       TotalHours: {
         displayName: 'Total Hours',

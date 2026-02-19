@@ -5,14 +5,14 @@ export interface IPunchData extends IBaseModel {
   EmployeeId: number;
   AttendanceDate: string;
 
-  FirstPunchIn?: string;
-  LastPunchOut?: string;
+  PunchIn?: string;
+  PunchOut?: string;
   TotalHours?: number;
 
   /* Source / integration fields */
   Status?: string; // Present / Absent / Leave
   Source?: string;
-   /* SharePoint internal fields (aliases) */
-  PunchDate?: string; // Internal name for AttendanceDate
+  /* SharePoint internal fields (aliases) */
+  PunchDate?: string; // Internal name for AttendanceDate (used for date comparison)
   Title?: string; // Employee ID in SharePoint
 }

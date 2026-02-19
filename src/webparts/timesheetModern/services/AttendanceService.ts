@@ -97,13 +97,13 @@ public getAttendanceStatus(
     return 'holiday';
   }
   
-  // Rule 4: Leave (approved only)
-  if (leaveData && leaveData.Status === 'Approved') {
+  // Rule 4: Leave (any non-rejected status - Approved, Availed, etc.)
+  if (leaveData && leaveData.Status !== 'Rejected' && leaveData.Status !== 'Pending') {
     return 'leave';
   }
   
   // Rule 5: Present (ONLY if punch data exists)
-  if (punchData && (punchData.FirstPunchIn || punchData.Status === 'Synced')) {
+  if (punchData && (punchData.PunchIn || punchData.Status === 'Synced')) {
     return 'present';
   }
   
@@ -157,8 +157,8 @@ public getAttendanceStatus(
       Id: spItem.Id || spItem.ID,
       EmployeeId: 0,
       AttendanceDate: normalizedDate,
-      FirstPunchIn: spItem.FirstPunchIn,
-      LastPunchOut: spItem.LastPunchOut,
+      PunchIn: spItem.PunchIn,
+      PunchOut: spItem.PunchOut,
       TotalHours: spItem.TotalHours,
       Status: spItem.Status,
       Source: spItem.Source,
@@ -177,7 +177,7 @@ public getAttendanceStatus(
       const listName = getListInternalName('punchData');
       
       const empIdCol = getColumnInternalName('PunchData', 'EmployeeID');
-      const dateCol = getColumnInternalName('PunchData', 'FirstPunchIn');
+      const dateCol = getColumnInternalName('PunchData', 'AttendanceDate'); // PunchDate internal name
       
       const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${dateCol} ge '${startDate}' and ${dateCol} le '${endDate}'`;
       
@@ -186,8 +186,8 @@ public getAttendanceStatus(
         'ID',
         empIdCol,
         dateCol,
-        getColumnInternalName('PunchData', 'FirstPunchIn'),
-        getColumnInternalName('PunchData', 'LastPunchOut'),
+        getColumnInternalName('PunchData', 'PunchIn'),
+        getColumnInternalName('PunchData', 'PunchOut'),
         getColumnInternalName('PunchData', 'TotalHours'),
         getColumnInternalName('PunchData', 'Status'),
         getColumnInternalName('PunchData', 'Source'),
@@ -223,7 +223,7 @@ public getAttendanceStatus(
       const listName = getListInternalName('punchData');
       
       const empIdCol = getColumnInternalName('PunchData', 'EmployeeID');
-      const dateCol = getColumnInternalName('PunchData', 'FirstPunchIn');
+      const dateCol = getColumnInternalName('PunchData', 'AttendanceDate'); // PunchDate internal name
       
       const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${dateCol} ge '${startDate}T00:00:00' and ${dateCol} le '${endDate}T23:59:59'`;
       
@@ -232,8 +232,8 @@ public getAttendanceStatus(
         'ID',
         empIdCol,
         dateCol,
-        getColumnInternalName('PunchData', 'FirstPunchIn'),
-        getColumnInternalName('PunchData', 'LastPunchOut'),
+        getColumnInternalName('PunchData', 'PunchIn'),
+        getColumnInternalName('PunchData', 'PunchOut'),
         getColumnInternalName('PunchData', 'TotalHours'),
         getColumnInternalName('PunchData', 'Status'),
         getColumnInternalName('PunchData', 'Source'),
@@ -289,7 +289,10 @@ public getAttendanceStatus(
       const endDateCol = getColumnInternalName('LeaveData', 'EndDate');
       const statusCol = getColumnInternalName('LeaveData', 'Status');
 
-      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${startDateCol} le '${endDate}' and ${endDateCol} ge '${startDate}' and ${statusCol} eq 'Approved'`;
+      // Fetch all leave records for the date range (no status filter in OData)
+      // We filter client-side to accept 'Approved', 'Availed', and any non-Rejected status
+      // because HRMS sync may use different status values (e.g. 'Availed', 'Approved by HR')
+      const filterQuery = `$filter=${empIdCol} eq '${employeeId}' and ${startDateCol} le '${endDate}' and ${endDateCol} ge '${startDate}' and ${statusCol} ne 'Rejected'`;
       
       const selectFields = [
         'Id',
@@ -390,15 +393,12 @@ public getAttendanceStatus(
           status = 'holiday';
         }
         
-        // Check if on leave
+        // Check if on leave — compare YYYY-MM-DD strings to avoid timezone/mutation bugs
         const dayLeave = leaveData.find(leave => {
-          const leaveStart = new Date(leave.StartDate);
-          const leaveEnd = new Date(leave.EndDate);
-          leaveStart.setHours(0, 0, 0, 0);
-          leaveEnd.setHours(23, 59, 59, 999);
-          date.setHours(12, 0, 0, 0);
-
-          return date >= leaveStart && date <= leaveEnd;
+          // Extract date-only part from ISO strings (handles both "2026-02-10" and "2026-02-10T08:00:00Z")
+          const leaveStartStr = leave.StartDate ? leave.StartDate.split('T')[0] : '';
+          const leaveEndStr = leave.EndDate ? leave.EndDate.split('T')[0] : '';
+          return dateString >= leaveStartStr && dateString <= leaveEndStr;
         });
 
         const isLeaveDay = !!dayLeave;
@@ -413,8 +413,13 @@ public getAttendanceStatus(
           else if (dayLeave.LeaveType.includes('Comp Off')) leaveType = 'casual';
         }
         
-        // Find punch data using AttendanceDate
-        const dayPunch = punchData.find(punch => normalizeDateToString(punch.FirstPunchIn) === dateString);
+        // Find punch data using PunchDate for reliable date matching
+        const dayPunch = punchData.find(punch => {
+          const punchDateStr = punch.PunchDate
+            ? normalizeDateToString(punch.PunchDate)
+            : punch.AttendanceDate;
+          return punchDateStr === dateString;
+        });
         if (dayPunch && !isWeekendDay && !isHolidayDay && !dayLeave) {
           status = 'present';
         }
@@ -425,8 +430,8 @@ public getAttendanceStatus(
           dayNumber: day,
           status: status,
           leaveType: leaveType,
-          firstPunchIn: dayPunch?.FirstPunchIn,
-          lastPunchOut: dayPunch?.LastPunchOut,
+          firstPunchIn: dayPunch?.PunchIn,
+          lastPunchOut: dayPunch?.PunchOut,
           totalHours: dayPunch?.TotalHours,
           availableHours: dayPunch?.TotalHours || 0,
           timesheetHours: 0,
@@ -602,7 +607,7 @@ public async getPunchByDate(
     const record = records[0];
     console.log(
       `[AttendanceService] Punch found for ${employeeId} on ${date}: ` +
-      `in=${record.FirstPunchIn ?? 'N/A'}, out=${record.LastPunchOut ?? 'N/A'}`
+      `in=${record.PunchIn ?? 'N/A'}, out=${record.PunchOut ?? 'N/A'}`
     );
 
     return record;

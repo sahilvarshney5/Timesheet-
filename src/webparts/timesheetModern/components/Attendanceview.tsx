@@ -28,6 +28,74 @@ interface IHoliday {
   name: string;
 }
 
+// ============================================================================
+// TIMEZONE DATE-SHIFT FIX — CENTRALIZED SAFE DATE HELPER
+// ============================================================================
+//
+// PURPOSE
+//   Single, auditable function for extracting "YYYY-MM-DD" from any value that
+//   may arrive from SharePoint inside AttendanceView.  All date normalization
+//   in this file MUST go through this function or through normalizeDateString()
+//   which delegates to it.
+//
+// WHY THIS IS NEEDED
+//   SharePoint returns DateTime columns as UTC ISO strings, for example:
+//     "2026-02-17T18:30:00Z"   ← UTC clock-time of the biometric sync event
+//   Any code path that runs:
+//     new Date("2026-02-17T18:30:00Z").getDate()
+//   in an IST (+5:30) browser receives 18, because 18:30 UTC on the 17th
+//   is 00:00 IST on the 18th.  The date has crossed midnight locally.
+//
+// THE RULE
+//   NEVER create a Date object from a SharePoint datetime string in order
+//   to extract the calendar date.  Instead, read the YYYY-MM-DD prefix
+//   directly from the string characters — zero timezone math, zero drift.
+//
+// CONSISTENCY WITH TIMESHEETVIEW
+//   TimesheetView has always compared dates as plain YYYY-MM-DD strings
+//   (no Date objects for date identity), which is why it always showed 17
+//   while AttendanceView showed 18.  This helper makes AttendanceView
+//   behave identically.
+// ============================================================================
+const getDateOnly = (value: string | null | undefined): string => {
+  if (!value) return '';
+
+  // FAST PATH 1: ISO datetime with 'T' separator  ← most common from SharePoint
+  // "2026-02-17T18:30:00Z"        → "2026-02-17"  ✅  (no timezone math)
+  // "2026-02-17T00:00:00.0000000" → "2026-02-17"  ✅
+  // "2026-02-17T18:30:00+05:30"   → "2026-02-17"  ✅
+  //
+  // OLD UTC DATE LOGIC COMMENTED – caused +1 day shift in IST:
+  // const d = new Date(value);
+  // return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); // ❌ local shift
+  if (value.indexOf('T') !== -1) {
+    const part = value.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(part)) {
+      return part; // ✅ pure string slice — no Date object, no timezone
+    }
+  }
+
+  // FAST PATH 2: space-separated  "2026-02-17 18:30:00"
+  if (value.indexOf(' ') !== -1) {
+    const part = value.split(' ')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(part)) {
+      return part; // ✅
+    }
+  }
+
+  // FAST PATH 3: already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value; // ✅
+  }
+
+  // UNKNOWN FORMAT — log and return empty rather than risk a shifted Date parse
+  console.warn('[AttendanceView] getDateOnly: Unrecognised date format:', value);
+  return '';
+};
+// ============================================================================
+// END CENTRALIZED SAFE DATE HELPER
+// ============================================================================
+
 // const HOLIDAYS: IHoliday[] = [
 //   { date: '2026-01-14', name: 'Lohri' },
 //   { date: '2026-01-15', name: 'Makar Sankranti' },
@@ -82,12 +150,20 @@ const formatDateForDisplay = (date: Date, options?: Intl.DateTimeFormatOptions):
 const formatTime = (timeString: string): string => {
   if (!timeString) return '';
   try {
+    // HH:mm or HH:mm:ss bare strings are not valid Date inputs - handle directly
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(timeString.trim())) {
+      return timeString.trim().substring(0, 5);
+    }
+    // ISO datetime string - parse and format
     const date = new Date(timeString);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const paddedHours = hours < 10 ? '0' + hours : hours.toString();
+    const paddedMinutes = minutes < 10 ? '0' + minutes : minutes.toString();
+    return paddedHours + ':' + paddedMinutes;
   } catch {
     return timeString;
   }
@@ -254,7 +330,10 @@ const [holidayDates, setHolidayDates] = React.useState<Map<string, string>>(new 
   [spHttpClient, siteUrl]
 );
 const normalizeDateString = (dateString: string): string => {
-  return dateString.split('T')[0]; // Returns YYYY-MM-DD
+  // Delegate to getDateOnly — single implementation, single place to audit.
+  // OLD UTC DATE LOGIC COMMENTED:
+  // return dateString.split('T')[0]; // was safe for pure strings but not centralized
+  return getDateOnly(dateString);
 };
 const isHoliday = React.useCallback((date: string): IHoliday | null => {
   const dateStr = normalizeDateString(date);
@@ -294,6 +373,9 @@ const loadHolidaysForMonth = React.useCallback(
     const [year, month, dayNum] = dayData.date.split('-').map(Number);
     const dayDate = createLocalDate(year, month - 1, dayNum);
     
+    // Get regularization timing for this day if applicable
+    const regularizationData = regularizedDates.get(dayData.date);
+    
     const displayData = {
       date: dayData.date,
       displayDate: formatDateForDisplay(dayDate, {
@@ -304,9 +386,18 @@ const loadHolidaysForMonth = React.useCallback(
       }),
       status: getStatusText(dayData.status || ''),
       timesheetStatus: getTimesheetStatusText(dayData.timesheetProgress.status),
-      loggedHours: dayData.timesheetHours.toFixed(1),
+      // ============================================================================
+      // ISSUE 1 FIX: Popup "Logged Hours" must show Punch Data TotalHours.
+      // OLD LOGIC COMMENTED – Previously: dayData.timesheetHours (timesheet entry sum)
+      // loggedHours: dayData.timesheetHours.toFixed(1), // ❌ OLD – timesheet sum
+      // ✅ NEW: dayData.totalHours is Punch Data → TotalHours from buildCalendarForMonth
+      // ============================================================================
+      loggedHours: (dayData.totalHours !== undefined && dayData.totalHours !== null)
+        ? dayData.totalHours.toFixed(1)
+        : '0.0',
       expectedHours: dayData.availableHours.toFixed(1),
-      rawDay: dayData // Keep raw day data for accessing punch times
+      rawDay: dayData, // Keep raw day data for accessing punch times
+      regularizationData // Regularization timing for regularized days
     };
     
     setSelectedDay(displayData);
@@ -317,11 +408,28 @@ const loadHolidaysForMonth = React.useCallback(
   const getTimesheetLinesForMonth = React.useCallback(async (year: number, month: number): Promise<ITimesheetLines[]> => {
     try {
       const empId = props.employeeMaster.EmployeeID;
-      const startDate = createLocalDate(year, month, 1);
-      const endDate = createLocalDate(year, month + 1, 0);
-      
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
+      // ✅ FIX: Two bugs were here:
+      // BUG 1 – Wrong month index: `month` passed from loadCalendarData is 0-based (currentMonth).
+      //         createLocalDate(year, month, 1) expects 0-based month, so this was CORRECT structurally
+      //         BUT toISOString() then shifted it back 1 day due to UTC conversion in IST.
+      // BUG 2 – toISOString() converts local midnight (IST) → UTC previous day (18:30).
+      //         So startDateStr became "2026-01-31" instead of "2026-02-01",
+      //         fetching timesheet headers from the WRONG month → timesheetLinesData = []
+      //         → fillStatus.totalFilledHours = 0 → all days show "0.0h".
+      //
+      // OLD LOGIC COMMENTED – Replaced with local date string formatting
+      // const startDate = createLocalDate(year, month, 1);
+      // const endDate = createLocalDate(year, month + 1, 0);
+      // const startDateStr = startDate.toISOString().split('T')[0]; // ❌ IST shift → wrong month
+      // const endDateStr = endDate.toISOString().split('T')[0];     // ❌ IST shift → wrong end date
+      //
+      // ✅ FIX: Build YYYY-MM-DD strings directly from year/month without any Date object→UTC conversion
+      // month is 0-based (passed as currentMonth from state), so month+1 = 1-based month number
+      const fixedMonth = month + 1; // convert 0-based → 1-based for string formatting
+      const daysInMonth = new Date(year, month + 1, 0).getDate(); // last day of month
+      const mm = fixedMonth < 10 ? '0' + fixedMonth : '' + fixedMonth;
+      const startDateStr = `${year}-${mm}-01`;
+      const endDateStr = `${year}-${mm}-${daysInMonth < 10 ? '0' + daysInMonth : daysInMonth}`;
 
       // Get timesheet headers for this month (returns ITimesheetHeader[])
       const timesheetHeaders = await timesheetService.getTimesheetHeader(empId, startDateStr, endDateStr);
@@ -381,7 +489,10 @@ const loadHolidaysForMonth = React.useCallback(
           
           const currentDate = new Date(fromDate);
           while (currentDate <= toDate) {
-            const dateStr = currentDate.toISOString().split('T')[0];
+            // OLD LOGIC COMMENTED – toISOString() shifts IST local midnight → UTC previous day
+            // const dateStr = currentDate.toISOString().split('T')[0]; // ❌ IST shift bug
+            const _ry = currentDate.getFullYear(), _rm = currentDate.getMonth() + 1, _rd = currentDate.getDate();
+            const dateStr = `${_ry}-${_rm < 10 ? '0' + _rm : _rm}-${_rd < 10 ? '0' + _rd : _rd}`; // ✅ local date parts
             // ✅ Store timing information along with the date
             approvedDatesMap.set(dateStr, {
               startTime: fromTime,
@@ -446,7 +557,10 @@ const loadHolidaysForMonth = React.useCallback(
         const isFuture = isDateAfter(dayDate, todayLocal);
         const isPast = isDateBefore(dayDate, todayLocal);
         const isCurrentDay = isTodayDate(dayDate);
-        const todayStr = dayDate.toISOString().split('T')[0];
+        // OLD LOGIC COMMENTED – toISOString() shifts IST local midnight to UTC previous day
+        // const todayStr = dayDate.toISOString().split('T')[0]; // ❌ IST shift bug
+        const _ty = dayDate.getFullYear(), _tm = dayDate.getMonth() + 1, _td = dayDate.getDate();
+        const todayStr = `${_ty}-${_tm < 10 ? '0' + _tm : _tm}-${_td < 10 ? '0' + _td : _td}`; // ✅ local date parts
 
         if (isHolidayDay) {
           finalStatus = 'holiday';
@@ -773,7 +887,7 @@ onDayClick(day);
       // ✅ GET REGULARIZATION TIMING DATA
       const regularizationData = regularizedDates.get(day.date);
 
-      // ✅ CALCULATE FILL STATUS FOR THIS DAY
+      // ✅ CALCULATE FILL STATUS FOR THIS DAY (used only for progress bar color, NOT for hours display)
       const fillStatus = getTimesheetFillStatus(
         day.date,
         timesheetLines,
@@ -787,6 +901,29 @@ onDayClick(day);
       } else if (fillStatus.status === 'PARTIAL') {
         progressClass = styles.partial; // ORANGE
       }
+
+      // ============================================================================
+      // ISSUE 1 FIX: Display Punch Data → TotalHours for EVERY day (filled or unfilled).
+      // OLD LOGIC COMMENTED – Previously using timesheet sum (fillStatus.totalFilledHours)
+      // OLD: let displayHours = fillStatus.totalFilledHours; // ❌ Wrong – timesheet entry sum
+      // OLD: {fillStatus.expectedDailyHours > 0 && (<div>{displayHours.toFixed(1)}h</div>)}
+      //
+      // ✅ NEW: Use day.totalHours which comes directly from Punch Data → TotalHours column.
+      //         day.totalHours is set in AttendanceService.buildCalendarForMonth():
+      //         totalHours: dayPunch?.TotalHours  ← raw value from Punch Data list
+      //         If no punch record exists → undefined → we show 0.0h.
+      //         This means even if a user fills 3h in timesheet,
+      //         calendar still shows Punch Data TotalHours (e.g. 9.5h).
+      // ============================================================================
+      const punchDataTotalHours: number = (day.totalHours !== undefined && day.totalHours !== null)
+        ? day.totalHours
+        : 0;
+      // Only render the hours element when punch data exists (i.e. totalHours > 0)
+      // Absent / weekend / holiday / leave / future days → punchDataTotalHours = 0 → hidden
+      const shouldShowHours = punchDataTotalHours > 0;
+      // ============================================================================
+      // END ISSUE 1 FIX
+      // ============================================================================
 
       grid.push(
         <div
@@ -807,26 +944,20 @@ onDayClick(day);
               {day.status === 'future' && '-'}
             </div>
           </div>
-        
-          {/* ✅ SHOW HOURS ONLY IF EXPECTED HOURS > 0 */}
-          {/* (day.status=="present" || day.status=="regularized") */}
-          {fillStatus.expectedDailyHours > 0 && (
-            <div className={styles.dayTotalHours}>
-              {(() => {
-                let displayHours = fillStatus.totalFilledHours;
-                
-                // For regularized days: calculate and cap at 8h
-                // if (isRegularized && regularizationData?.startTime && regularizationData?.endTime) {
-                //   const calculatedHours = calculateWorkingHours(
-                //     regularizationData.startTime, 
-                //     regularizationData.endTime
-                //   );
-                //   displayHours = Math.min(calculatedHours, 8.0);
-                // }
-                return `${displayHours.toFixed(1)}h`;
 
-                // return `${displayHours.toFixed(1)}h / ${fillStatus.expectedDailyHours.toFixed(1)}h`;
-              })()}
+          {/* ============================================================================
+              ISSUE 1 FIX: Show Punch Data TotalHours (not timesheet sum).
+              OLD LOGIC COMMENTED – Previously showed timesheet fill hours:
+              {fillStatus.expectedDailyHours > 0 && (
+                <div className={styles.dayTotalHours}>
+                  {fillStatus.totalFilledHours.toFixed(1)}h
+                </div>
+              )}
+              NEW: punchDataTotalHours sourced directly from Punch Data → TotalHours column.
+              ============================================================================ */}
+          {shouldShowHours && (
+            <div className={styles.dayTotalHours}>
+              {`${punchDataTotalHours.toFixed(1)}h`}
             </div>
           )}
 
@@ -1066,34 +1197,35 @@ React.useEffect(() => {
         </div>
 
         {/* Show Punch Times for Present/Regularized days */}
-        {(selectedDay.rawDay?.firstPunchIn || selectedDay.rawDay?.lastPunchOut) && (
-          <>
-            <div className={styles.infoRow}>
-              <span>First Punch In</span>
-              <strong>
-                {selectedDay.rawDay?.firstPunchIn 
-                  ? formatTime(selectedDay.rawDay.firstPunchIn) 
-                  : '-'}
-              </strong>
-            </div>
-            <div className={styles.infoRow}>
-              <span>Last Punch Out</span>
-              <strong>
-                {selectedDay.rawDay?.lastPunchOut 
-                  ? formatTime(selectedDay.rawDay.lastPunchOut) 
-                  : '-'}
-              </strong>
-            </div>
-            {/* <div className={styles.infoRow}>
-              <span>Total Hours</span>
-              <strong>
-                {selectedDay.rawDay?.totalHours 
-                  ? selectedDay.rawDay.totalHours.toFixed(1) 
-                  : '0.0'} hrs
-              </strong>
-            </div> */}
-          </>
-        )}
+        {(() => {
+          // Resolve punch-in time: prefer actual punch, fallback to regularization timing
+          const punchIn = selectedDay.rawDay?.firstPunchIn
+            ? formatTime(selectedDay.rawDay.firstPunchIn)
+            : (selectedDay.regularizationData?.startTime
+                ? formatTimeSimple(selectedDay.regularizationData.startTime)
+                : '');
+          const punchOut = selectedDay.rawDay?.lastPunchOut
+            ? formatTime(selectedDay.rawDay.lastPunchOut)
+            : (selectedDay.regularizationData?.endTime
+                ? formatTimeSimple(selectedDay.regularizationData.endTime)
+                : '');
+
+          // Only show if at least one time is available and valid
+          if (!punchIn && !punchOut) return null;
+
+          return (
+            <>
+              <div className={styles.infoRow}>
+                <span>Punch In</span>
+                <strong>{punchIn || '-'}</strong>
+              </div>
+              <div className={styles.infoRow}>
+                <span>Punch Out</span>
+                <strong>{punchOut || '-'}</strong>
+              </div>
+            </>
+          );
+        })()}
 
         <div className={styles.infoRow}>
           <span>Timesheet</span>

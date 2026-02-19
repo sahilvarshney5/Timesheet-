@@ -71,52 +71,107 @@ export function convertSharePointDate(isoString: string | null | undefined): Dat
   return parseLocalDate(dateOnly);
 }
 /**
- * Normalize any date input to YYYY-MM-DD format
- * Handles:
- * - ISO strings with timezone: "2026-01-26T08:00:00Z"
- * - ISO strings without timezone: "2026-01-26T08:00:00"
- * - Date objects
- * - Already normalized strings: "2026-01-26"
- * 
- * @param dateInput Date string, Date object, or null/undefined
- * @returns Normalized date string in YYYY-MM-DD format, or empty string if invalid
+ * Normalize any date input to YYYY-MM-DD format — TIMEZONE SAFE.
+ *
+ * ROOT CAUSE OF DATE-SHIFT BUG (now fixed here):
+ *   SharePoint returns DateTime columns as UTC ISO strings, e.g.:
+ *     "2026-02-17T18:30:00Z"  ← UTC time of the biometric sync event
+ *   The OLD implementation passed this string to new Date(), which the
+ *   browser parses as UTC and immediately converts to the local timezone.
+ *   In IST (+5:30): 18:30 UTC on the 17th = 00:00 IST on the 18th.
+ *   Calling .getDate() on that Date object returned 18 instead of 17.
+ *   Every caller that received this result stored the WRONG date key,
+ *   causing punch records for the 17th to be attributed to the 18th cell.
+ *
+ * THE FIX — for string inputs:
+ *   SharePoint always encodes the calendar date in the YYYY-MM-DD prefix
+ *   of its ISO datetime strings, before the 'T'.  We read those characters
+ *   directly from the string without creating a Date object at all.
+ *   No timezone conversion, no drift, no +1/-1 day shift possible.
+ *   This is identical to how TimesheetView already handles dates (string
+ *   comparison only), which is why Timesheet shows 17 and Attendance showed 18.
+ *
+ * THE FIX — for Date object inputs:
+ *   Date objects have no timezone representation — they store UTC milliseconds.
+ *   We always read them with LOCAL accessors (.getFullYear / .getMonth / .getDate)
+ *   which return the value in the browser's local timezone, NOT toISOString()
+ *   which converts back to UTC and would re-introduce the shift.
+ *
+ * @param dateInput  SharePoint ISO string, plain YYYY-MM-DD string, Date object,
+ *                   or null / undefined
+ * @returns          Normalized YYYY-MM-DD string, or '' if input is invalid
  */
 export function normalizeDateToString(dateInput: string | Date | null | undefined): string {
   if (!dateInput) return '';
-  
+
   try {
-    let date: Date;
-    
     if (typeof dateInput === 'string') {
-      // Check if already in YYYY-MM-DD format
+
+      // ── FAST PATH 1: already bare YYYY-MM-DD ────────────────────────────────
+      // e.g. "2026-02-17"  →  return as-is, no parsing needed
       if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
         return dateInput;
       }
-      
-      // Parse ISO string
-      date = new Date(dateInput);
+
+      // ── FAST PATH 2: ISO datetime with 'T' separator ────────────────────────
+      // e.g. "2026-02-17T18:30:00Z"        →  "2026-02-17"  ✅
+      //      "2026-02-17T00:00:00.0000000"  →  "2026-02-17"  ✅
+      //      "2026-02-17T18:30:00+05:30"    →  "2026-02-17"  ✅
+      //
+      // OLD UTC DATE LOGIC COMMENTED – caused +1 day shift in IST (+5:30):
+      // date = new Date(dateInput);        // ← browser converts UTC → local
+      // const day = date.getDate();        // ← returns LOCAL day (shifted!) ❌
+      if (dateInput.indexOf('T') !== -1) {
+        const datePart = dateInput.split('T')[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+          return datePart; // ✅ pure string slice — zero Date objects, zero timezone
+        }
+      }
+
+      // ── FAST PATH 3: space-separated datetime ───────────────────────────────
+      // e.g. "2026-02-17 18:30:00"  →  "2026-02-17"  ✅
+      if (dateInput.indexOf(' ') !== -1) {
+        const datePart = dateInput.split(' ')[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+          return datePart; // ✅ pure string slice
+        }
+      }
+
+      // ── LAST RESORT: non-standard string format ─────────────────────────────
+      // Only reached for formats like "Feb 17, 2026" etc.
+      // Use LOCAL accessors — never toISOString() — to avoid re-introducing the shift.
+      const fallback = new Date(dateInput);
+      if (isNaN(fallback.getTime())) {
+        console.warn('[DateUtils] normalizeDateToString: Invalid date string:', dateInput);
+        return '';
+      }
+      const fy = fallback.getFullYear();
+      const fm = fallback.getMonth() + 1;  // LOCAL month
+      const fd = fallback.getDate();        // LOCAL day ← safe; no UTC conversion
+      const fmStr = fm < 10 ? '0' + fm : '' + fm;
+      const fdStr = fd < 10 ? '0' + fd : '' + fd;
+      return `${fy}-${fmStr}-${fdStr}`;
+
     } else {
-      date = dateInput;
+      // ── Date object input ────────────────────────────────────────────────────
+      // Use LOCAL accessors, never toISOString() which converts back to UTC.
+      // OLD UTC DATE LOGIC COMMENTED:
+      // return dateInput.toISOString().split('T')[0]; // ❌ UTC shift in IST
+      const d = dateInput as Date;
+      if (isNaN(d.getTime())) {
+        console.warn('[DateUtils] normalizeDateToString: Invalid Date object');
+        return '';
+      }
+      const year  = d.getFullYear();
+      const month = d.getMonth() + 1; // LOCAL month
+      const day   = d.getDate();      // LOCAL day ← safe
+      const mStr  = month < 10 ? '0' + month : '' + month;
+      const dStr  = day   < 10 ? '0' + day   : '' + day;
+      return `${year}-${mStr}-${dStr}`;
     }
-    
-    // Validate date
-    if (isNaN(date.getTime())) {
-      console.warn('[DateUtils] Invalid date:', dateInput);
-      return '';
-    }
-    
-    // Extract year, month, day
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    
-    // Format as YYYY-MM-DD with zero-padding
-    const monthStr = month < 10 ? '0' + month : '' + month;
-    const dayStr = day < 10 ? '0' + day : '' + day;
-    
-    return `${year}-${monthStr}-${dayStr}`;
+
   } catch (error) {
-    console.error('[DateUtils] Error normalizing date:', dateInput, error);
+    console.error('[DateUtils] normalizeDateToString: Error:', dateInput, error);
     return '';
   }
 }

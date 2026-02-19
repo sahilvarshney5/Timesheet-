@@ -62,7 +62,7 @@ export class DashboardService {
     
     // ✅ FIX: Calculate actual present days from punch data
     const daysPresent = weekPunchData.filter(punch => 
-      punch.Status === 'Synced' || punch.FirstPunchIn
+      punch.Status === 'Synced' || punch.PunchIn
     ).length;
     
     // ✅ FIX TS2339: getTimesheetHeader returns ITimesheetHeader[] — extract first element safely.
