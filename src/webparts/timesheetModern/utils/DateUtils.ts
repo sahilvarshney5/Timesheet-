@@ -114,17 +114,48 @@ export function normalizeDateToString(dateInput: string | Date | null | undefine
       }
 
       // ── FAST PATH 2: ISO datetime with 'T' separator ────────────────────────
-      // e.g. "2026-02-17T18:30:00Z"        →  "2026-02-17"  ✅
-      //      "2026-02-17T00:00:00.0000000"  →  "2026-02-17"  ✅
-      //      "2026-02-17T18:30:00+05:30"    →  "2026-02-17"  ✅
       //
-      // OLD UTC DATE LOGIC COMMENTED – caused +1 day shift in IST (+5:30):
-      // date = new Date(dateInput);        // ← browser converts UTC → local
-      // const day = date.getDate();        // ← returns LOCAL day (shifted!) ❌
+      // ⚠️  ROOT CAUSE OF -1 DAY BUG (now fixed):
+      //
+      //   SharePoint REST API stores dates in site local time (IST = UTC+5:30)
+      //   but ALWAYS returns them as UTC ISO strings:
+      //     Stored value : 9 Feb 2026 (IST)
+      //     Returned as  : "2026-02-08T18:30:00Z"  ← midnight IST = 18:30 UTC prev day
+      //
+      //   Old string-slice approach:
+      //     "2026-02-08T18:30:00Z".split('T')[0]  →  "2026-02-08"  ❌  shows Feb 8
+      //
+      //   Correct approach for UTC strings (ending in 'Z' or offset like +05:30):
+      //     new Date("2026-02-08T18:30:00Z")  →  browser converts to LOCAL time
+      //     .getFullYear()/.getMonth()/.getDate()  →  2026, 1, 9  →  "2026-02-09" ✅
+      //
+      //   For strings WITHOUT timezone marker (e.g. "2026-02-17T00:00:00.0000000")
+      //   string-slice is still safe because there is no UTC-to-local shift.
+      //
       if (dateInput.indexOf('T') !== -1) {
-        const datePart = dateInput.split('T')[0];
-        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-          return datePart; // ✅ pure string slice — zero Date objects, zero timezone
+        // Detect if string carries timezone info: ends with 'Z' or has ±HH:MM suffix
+        const lastChar = dateInput.charAt(dateInput.length - 1);
+        const hasUtcMarker = lastChar === 'Z';
+        const hasOffsetSuffix = /[+-]\d{2}:\d{2}$/.test(dateInput);
+
+        if (hasUtcMarker || hasOffsetSuffix) {
+          // ✅ UTC / offset string → parse and read LOCAL date parts
+          const d = new Date(dateInput);
+          if (!isNaN(d.getTime())) {
+            const y  = d.getFullYear();
+            const mo = d.getMonth() + 1;  // LOCAL month
+            const dd = d.getDate();        // LOCAL day  ← key: no UTC conversion
+            const moStr = mo < 10 ? '0' + mo : '' + mo;
+            const ddStr = dd < 10 ? '0' + dd : '' + dd;
+            return `${y}-${moStr}-${ddStr}`;
+          }
+        } else {
+          // ✅ No timezone marker → string slice is safe (no UTC shift involved)
+          // e.g. "2026-02-17T00:00:00.0000000"  →  "2026-02-17"
+          const datePart = dateInput.split('T')[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+            return datePart;
+          }
         }
       }
 

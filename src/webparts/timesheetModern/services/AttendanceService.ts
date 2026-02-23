@@ -164,7 +164,9 @@ public getAttendanceStatus(
       Source: spItem.Source,
       Created: spItem.Created,
       Modified: spItem.Modified,
-      PunchDate: spItem.PunchDate,
+      // ✅ FIX: Normalize PunchDate at source so callers never need to split('T')[0]
+      // Raw value e.g. "2026-02-08T18:30:00Z" (UTC) → normalized to "2026-02-09" (IST local)
+      PunchDate: spItem.PunchDate ? this.normalizeToDateString(spItem.PunchDate) : undefined,
       Title: spItem.Title
     };
   }

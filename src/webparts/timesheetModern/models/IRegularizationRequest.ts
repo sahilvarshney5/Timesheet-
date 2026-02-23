@@ -3,21 +3,21 @@ export interface IRegularizationRequest {
   employeeId: string; // CHANGED from Number to string
   employeeName: string;
   requestType: 'day_based' | 'time_based' | 'Day';
-  category: 'late_coming' | 'early_going' | 'missed_punch' | 'work_from_home' | 'on_duty';
+  category?: string; // FIXED: Made optional (string | undefined) to match SP mapping
   fromDate: string;
   toDate: string;
   startTime?: string;
   endTime?: string;
-  reason: string;
-  status: 'pending' | 'approved' | 'rejected' | 'draft'; // ADDED: Missing status property
+  reason?: string; // FIXED: Made optional (string | undefined) to match SP mapping
+  status: 'pending' | 'approved' | 'rejected' | 'draft';
   submittedOn: string;
   approvedBy?: string;
   approvedOn?: string;
   managerComment?: string;
-  dateRange?: string; // ADDED: For formatted date range display in UI
+  dateRange?: string;
   // Legacy/deprecated properties for backwards compatibility
   attendanceDate?: string;
   requestedInTime?: string;
   requestedOutTime?: string;
-  RequestID?: string; // ADDED: For consistency with SharePoint column
+  RequestID?: string;
 }

@@ -487,8 +487,12 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
 
         // Step 2: Mark present days from punch data (use PunchDate for date matching)
         punchRecords.forEach(punch => {
+          // ✅ FIX: Use normalizeDateToString instead of .split('T')[0]
+          // SharePoint returns UTC ISO strings e.g. "2026-02-08T18:30:00Z" for 9 Feb IST.
+          // String-slicing the UTC prefix gives "2026-02-08" (wrong). normalizeDateToString
+          // detects the 'Z' suffix and reads LOCAL date parts → "2026-02-09" ✅
           const punchDateStr = punch.PunchDate
-            ? punch.PunchDate.split('T')[0]
+            ? normalizeDateToString(punch.PunchDate)
             : punch.AttendanceDate;
           if (punchDateStr && (punch.PunchIn || punch.Status === 'Synced')) {
             attendanceMap.set(punchDateStr, 'present');
@@ -525,9 +529,10 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
         // ====================================================================
         const punchHoursMap = new Map<string, number>();
         punchRecords.forEach((punch: IPunchData) => {
-          // Normalize date to YYYY-MM-DD for reliable key matching
+          // ✅ FIX: Use normalizeDateToString instead of .split('T')[0]
+          // Same UTC string issue — see Step 2 comment above for full explanation.
           const punchDateStr = punch.PunchDate
-            ? punch.PunchDate.split('T')[0]
+            ? normalizeDateToString(punch.PunchDate)
             : punch.AttendanceDate;
           if (punchDateStr) {
             // Use TotalHours from Punch Data; default to 0 if absent/null
@@ -653,7 +658,7 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
     return;
   }
 
-  // ✅ RESET: Clear filtered milestones on modal open
+  // ✅ RESET: Clear filtered milestones on modal open (will be re-populated when project is selected)
   setFilteredMilestones([]);
   setAvailableTaskTypes([]);
 
@@ -671,10 +676,41 @@ const [filteredMilestones, setFilteredMilestones] = React.useState<IProjectAssig
   setEditingEntry(entry);
   
   // ✅ FILTER MILESTONES: Pre-populate filtered milestones for editing
+  //    Apply date-based filter (ProjectType / date-range) in addition to project filter
   if (entry.project) {
-    const filteredTasks = activeProjectstype.filter(
+    // Step 1: Filter by project
+    const projectTasks = activeProjectstype.filter(
       task => task.ProjectNumber === entry.project
     );
+    // Step 2: Apply global + date-based filter using the entry's own date
+    const filteredTasks = projectTasks.filter(task => {
+      // Global: exclude hold work status
+      const ws = (task.WorkStatus ?? '').toLowerCase();
+      // const ps = (task.ProjectStatus ?? '').toLowerCase();
+
+      if (ws === 'on_x0020_hold' || ws === 'hold') return false;
+      // Global: exclude inactive projects
+      if ((task.ProjectStatus ?? '').trim() !== '') return false;
+      // Date-based filter
+      const entryDate = entry.date;
+      if (entryDate) {
+        const pType = (task.ProjectType ?? '').trim().toLowerCase();
+        // if (pType === 'billable') {
+        if (pType === 'LUMPSUM') {
+          const rs = task.ResourceStDate ? task.ResourceStDate.split('T')[0] : '';
+          const re = task.ResourceEdDate ? task.ResourceEdDate.split('T')[0] : '';
+          if (rs && entryDate < rs) return false;
+          if (re && entryDate > re) return false;
+        } else {
+          const ts = task.TaskStDate ? task.TaskStDate.split('T')[0] : '';
+          const te = task.TaskEdDate ? task.TaskEdDate.split('T')[0] : '';
+          if (ts && entryDate < ts) return false;
+          if (te && entryDate > te) return false;
+        }
+      }
+      return true;
+    });
+
     setFilteredMilestones(filteredTasks);
     
     setAvailableTaskTypes(filteredTasks.map(task => ({
@@ -720,16 +756,86 @@ const handleCloseModal = (): void => {
   if (field === 'date' && typeof value === 'string' && isFutureDate(value)) {
     return; // Silently block future dates
   }
+
+  // ✅ NEW: When date changes, re-filter milestones for the currently selected project
+  //         This ensures date-range validation (Billable/Non-Billable) stays current
+  //         even when the user changes the date AFTER having already picked a project.
+  if (field === 'date' && typeof value === 'string' && formData.project) {
+    const newDate = value;
+    const projectTasks = activeProjectstype.filter(
+      task => task.ProjectNumber === formData.project
+    );
+    const reFiltred = projectTasks.filter(task => {
+      const ws = (task.WorkStatus ?? '').toLowerCase();
+      if (ws === 'on_x0020_hold' || ws === 'hold') return false;
+      if ((task.ProjectStatus ?? '').trim() !== '') return false;
+      if (newDate) {
+        const pType = (task.ProjectType ?? '').trim().toLowerCase();
+        if (pType === 'billable') {
+          const rs = task.ResourceStDate ? task.ResourceStDate.split('T')[0] : '';
+          const re = task.ResourceEdDate ? task.ResourceEdDate.split('T')[0] : '';
+          if (rs && newDate < rs) return false;
+          if (re && newDate > re) return false;
+        } else {
+          const ts = task.TaskStDate ? task.TaskStDate.split('T')[0] : '';
+          const te = task.TaskEdDate ? task.TaskEdDate.split('T')[0] : '';
+          if (ts && newDate < ts) return false;
+          if (te && newDate > te) return false;
+        }
+      }
+      return true;
+    });
+    setFilteredMilestones(reFiltred);
+    setAvailableTaskTypes(reFiltred.map(task => ({
+      taskType: task.TaskName,
+      duration: parseFloat(task.DurationTask || '0'),
+      projectNumber: task.ProjectNumber,
+      taskNumber: task.TaskNumber
+    })));
+    // If previously selected taskType is no longer valid, reset it
+    const currentTaskStillValid = reFiltred.some(t => t.TaskName === formData.taskType);
+    if (!currentTaskStillValid) {
+      setFormData(prev => ({ ...prev, date: newDate, taskType: '', hours: 0 }));
+      return;
+    }
+  }
   
   // NEW: Project change - filter milestones
 if (field === 'project' && typeof value === 'string') {
   setSelectedProjectNumber(value);
   
-  // ✅ FILTER MILESTONES: Only show milestones for selected project
+  // ✅ FILTER MILESTONES: Apply project filter + global + date-based filter
   if (value) {
-    const filteredTasks = activeProjectstype.filter(
+    // Step 1: Filter by project
+    const projectTasks = activeProjectstype.filter(
       task => task.ProjectNumber === value
     );
+
+    // Step 2: Apply global + date-based filter using the currently selected date
+    const selectedDate = formData.date;
+    const filteredTasks = projectTasks.filter(task => {
+      // Global: exclude hold work status
+      const ws = (task.WorkStatus ?? '').toLowerCase();
+      if (ws === 'on_x0020_hold' || ws === 'hold') return false;
+      // Global: exclude inactive projects
+      if ((task.ProjectStatus ?? '').trim() !== '') return false;
+      // Date-based filter (only when a date is already chosen)
+      if (selectedDate) {
+        const pType = (task.ProjectType ?? '').trim().toLowerCase();
+        if (pType === 'billable') {
+          const rs = task.ResourceStDate ? task.ResourceStDate.split('T')[0] : '';
+          const re = task.ResourceEdDate ? task.ResourceEdDate.split('T')[0] : '';
+          if (rs && selectedDate < rs) return false;
+          if (re && selectedDate > re) return false;
+        } else {
+          const ts = task.TaskStDate ? task.TaskStDate.split('T')[0] : '';
+          const te = task.TaskEdDate ? task.TaskEdDate.split('T')[0] : '';
+          if (ts && selectedDate < ts) return false;
+          if (te && selectedDate > te) return false;
+        }
+      }
+      return true;
+    });
     
     // ✅ UPDATE: Set filtered milestones state
     setFilteredMilestones(filteredTasks);
@@ -1562,7 +1668,7 @@ const handleSubmitTimesheet = async (): Promise<void> => {
               </div>
 
               <div className={styles.formRow}>
-              <div className={styles.formGroup}>\
+              <div className={styles.formGroup}>
                   {/*
                     REQUIREMENT 2 / ISSUE 2 FIX: Hours input allows decimal values.
                     OLD LOGIC COMMENTED – Replaced with decimal-safe settings:

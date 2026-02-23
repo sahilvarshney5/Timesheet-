@@ -46,7 +46,7 @@ export const SharePointConfig: ISharePointConfig = {
     },
     punchData: {
       displayName: 'Punch Data',
-      internalName: 'Punch Data'
+      internalName: 'Punch%20Data'
     },
     leaveData: {
       displayName: 'Leave Data',
@@ -441,6 +441,37 @@ export const SharePointConfig: ISharePointConfig = {
       DurationTask: {
         displayName: 'Duration of task',
         internalName: 'DurationTask'
+      },
+       WorkStatus: {
+        displayName: 'Work Status',
+        internalName: 'WorkStatus'
+      },
+      ProjectType:{
+        displayName: 'Project Type',
+        internalName: 'ProjectType'
+      },
+      ResourceStDate:{
+        displayName: 'Resource Start Date',
+        internalName: 'ResourceStDate'
+      }
+      ,
+      ResourceEdDate:{
+        displayName: 'Resource End Date',
+        internalName: 'ResourceEdDate'
+      }
+      ,
+      TaskStDate:{
+        displayName: 'Task Start Date',
+        internalName: 'ProjectStDate'
+      }
+      ,
+      TaskEdDate:{
+        displayName: 'Task End Date',
+        internalName: 'ProjectEdDate'
+      },
+      ProjectStatus:{
+        displayName: 'Project Status',
+        internalName: 'ProjectStatus'
       }
     }
   },

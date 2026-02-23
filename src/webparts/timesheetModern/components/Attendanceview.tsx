@@ -60,32 +60,53 @@ interface IHoliday {
 const getDateOnly = (value: string | null | undefined): string => {
   if (!value) return '';
 
-  // FAST PATH 1: ISO datetime with 'T' separator  ← most common from SharePoint
-  // "2026-02-17T18:30:00Z"        → "2026-02-17"  ✅  (no timezone math)
-  // "2026-02-17T00:00:00.0000000" → "2026-02-17"  ✅
-  // "2026-02-17T18:30:00+05:30"   → "2026-02-17"  ✅
+  // FAST PATH 1: already bare YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value; // ✅ already clean
+  }
+
+  // FAST PATH 2: ISO datetime with 'T' separator
   //
-  // OLD UTC DATE LOGIC COMMENTED – caused +1 day shift in IST:
-  // const d = new Date(value);
-  // return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); // ❌ local shift
+  // ⚠️  ROOT CAUSE OF -1 DAY BUG (fixed here):
+  //   SharePoint REST API always returns dates as UTC ISO strings.
+  //   Stored value in IST: 9 Feb 2026
+  //   Returned as         : "2026-02-08T18:30:00Z"  ← midnight IST = 18:30 UTC prev day
+  //
+  //   OLD (wrong): "2026-02-08T18:30:00Z".split('T')[0]  →  "2026-02-08"  ❌  shows Feb 8
+  //
+  //   FIX: For UTC strings (ending in 'Z' or ±offset), parse with new Date()
+  //   and read LOCAL date parts — the browser converts UTC→IST automatically:
+  //   new Date("2026-02-08T18:30:00Z").getDate()  →  9  ✅  (in IST +5:30)
+  //
   if (value.indexOf('T') !== -1) {
-    const part = value.split('T')[0];
-    if (/^\d{4}-\d{2}-\d{2}$/.test(part)) {
-      return part; // ✅ pure string slice — no Date object, no timezone
+    const lastChar = value.charAt(value.length - 1);
+    const hasUtcMarker  = lastChar === 'Z';
+    const hasOffsetSuffix = /[+-]\d{2}:\d{2}$/.test(value);
+
+    if (hasUtcMarker || hasOffsetSuffix) {
+      // UTC / offset string → use LOCAL date parts
+      const d = new Date(value);
+      if (!isNaN(d.getTime())) {
+        const y  = d.getFullYear();
+        const mo = d.getMonth() + 1;
+        const dd = d.getDate();
+        return `${y}-${mo < 10 ? '0' + mo : mo}-${dd < 10 ? '0' + dd : dd}`;
+      }
+    } else {
+      // No timezone marker → string slice is safe (e.g. "2026-02-17T00:00:00.0000000")
+      const part = value.split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(part)) {
+        return part; // ✅
+      }
     }
   }
 
-  // FAST PATH 2: space-separated  "2026-02-17 18:30:00"
+  // FAST PATH 3: space-separated  "2026-02-17 18:30:00"
   if (value.indexOf(' ') !== -1) {
     const part = value.split(' ')[0];
     if (/^\d{4}-\d{2}-\d{2}$/.test(part)) {
       return part; // ✅
     }
-  }
-
-  // FAST PATH 3: already YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value; // ✅
   }
 
   // UNKNOWN FORMAT — log and return empty rather than risk a shifted Date parse

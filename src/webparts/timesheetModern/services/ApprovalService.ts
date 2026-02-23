@@ -167,7 +167,13 @@ export class ApprovalService {
           employeeName: item.Author?.Title || 'Unknown',
           requestType: item.RequestType === 'Day' ? 'Timesheet' : 'Regularization',
           dateRange: dateRange,
-          status: 'Pending'
+          status: 'Pending',
+           approvedBy: item.Editor?.Title,
+        approvedOn: item.Modified,
+        fromDate:fromDate,
+        toDate:toDate,
+         Category:this.extractRequestType(item.Reason) || undefined,
+        reason:item.Reason,
         };
       });
 
@@ -231,7 +237,9 @@ export class ApprovalService {
           employeeName: item.Author?.Title || 'Unknown',
           requestType: 'Timesheet',
           dateRange: dateRange,
-          status: 'Pending'
+          status: 'Pending',
+          approvedBy: item.Editor?.Title,
+        approvedOn: item.Modified,
         };
       });
 
@@ -241,7 +249,16 @@ export class ApprovalService {
       return [];
     }
   }
+/**
+ * Extract value inside square brackets.
+ * Example: "[ON DUTY] Request Raised" => "ON DUTY"
+ */
+public extractRequestType = (reasonText?: string): string | null => {
+  if (!reasonText) return null;
 
+  const match = reasonText.match(/\[(.*?)\]/);
+  return match ? match[1] : null;
+};
   /**
    * ENHANCED: Get approval history filtered by manager email
    */
@@ -305,7 +322,13 @@ export class ApprovalService {
           employeeName: item.Author?.Title || 'Unknown',
           requestType: item.RequestType === 'Day' ? 'Timesheet' : 'Regularization',
           dateRange: dateRange,
-          status: item.Status as 'Approved' | 'Rejected'
+          status: item.Status as 'Approved' | 'Rejected',
+            approvedBy: item.Editor?.Title,
+        approvedOn: item.Modified,
+        fromDate:fromDate,
+        toDate:toDate,
+        Category:this.extractRequestType(item.Reason) || undefined,
+        reason:item.Reason,
         };
       });
 

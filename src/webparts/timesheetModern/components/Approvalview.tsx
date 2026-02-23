@@ -76,13 +76,14 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
         employeeId: req.employeeName,
         employeeName: req.employeeName,
         requestType: req.requestType === 'Timesheet' ? 'day_based' : 'day_based',
-        category: 'late_coming' as const,
-        fromDate: req.dateRange,
-        toDate: req.dateRange,
-        reason: '',
+        category: req.Category,//'late_coming' as const,
+        fromDate: req.fromDate ?? '',
+        toDate: req.todate ?? '',
+        reason: req.reason,
         status: 'pending',
         submittedOn: new Date().toISOString().split('T')[0],
-        dateRange: req.dateRange
+        dateRange: req.dateRange,
+      
       }));
 
       setPendingRequests(regularizationRequests);
@@ -102,13 +103,15 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
         employeeId: item.employeeName,
         employeeName: item.employeeName,
         requestType: item.requestType === 'Timesheet' ? 'day_based' : 'day_based',
-        category: 'late_coming' as const,
+        category: item.Category,//'late_coming' as const,
         fromDate: item.dateRange,
         toDate: item.dateRange,
-        reason: '',
+        reason: item.reason,
         status: item.status.toLowerCase() as 'pending' | 'approved' | 'rejected',
         submittedOn: new Date().toISOString().split('T')[0],
-        dateRange: item.dateRange
+        dateRange: item.dateRange,
+        approvedBy:item.approvedBy,
+        approvedOn:item.approvedOn
       }));
 
       setApprovalHistory(regularizationHistory);
@@ -190,7 +193,7 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
     try {
       setIsProcessing(true);
 
-      await approvalService.approveRequest(actioningRequest.id!);
+      await approvalService.approveRequest(actioningRequest.id!,approveComment);
 
       await Promise.all([
         loadPendingRequests(),
@@ -200,8 +203,8 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
       setApproveModalOpen(false);
       setActioningRequest(null);
       setApproveComment('');
-      alert(`✓ Request approved successfully!\n\nEmployee: ${actioningRequest.employeeName}\nDate: ${formatDateRange(actioningRequest.fromDate, actioningRequest.toDate)}`);
-
+      alert(`✓ Request approved successfully!\n\nEmployee: ${actioningRequest.employeeName}\nDate: ${actioningRequest.fromDate}`);
+// ${formatDateRange(actioningRequest.fromDate, actioningRequest.toDate)}
     } catch (err) {
       alert('Failed to approve request. Please try again.');
     } finally {
@@ -294,9 +297,10 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
     }
   };
 
-  const formatCategoryText = (category: string): string => {
-    return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
+ const formatCategoryText = (category: string | undefined): string => {
+  if (!category) return '-';
+  return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
 
   // FIX: Add allPendingRequests with proper type
   const allPendingRequests = React.useMemo(() => {
@@ -519,7 +523,8 @@ const ApprovalView: React.FC<IApprovalViewProps> = (props) => {
                   <div className={styles.detailItem}>
                     <span className={styles.detailLabel}>Date Range:</span>
                     <span className={styles.detailValue}>
-                      {formatDateRange(selectedRequest.fromDate, selectedRequest.toDate)}
+                      {selectedRequest.dateRange}
+                      {/* {formatDateRange(selectedRequest.fromDate, selectedRequest.toDate)} */}
                     </span>
                   </div>
 

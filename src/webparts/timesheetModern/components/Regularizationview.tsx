@@ -125,9 +125,10 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
-  const formatCategoryText = (category: string): string =>
-    category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-
+ const formatCategoryText = (category: string | undefined): string => {
+  if (!category) return '-';
+  return category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
   const calculateDuration = (from: string, to: string): number => {
     if (!from || !to) return 0;
     const fromDate = new Date(from);
@@ -136,10 +137,16 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
+  // const getMaxAllowedDate = (): string => {
+  //   const yesterday = new Date();
+  //   yesterday.setDate(yesterday.getDate() - 1);
+  //   return yesterday.toISOString().split('T')[0];
+  // };
+
   const getMaxAllowedDate = (): string => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    return yesterday.toISOString().split('T')[0];
+    const today = new Date();
+    // yesterday.setDate(yesterday.getDate() - 1);
+    return today.toISOString().split('T')[0];
   };
 
   /**
@@ -390,16 +397,16 @@ const RegularizationView: React.FC<IRegularizationViewProps> = (props) => {
       const end = new Date(toDate);
       end.setHours(0, 0, 0, 0);
 
-      if (start >= today) {
+      if (start > today) {
         return {
           isValid: false,
-          reason: `Cannot raise regularization for today or future dates.\n\nRegularization can only be raised for past dates (yesterday and earlier).`,
+          reason: `Cannot raise regularization for future dates.\n\nRegularization can only be raised for past dates (Today, yesterday and earlier).`,
         };
       }
-      if (end >= today) {
+      if (end > today) {
         return {
           isValid: false,
-          reason: `To Date cannot be today or a future date.`,
+          reason: `To Date cannot be a future date.`,
         };
       }
 
@@ -593,7 +600,8 @@ const createManualPunchRecord = React.useCallback(async (
         Reason:       enhancedReason,
         Status:       'Pending' as const,
         ManagerEmail: managerEmail,
-        FootPrint:"App"
+        FootPrint:"App",
+        Category:category,
       };
 
       // ── Persist ────────────────────────────────────────────────────────────────
@@ -1133,7 +1141,7 @@ const createManualPunchRecord = React.useCallback(async (
                   disabled={isSaving}
                   defaultValue={
                     isEditMode && editingRequest
-                      ? editingRequest.reason.replace(/^\[.*?\]\s*/, '')
+                      ? (editingRequest.reason ?? '').replace(/^\[.*?\]\s*/, '')
                       : ''
                   }
                   required
