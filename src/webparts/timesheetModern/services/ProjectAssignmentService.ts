@@ -1,7 +1,15 @@
 // src/webparts/timesheetModern/services/ProjectAssignmentService.ts
-// ENHANCED: Added date-based milestone/activity filtering logic
-// Applies global filters (ProjectStatus, WorkStatus, BookingEnabled)
-// and date-range filters based on ProjectType (Billable vs Non-Billable)
+// ENHANCED: Added ProjectStatus="All" hide logic
+//
+// NEW BEHAVIOUR (additive — zero impact on existing callers):
+//   • getHiddenProjectNames()       → fetches all ProjectName values where
+//                                      ProjectStatus = "All" (single API call, cached)
+//   • getFilteredProjectAssignments() → entry-point for the Add-Entry modal dropdown;
+//                                        excludes hidden projects from both the project
+//                                        list AND the milestone/activity list
+//   • All existing public methods (getActiveProjectAssignments, getMilestonesForDate,
+//     filterAssignmentsByDate, getTaskTypeOptionsForProject, getDurationForTaskType,
+//     getAllTaskTypes) are UNCHANGED in signature and behaviour.
 //
 // ✅ EXISTING FUNCTIONALITY PRESERVED — only filtering enhanced
 // ✅ NO IMPACT on Approval / Dashboard / Attendance modules
@@ -9,6 +17,8 @@
 import { SPHttpClient } from '@microsoft/sp-http';
 import { HttpClientService } from '../services/HttpClientService';
 import { getListInternalName, getColumnInternalName } from '../config/SharePointConfig';
+
+// ─── Interfaces ──────────────────────────────────────────────────────────────
 
 export interface IProjectAssignment {
   Id: number;
@@ -25,15 +35,13 @@ export interface IProjectAssignment {
   ProjectID: string;
   JobTaskType: string;
   DurationTask: string;
-
-  // ── NEW columns required for date-based milestone filtering ──────────────
   ProjectType?: string;       // "Billable" | "Non-Billable" | other
-  ProjectStatus?: string;     // NULL = active; any value = inactive
-  WorkStatus?: string;        // "on_x0020_hold" = hold (must be excluded)
-  TaskStDate?: string;        // Task Start Date  (used when Non-Billable)
-  TaskEdDate?: string;        // Task End Date    (used when Non-Billable)
-  ResourceStDate?: string;    // Resource Start Date (used when Billable)
-  ResourceEdDate?: string;    // Resource End Date   (used when Billable)
+  ProjectStatus?: string;     // "All" = hidden from UI; NULL/empty = active
+  WorkStatus?: string;        // "on_x0020_hold" = hold (excluded)
+  TaskStDate?: string;        // Task Start Date  (Non-Billable date gate)
+  TaskEdDate?: string;        // Task End Date    (Non-Billable date gate)
+  ResourceStDate?: string;    // Resource Start Date (Billable date gate)
+  ResourceEdDate?: string;    // Resource End Date   (Billable date gate)
 }
 
 export interface ITaskTypeOption {
@@ -43,8 +51,32 @@ export interface ITaskTypeOption {
   taskNumber: string;
 }
 
+/**
+ * Result shape returned by getFilteredProjectAssignments.
+ * The modal only needs to know the unique project names for the Project dropdown
+ * and the full assignment rows for the Milestone/Activity dropdown.
+ */
+export interface IFilteredAssignmentResult {
+  /** Unique project names visible in the Project dropdown (hidden projects excluded). */
+  visibleProjectNames: string[];
+  /** Full assignment rows with hidden projects already removed (used for milestone dropdown). */
+  assignments: IProjectAssignment[];
+  /** Project names that were suppressed because ProjectStatus = "All". */
+  hiddenProjectNames: string[];
+}
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+
 export class ProjectAssignmentService {
   private httpService: HttpClientService;
+
+  /**
+   * In-memory cache for hidden project names (ProjectStatus = "All").
+   * Populated on the first call to getHiddenProjectNames() and reused
+   * for the lifetime of the service instance (typically one page load).
+   * Set to null to indicate "not yet fetched".
+   */
+  private _hiddenProjectNamesCache: string[] | null = null;
 
   constructor(spHttpClient: SPHttpClient, siteUrl: string) {
     this.httpService = new HttpClientService(spHttpClient, siteUrl);
@@ -52,28 +84,22 @@ export class ProjectAssignmentService {
 
   // ============================================================================
   // PRIVATE HELPER — normalize any date-ish value to "YYYY-MM-DD" string
-  // Mirrors the logic in DateUtils.normalizeDateToString without creating a
-  // hard dependency on that module from the service layer.
   // ============================================================================
   private normalizeDateStr(value: string | null | undefined): string {
     if (!value) return '';
-    // Fast path: already YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-    // ISO datetime → take date part only (avoids UTC/local shift)
     if (value.indexOf('T') !== -1) {
       const part = value.split('T')[0];
       if (/^\d{4}-\d{2}-\d{2}$/.test(part)) return part;
     }
-    // Space-separated datetime
     if (value.indexOf(' ') !== -1) {
       const part = value.split(' ')[0];
       if (/^\d{4}-\d{2}-\d{2}$/.test(part)) return part;
     }
-    // Fallback — let Date parse it and re-format using LOCAL accessors
     const d = new Date(value);
     if (isNaN(d.getTime())) return '';
-    const y  = d.getFullYear();
-    const mNum  = d.getMonth() + 1;
+    const y    = d.getFullYear();
+    const mNum = d.getMonth() + 1;
     const dyNum = d.getDate();
     const m  = mNum  < 10 ? '0' + mNum  : '' + mNum;
     const dy = dyNum < 10 ? '0' + dyNum : '' + dyNum;
@@ -83,19 +109,17 @@ export class ProjectAssignmentService {
   // ============================================================================
   // PRIVATE HELPER — Apply global + date-based milestone filter
   //
-  // Global conditions (applied to ALL records regardless of date):
+  // Global conditions (all records):
   //   1. ProjectStatus must be NULL/empty  (active projects only)
-  //   2. WorkStatus must NOT be 'on_x0020_hold'
+  //      NOTE: "All" records are stripped out by getFilteredProjectAssignments
+  //            BEFORE this method is called, so the check here acts as a
+  //            safety net for any other non-empty ProjectStatus values.
+  //   2. WorkStatus must NOT be 'on_x0020_hold' / 'hold'
   //   3. BookingEnabled must be TRUE
   //
-  // Date-based conditions (applied when selectedDate is provided):
-  //   • ProjectType = "Billable"     → use ResourceStDate / ResourceEdDate
-  //   • ProjectType = "Non-Billable" → use TaskStDate    / TaskEdDate
-  //   selectedDate must fall within [startDate, endDate] (inclusive)
-  //
-  // ✅ If selectedDate is not provided the date check is skipped so that
-  //    existing callers (e.g. getActiveProjectAssignments used by Dashboard,
-  //    copy-paste flows, etc.) are unaffected.
+  // Date-based conditions (only when selectedDate is provided):
+  //   • Billable     → ResourceStDate / ResourceEdDate
+  //   • Non-Billable → TaskStDate / TaskEdDate
   // ============================================================================
   private applyMilestoneFilter(
     assignments: IProjectAssignment[],
@@ -106,81 +130,207 @@ export class ProjectAssignmentService {
       : null;
 
     return assignments.filter(item => {
-      // ── GLOBAL FILTER 1: ProjectStatus must be NULL / empty ─────────────
-      // SharePoint returns null for empty fields.  Treat null, undefined, and
-      // empty string all as "active".
+      // ── GLOBAL 1: ProjectStatus must be NULL/empty ───────────────────────
       const projectStatus = item.ProjectStatus ?? '';
       if (projectStatus.trim() !== '') {
         return false;
       }
 
-      // ── GLOBAL FILTER 2: WorkStatus must NOT be 'on_x0020_hold' ─────────
-      // The internal OData value for "Hold" is 'on_x0020_hold'.
-      // We also guard against the display value "Hold" (case-insensitive).
+      // ── GLOBAL 2: WorkStatus must NOT be hold ───────────────────────────
       const workStatus = (item.WorkStatus ?? '').toLowerCase();
-      if (
-        workStatus === 'on_x0020_hold' ||
-        workStatus === 'hold'
-      ) {
+      if (workStatus === 'on_x0020_hold' || workStatus === 'hold') {
         return false;
       }
 
-      // ── GLOBAL FILTER 3: BookingEnabled must be TRUE ─────────────────────
+      // ── GLOBAL 3: BookingEnabled must be TRUE ────────────────────────────
       if (!item.BookingEnabled) {
         return false;
       }
 
-      // ── DATE-BASED FILTER (only when a date is provided) ─────────────────
+      // ── DATE-BASED FILTER ────────────────────────────────────────────────
       if (normalizedSelected) {
         const projectType = (item.ProjectType ?? '').trim().toLowerCase();
 
         if (projectType === 'billable') {
-          // Billable → validate against Resource dates
           const resourceStart = this.normalizeDateStr(item.ResourceStDate);
           const resourceEnd   = this.normalizeDateStr(item.ResourceEdDate);
-
           if (resourceStart && normalizedSelected < resourceStart) return false;
           if (resourceEnd   && normalizedSelected > resourceEnd)   return false;
-
         } else {
-          // Non-Billable (and any other type) → validate against Task dates
           const taskStart = this.normalizeDateStr(item.TaskStDate);
           const taskEnd   = this.normalizeDateStr(item.TaskEdDate);
-
           if (taskStart && normalizedSelected < taskStart) return false;
           if (taskEnd   && normalizedSelected > taskEnd)   return false;
         }
       }
 
-      return true; // Passed all filters
+      return true;
     });
   }
 
   // ============================================================================
-  // PUBLIC: Get active project assignments for a resource
-  // ✅ EXISTING BEHAVIOUR PRESERVED — still fetches all assignments and applies
-  //    the original ValidTo / BookingEnabled OData filter on the server side.
-  //    The new global + date filters are applied client-side via applyMilestoneFilter.
+  // NEW PUBLIC: Fetch project names where ProjectStatus = "All"
+  //
+  // Strategy
+  // ────────
+  // A single OData call fetches ONLY the ProjectName column filtered by
+  // ProjectStatus eq 'All'.  This is much cheaper than fetching all columns
+  // for all records.  Results are de-duplicated and cached in memory so that
+  // subsequent calls within the same session are instant.
+  //
+  // Returns [] on any error so callers are never blocked.
+  // ============================================================================
+  public async getHiddenProjectNames(): Promise<string[]> {
+    // Return cached result immediately if available
+    if (this._hiddenProjectNamesCache !== null) {
+      return this._hiddenProjectNamesCache;
+    }
+
+    try {
+      const listName        = getListInternalName('projectAssignment');
+      const projectNameCol  = getColumnInternalName('ProjectAssignment', 'ProjectName');
+      const projectStatusCol = getColumnInternalName('ProjectAssignment', 'ProjectStatus');
+
+      // Fetch only the two columns we need, filtered server-side
+      const filterQuery = `$filter=${projectStatusCol} eq 'All'`;
+      const selectFields = [projectNameCol];
+
+      const items = await this.httpService.getListItems<{ ProjectName?: string; [key: string]: any }>(
+        listName,
+        selectFields,
+        filterQuery,
+        undefined,   // no orderBy needed
+        5000         // fetch up to 5 000 rows (safe upper bound)
+      );
+
+      // De-duplicate: multiple rows can share the same ProjectName
+      const nameSet = new Set<string>();
+      items.forEach(item => {
+        const name = (item[projectNameCol] || item['ProjectName'] || '').trim();
+        if (name) nameSet.add(name);
+      });
+
+      this._hiddenProjectNamesCache = Array.from(nameSet);
+
+      console.log(
+        `[ProjectAssignmentService] getHiddenProjectNames: ` +
+        `${this._hiddenProjectNamesCache.length} hidden project(s) found → `,
+        this._hiddenProjectNamesCache
+      );
+
+      return this._hiddenProjectNamesCache;
+
+    } catch (error) {
+      console.error(
+        '[ProjectAssignmentService] Error fetching hidden project names:',
+        error
+      );
+      // Cache empty array so we don't keep retrying on every keystroke
+      this._hiddenProjectNamesCache = [];
+      return [];
+    }
+  }
+
+  // ============================================================================
+  // NEW PUBLIC: Get filtered assignments for the Add-Entry modal
+  //
+  // This is the ONLY method the modal's Project dropdown and Milestone dropdown
+  // should call.  It:
+  //   1. Fetches hidden project names (ProjectStatus = "All") — cached after
+  //      the first call, so parallel calls within the same modal session are free.
+  //   2. Fetches all active assignments for the resource.
+  //   3. Removes any assignment whose ProjectName is in the hidden list.
+  //   4. Optionally applies the date-based milestone filter (pass selectedDate
+  //      when the user has already chosen a date in the modal).
+  //   5. Returns a typed result object with:
+  //        • visibleProjectNames  — distinct names for the Project <select>
+  //        • assignments          — filtered rows for the Milestone <select>
+  //        • hiddenProjectNames   — for debug / audit logging
+  //
+  // Concurrency: steps 1 and 2 are fired in parallel with Promise.all so that
+  // both network requests are in-flight simultaneously.
+  // ============================================================================
+  public async getFilteredProjectAssignments(
+    resourceId: string,
+    selectedDate?: string
+  ): Promise<IFilteredAssignmentResult> {
+    try {
+      // ── STEP 1 & 2: Parallel fetch ─────────────────────────────────────────
+      const [hiddenProjectNames, allAssignments] = await Promise.all([
+        this.getHiddenProjectNames(),
+        this.getActiveProjectAssignments(resourceId)
+      ]);
+
+      // Build a fast O(1) lookup set from the hidden names array
+      const hiddenSet = new Set<string>(
+        hiddenProjectNames.map(name => name.trim().toLowerCase())
+      );
+
+      // ── STEP 3: Strip hidden projects ──────────────────────────────────────
+      const visibleAssignments = allAssignments.filter(a => {
+        const name = (a.ProjectName || '').trim().toLowerCase();
+        return !hiddenSet.has(name);
+      });
+
+      // ── STEP 4: Apply date-based milestone filter (if date provided) ────────
+      // applyMilestoneFilter also enforces BookingEnabled / WorkStatus globally.
+      const filteredAssignments = this.applyMilestoneFilter(visibleAssignments, selectedDate);
+
+      // ── STEP 5: Build unique project name list for the dropdown ─────────────
+      const projectNameSet = new Set<string>();
+      filteredAssignments.forEach(a => {
+        if (a.ProjectName) projectNameSet.add(a.ProjectName);
+      });
+      const visibleProjectNames = Array.from(projectNameSet).sort();
+
+      console.log(
+        `[ProjectAssignmentService] getFilteredProjectAssignments(${resourceId}, ${selectedDate ?? 'no-date'}): ` +
+        `${allAssignments.length} total → ${filteredAssignments.length} visible ` +
+        `(${hiddenProjectNames.length} project(s) hidden)`
+      );
+
+      return {
+        visibleProjectNames,
+        assignments: filteredAssignments,
+        hiddenProjectNames
+      };
+
+    } catch (error) {
+      console.error(
+        '[ProjectAssignmentService] Error in getFilteredProjectAssignments:',
+        error
+      );
+      return {
+        visibleProjectNames: [],
+        assignments: [],
+        hiddenProjectNames: []
+      };
+    }
+  }
+
+  // ============================================================================
+  // NEW PUBLIC: Invalidate the hidden-projects cache
+  //
+  // Call this if you suspect the SharePoint list has been updated at runtime
+  // (e.g. an admin changed ProjectStatus values) and you need fresh data.
+  // ============================================================================
+  public clearHiddenProjectsCache(): void {
+    this._hiddenProjectNamesCache = null;
+    console.log('[ProjectAssignmentService] Hidden project names cache cleared.');
+  }
+
+  // ============================================================================
+  // EXISTING: Get active project assignments for a resource
+  // ✅ UNCHANGED — existing callers (Dashboard, copy-paste, etc.) unaffected
   // ============================================================================
   public async getActiveProjectAssignments(resourceId: string): Promise<IProjectAssignment[]> {
     try {
       const listName = getListInternalName('projectAssignment');
       const today = new Date().toISOString().split('T')[0];
 
-      // const filterQuery =
-      //   `$filter=${getColumnInternalName('ProjectAssignment', 'ResourceID')} eq '${resourceId}' ` +
-      //   `and ${getColumnInternalName('ProjectAssignment', 'BookingEnabled')} eq 1 ` +
-      //   `and (` +
-      //   `${getColumnInternalName('ProjectAssignment', 'ValidTo')} ge '${today}' ` +
-      //   `or ${getColumnInternalName('ProjectAssignment', 'ValidTo')} eq null` +
-      //   `)`;
       const filterQuery =
         `$filter=${getColumnInternalName('ProjectAssignment', 'ResourceID')} eq '${resourceId}' ` +
         `and ${getColumnInternalName('ProjectAssignment', 'BookingEnabled')} eq 1 ` +
-        // `and (` +
-        // `${getColumnInternalName('ProjectAssignment', 'ValidTo')} ge '${today}' ` +
-        // `or ${getColumnInternalName('ProjectAssignment', 'ValidTo')} eq null` +
-        // `) ` +
 
         // Resource Date Validation
         `and ${getColumnInternalName('ProjectAssignment', 'ResourceStDate')} le '${today}' ` +
@@ -196,7 +346,6 @@ export class ProjectAssignmentService {
         `or ${getColumnInternalName('ProjectAssignment', 'TaskEdDate')} eq null` +
         `)`;
 
-      // ── Core columns (always present in the list) ─────────────────────────
       const coreSelectFields = [
         'Id',
         getColumnInternalName('ProjectAssignment', 'ResourceID'),
@@ -214,32 +363,16 @@ export class ProjectAssignmentService {
         getColumnInternalName('ProjectAssignment', 'DurationTask'),
         getColumnInternalName('ProjectAssignment', 'WorkStatus'),
         getColumnInternalName('ProjectAssignment', 'ProjectType'),
-         getColumnInternalName('ProjectAssignment', 'ResourceStDate'),
+        getColumnInternalName('ProjectAssignment', 'ResourceStDate'),
         getColumnInternalName('ProjectAssignment', 'ResourceEdDate'),
-         getColumnInternalName('ProjectAssignment', 'TaskStDate'),
+        getColumnInternalName('ProjectAssignment', 'TaskStDate'),
         getColumnInternalName('ProjectAssignment', 'TaskEdDate'),
         getColumnInternalName('ProjectAssignment', 'ProjectStatus')
       ];
 
-      // ── Extended columns for date-based filtering ─────────────────────────
-      // These may not exist if the SP list hasn't been updated yet.
-      // We attempt a fetch with all columns first. If it fails we
-      // fall back to core columns so the dropdown still loads.
-      // const extendedSelectFields = [
-      //   ...coreSelectFields,
-      //   'ProjectType',
-      //   'ProjectStatus',
-      //   'WorkStatus',
-      //   'TaskStDate',
-      //   'TaskEdDate',
-      //   'ResourceStDate',
-      //   'ResourceEdDate'
-      // ];
-
       let items: IProjectAssignment[];
 
       try {
-        // PRIMARY: fetch with new columns
         items = await this.httpService.getListItems<IProjectAssignment>(
           listName,
           coreSelectFields,
@@ -247,13 +380,11 @@ export class ProjectAssignmentService {
           'ProjectName'
         );
         console.log(
-          `[ProjectAssignmentService] Loaded ${items.length} assignments (extended columns) for ${resourceId}`
+          `[ProjectAssignmentService] Loaded ${items.length} assignments for ${resourceId}`
         );
       } catch (extError) {
-        // FALLBACK: one or more new columns don't exist in this SP environment yet
         console.warn(
-          '[ProjectAssignmentService] Extended column fetch failed — falling back to core columns. ' +
-          'Date-based filtering will be skipped until new SP columns are added.',
+          '[ProjectAssignmentService] Extended column fetch failed — falling back to core columns.',
           extError
         );
         items = await this.httpService.getListItems<IProjectAssignment>(
@@ -263,7 +394,7 @@ export class ProjectAssignmentService {
           'ProjectName'
         );
         console.log(
-          `[ProjectAssignmentService] Loaded ${items.length} assignments (core columns) for ${resourceId}`
+          `[ProjectAssignmentService] Loaded ${items.length} assignments (fallback) for ${resourceId}`
         );
       }
 
@@ -274,21 +405,13 @@ export class ProjectAssignmentService {
         '[ProjectAssignmentService] Error getting active project assignments:',
         error
       );
-      // Return empty array instead of throwing so the UI still loads
       return [];
     }
   }
 
   // ============================================================================
-  // PUBLIC NEW: Get milestones filtered by selected timesheet date
-  //
-  // This is the method Timesheetview.tsx should call when the user picks a date
-  // in the Add/Edit modal.  It:
-  //   1. Fetches all assignments for the resource (reuses getActiveProjectAssignments)
-  //   2. Applies the full global + date-based filter via applyMilestoneFilter
-  //
-  // ✅ Safe to call with no date — returns globally-filtered list (no date check).
-  // ✅ Zero impact on other modules that call getActiveProjectAssignments directly.
+  // EXISTING: Get milestones filtered by selected timesheet date
+  // ✅ UNCHANGED — signature and return type preserved
   // ============================================================================
   public async getMilestonesForDate(
     resourceId: string,
@@ -315,11 +438,8 @@ export class ProjectAssignmentService {
   }
 
   // ============================================================================
-  // PUBLIC: Filter an already-loaded assignment list by date
-  //
-  // Useful when Timesheetview.tsx already has activeProjectstype in state and
-  // just needs to re-filter without a round-trip to SharePoint (e.g. when the
-  // user changes the date field inside the modal).
+  // EXISTING: Filter an already-loaded assignment list by date
+  // ✅ UNCHANGED
   // ============================================================================
   public filterAssignmentsByDate(
     assignments: IProjectAssignment[],
@@ -330,7 +450,7 @@ export class ProjectAssignmentService {
 
   // ============================================================================
   // EXISTING: Get task type options for a specific project
-  // ✅ UNCHANGED — existing callers unaffected
+  // ✅ UNCHANGED
   // ============================================================================
   public async getTaskTypeOptionsForProject(
     resourceId: string,
